@@ -183,7 +183,12 @@ def make_npu_launcher_stub(src, debug=False):
         src_path = os.path.join(tmpdir, f"{name}.cxx")
         with open(src_path, "w") as f:
             f.write(src)
-        so = _build_npu_ext(name, src_path, tmpdir, kernel_launcher="torch")
+        enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
+        if (enable_taskqueue):
+            kernel_launcher_type = "torch"
+        else:
+            kernel_launcher_type = None
+        so = _build_npu_ext(name, src_path, tmpdir, kernel_launcher=kernel_launcher_type)
         if debug:
             with open(so, "rb") as f:
                 return dump_manager.put(f.read(), so_name, binary=True)
@@ -265,22 +270,49 @@ def generate_npu_wrapper_src(constants, signature, shapes, workspace_size):
                           (i, ty) for i, ty in signature.items()
                           if i not in constants and i in shapes and ty.startswith("*")
                       ][:8]
-    return f"""
-#include <assert.h>
-#include <stdbool.h>
-#include <string.h>
-#include <sys/syscall.h>
-{'#include <pybind11/pybind11.h>' if enable_device_print else ''}
-{'#include <pybind11/iostream.h>' if enable_device_print else ''}
 
-#define PY_SSIZE_T_CLEAN
-#include <Python.h>
-#include <torch_npu/csrc/framework/OpCommand.h>
-#include "experiment/runtime/runtime/rt.h"
-{'#include "device_print.h"' if enable_device_print else ''}
+    cpp_device_pointer = """
+typedef struct _DevicePtrInfo {
+  void *dev_ptr;
+  bool valid;
+} DevicePtrInfo;
 
-extern "C" {{
+static inline DevicePtrInfo getPointer(PyObject *obj, int idx) {
+  DevicePtrInfo ptr_info;
+  ptr_info.dev_ptr = 0;
+  ptr_info.valid = true;
+  if (PyLong_Check(obj)) {
+    ptr_info.dev_ptr = reinterpret_cast<void *>(PyLong_AsUnsignedLongLong(obj));
+    return ptr_info;
+  }
+  if (obj == Py_None) {
+    // valid nullptr
+    return ptr_info;
+  }
+  PyObject *ptr = PyObject_GetAttrString(obj, "data_ptr");
+  if(ptr){
+    PyObject *empty_tuple = PyTuple_New(0);
+    PyObject *ret = PyObject_Call(ptr, empty_tuple, NULL);
+    Py_DECREF(empty_tuple);
+    Py_DECREF(ptr);
+    if (!PyLong_Check(ret)) {
+      PyErr_SetString(PyExc_TypeError, "data_ptr method of Pointer object must return 64-bit int");
+      ptr_info.valid = false;
+      return ptr_info;
+    }
+    ptr_info.dev_ptr = reinterpret_cast<void *>(PyLong_AsUnsignedLongLong(ret));
+    if(!ptr_info.dev_ptr)
+      return ptr_info;
+    Py_DECREF(ret);  // Thanks ChatGPT!
+    return ptr_info;
+  }
+  PyErr_SetString(PyExc_TypeError, "Pointer argument must be either uint64 or have data_ptr method");
+  return ptr_info;
+}
+"""
 
+    cpp_msprof_extern = """
+extern "C" {
   typedef int (* callback)(unsigned int type, void* data, unsigned int len);
   extern int MsprofReportApi(unsigned int  agingFlag, const MsprofApi *api);
   extern unsigned long int  MsprofSysCycleTime();
@@ -288,106 +320,33 @@ extern "C" {{
   static unsigned int __MsprofFlagL0  = 0;
   static unsigned int __MsprofFlagL1  = 0;
 
-  int ProfCtrlHandle(unsigned int CtrlType, void* CtrlData, unsigned int DataLen) {{
-    if ((CtrlData == nullptr) || (DataLen == 0U)) {{
+  int ProfCtrlHandle(unsigned int CtrlType, void* CtrlData, unsigned int DataLen) {
+    if ((CtrlData == nullptr) || (DataLen == 0U)) {
       return 1;
-    }}
+    }
 
-    if (CtrlType == 1) {{
+    if (CtrlType == 1) {
       MsprofCommandHandle* handle = (MsprofCommandHandle *)(CtrlData);
       if (handle->type >= 6)  // 6 is not used here
         return 1;
-      if (handle->type == 1) {{  // init - 0  , start - 1
+      if (handle->type == 1) {  // init - 0  , start - 1
         __MsprofFlagL0 = ((0x00000800ULL & handle->profSwitch) == 0x00000800ULL) ? 1 : 0;
         __MsprofFlagL1 = ((0x00000002ULL & handle->profSwitch) == 0x00000002ULL) ? 1 : 0;
-      }}
-    }}
+      }
+    }
     return 0;
-  }}
-}}
+  }
+}
+"""
 
-typedef struct _DevicePtrInfo {{
-  void *dev_ptr;
-  bool valid;
-}} DevicePtrInfo;
+    cpp_msprof_callback = """
+  if (!(*profilerRegistered)) {
+     MsprofRegisterCallback(8, ProfCtrlHandle);      // 8 - CCE defined in msprof headerfile slog.h
+     *profilerRegistered = 1;
+  }
+"""
 
-static inline DevicePtrInfo getPointer(PyObject *obj, int idx) {{
-  DevicePtrInfo ptr_info;
-  ptr_info.dev_ptr = 0;
-  ptr_info.valid = true;
-  if (PyLong_Check(obj)) {{
-    ptr_info.dev_ptr = reinterpret_cast<void *>(PyLong_AsUnsignedLongLong(obj));
-    return ptr_info;
-  }}
-  if (obj == Py_None) {{
-    // valid nullptr
-    return ptr_info;
-  }}
-  PyObject *ptr = PyObject_GetAttrString(obj, "data_ptr");
-  if(ptr){{
-    PyObject *empty_tuple = PyTuple_New(0);
-    PyObject *ret = PyObject_Call(ptr, empty_tuple, NULL);
-    Py_DECREF(empty_tuple);
-    Py_DECREF(ptr);
-    if (!PyLong_Check(ret)) {{
-      PyErr_SetString(PyExc_TypeError, "data_ptr method of Pointer object must return 64-bit int");
-      ptr_info.valid = false;
-      return ptr_info;
-    }}
-    ptr_info.dev_ptr = reinterpret_cast<void *>(PyLong_AsUnsignedLongLong(ret));
-    if(!ptr_info.dev_ptr)
-      return ptr_info;
-    Py_DECREF(ret);  // Thanks ChatGPT!
-    return ptr_info;
-  }}
-  PyErr_SetString(PyExc_TypeError, "Pointer argument must be either uint64 or have data_ptr method");
-  return ptr_info;
-}}
-
-static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, {arg_decls}) {{
-  {'pybind11::scoped_ostream_redirect output;' if enable_device_print else ''}
-  // only 1D parallelization is supported for NPU
-  // Pointer type becomes flattend 1-D Memref tuple: base_ptr, data_ptr, offset, shape, stride
-  // base_ptr offset shape and stride are not used, arbitrarily set for now
-  std::string name = "";
-  name.append(kernelName);
-  if (!(*profilerRegistered)) {{
-    MsprofRegisterCallback(8, ProfCtrlHandle);      // 8 - CCE defined in msprof headerfile slog.h
-    *profilerRegistered = 1;
-  }}
-  {'auto launch_call = [=]()' if enable_taskqueue else ''} {{
-    uint32_t blockNum = gridX * gridY * gridZ;
-    {'TTAscDebug::DebugTunnelData *DTData = TTAscDebug::Open(blockNum);' if enable_device_print else ''}
-    rtError_t ret;
-    void *ffts_addr = NULL;
-    uint32_t ffts_len; ret = rtGetC2cCtrlAddr((uint64_t*)&ffts_addr, &ffts_len);
-    if (ret != RT_ERROR_NONE) {{
-      return {'ret' if enable_taskqueue else ''};
-    }}
-    // stub argument for workspace
-    void *workspace_addr = NULL;
-    {f'''
-    uint16_t ModuleId = 0;
-    uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
-    ret = rtMalloc(reinterpret_cast<void **>(&workspace_addr),
-                   totalWorkSpaceSize, RT_MEMORY_HBM, ModuleId);
-    if (ret != RT_ERROR_NONE) {{
-      return {'ret' if enable_taskqueue else ''};
-    }}
-    ''' if workspace_size > 0 else ''}
-    struct __attribute__((packed)) {{
-      void* ffts_addr __attribute__((aligned(8)));
-      void* workspace_addr __attribute__((aligned(8)));
-      {' '.join(f'{_ty_to_cpp(ty)} arg{i} __attribute__((aligned({4 if ty[0] != "*" and ty[-2:] != "64" else 8})));' for i, ty in signature.items() if i not in constants)}
-      {' '.join(f'{_ty_to_cpp(ty)} grid{mark} __attribute__((aligned(4)));' for mark, ty in grid_info.items())}
-      {'void* DTData __attribute__((aligned(8)));' if enable_device_print else ''}
-    }} args = {{
-      static_cast<void*>(ffts_addr),
-      static_cast<void*>(workspace_addr),
-      {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants)},
-      {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(grid{mark})' for mark, ty in grid_info.items())}
-      {', static_cast<void*>(DTData)' if enable_device_print else ''}
-    }};
+    cpp_msprof_call_before_launch = """
     unsigned long int beginTime = 0;
     unsigned long int endTime = 0;
     unsigned long int opNameHashID = 0;
@@ -395,14 +354,15 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     char* _kernelName = const_cast<char*>(name.c_str());
     size_t length = name.length();
     // FIXME: to avoid bug in msprof, currently we disable these checks
-    // if (__MsprofFlagL0 || __MsprofFlagL1) {{
-    {{
+    // if (__MsprofFlagL0 || __MsprofFlagL1)
+    {
       beginTime = MsprofSysCycleTime();
-    }}
-    ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
-    {'TTAscDebug::Close(DTData, stream);' if enable_device_print else ''}
+    }
+"""
+
+    cpp_msprof_call_after_launch = f"""
     // FIXME: to avoid bug in msprof, currently we disable these checks
-    // if (__MsprofFlagL0 || __MsprofFlagL1) {{
+    // if (__MsprofFlagL0 || __MsprofFlagL1)
     {{
       endTime = MsprofSysCycleTime();
       opNameHashID = MsprofGetHashId(_kernelName, length);
@@ -419,7 +379,7 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       MsprofReportApi(false, &info);
     }}
     // FIXME: to avoid bug in msprof, currently we disable these checks
-    // if (__MsprofFlagL1) {{
+    // if (__MsprofFlagL1)
     {{
       MsprofCompactInfo nodeBasicInfo;
       nodeBasicInfo.level = MSPROF_REPORT_NODE_LEVEL;
@@ -459,18 +419,83 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
         for i, ty in limited_tensors
         for j in range(min(len(shapes[i]), 8))
       )}
-        
+
       // Set to 0 except for the true dimension of the tensor. The total is MSPROF_GE_TENSOR_DATA_SHAPE_LEN = 8
       {LINE_CHANGE_CHAR.join(
         f'profTensorData->tensorData[{i}].shape[{j}] = 0;'
         for i, ty in limited_tensors
         for j in range(min(len(shapes[i]), 8), 8)
       )}
-      MsprofReportAdditionalInfo(false, static_cast<void *>(&tensorInfo), sizeof(MsprofAdditionalInfo));      
+      MsprofReportAdditionalInfo(false, static_cast<void *>(&tensorInfo), sizeof(MsprofAdditionalInfo));
     }}
+"""
+
+    return f"""
+#include <assert.h>
+#include <stdbool.h>
+#include <string>
+#include <sys/syscall.h>
+{'#include <pybind11/pybind11.h>' if enable_device_print else ''}
+{'#include <pybind11/iostream.h>' if enable_device_print else ''}
+
+#define PY_SSIZE_T_CLEAN
+#include <Python.h>
+{'#include <torch_npu/csrc/framework/OpCommand.h>' if enable_taskqueue else ''}
+#include "experiment/runtime/runtime/rt.h"
+{'#include "device_print.h"' if enable_device_print else ''}
+
+{cpp_msprof_extern}
+
+{cpp_device_pointer}
+
+static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, {arg_decls}) {{
+  {'pybind11::scoped_ostream_redirect output;' if enable_device_print else ''}
+  // only 1D parallelization is supported for NPU
+  // Pointer type becomes flattend 1-D Memref tuple: base_ptr, data_ptr, offset, shape, stride
+  // base_ptr offset shape and stride are not used, arbitrarily set for now
+  std::string name = "";
+  name.append(kernelName);
+  {cpp_msprof_callback}
+  {'auto launch_call = [=]()' if enable_taskqueue else ''} {{
+    uint32_t blockNum = gridX * gridY * gridZ;
+    {'TTAscDebug::DebugTunnelData *DTData = TTAscDebug::Open(blockNum);' if enable_device_print else ''}
+    rtError_t ret;
+    void *ffts_addr = NULL;
+    uint32_t ffts_len; ret = rtGetC2cCtrlAddr((uint64_t*)&ffts_addr, &ffts_len);
+    if (ret != RT_ERROR_NONE) {{
+      return {'ret' if enable_taskqueue else ''};
+    }}
+    // stub argument for workspace
+    void *workspace_addr = NULL;
+    {f'''
+    uint16_t ModuleId = 0;
+    uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
+    ret = rtMalloc(reinterpret_cast<void **>(&workspace_addr),
+                   totalWorkSpaceSize, RT_MEMORY_HBM, ModuleId);
+    if (ret != RT_ERROR_NONE) {{
+      return {'ret' if enable_taskqueue else ''};
+    }}
+    ''' if workspace_size > 0 else ''}
+    struct __attribute__((packed)) {{
+      void* ffts_addr __attribute__((aligned(8)));
+      void* workspace_addr __attribute__((aligned(8)));
+      {' '.join(f'{_ty_to_cpp(ty)} arg{i} __attribute__((aligned({4 if ty[0] != "*" and ty[-2:] != "64" else 8})));' for i, ty in signature.items() if i not in constants)}
+      {' '.join(f'{_ty_to_cpp(ty)} grid{mark} __attribute__((aligned(4)));' for mark, ty in grid_info.items())}
+      {'void* DTData __attribute__((aligned(8)));' if enable_device_print else ''}
+    }} args = {{
+      static_cast<void*>(ffts_addr),
+      static_cast<void*>(workspace_addr),
+      {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants)},
+      {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(grid{mark})' for mark, ty in grid_info.items())}
+      {', static_cast<void*>(DTData)' if enable_device_print else ''}
+    }};
+    {cpp_msprof_call_before_launch}
+    ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
+    {'TTAscDebug::Close(DTData, stream);' if enable_device_print else ''}
+    {cpp_msprof_call_after_launch}
     {'return ret;' if enable_taskqueue else ''}
-  }};
-  {'at_npu::native::OpCommand cmd; cmd.Name(name.c_str()).SetCustomHandler(launch_call).Run();' if enable_taskqueue else ''}
+   }};
+   {'at_npu::native::OpCommand cmd; cmd.Name(name.c_str()).SetCustomHandler(launch_call).Run();' if enable_taskqueue else ''}
   return;
 }}
 
