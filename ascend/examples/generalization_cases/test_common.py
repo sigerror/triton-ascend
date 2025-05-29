@@ -222,3 +222,22 @@ def raises_with_match(expected_exception, match_pattern):
                 return test_func(*args, **kwargs)
         return wrapper
     return decorator
+
+def capture_output(expected_output):
+    def decorator(test_func):
+        @functools.wraps(test_func)
+        def wrapper(*args, **kwargs):
+            capsys = kwargs.pop('capsys', None)
+            if capsys is None:
+                try:
+                    capsys = pytest.fixture(capsys)()
+                except:
+                    raise RuntimeError("This decorator requires pytest's capsys fixture")
+            test_func(capsys, *args, **kwargs)
+            captured = capsys.readouterr()
+            # pybind11::scoped_ostream_redirect captures std::cout with \x00 inserted
+            # for now, no idea how to eliminate \x00 from C++ side.
+            cleaned = re.sub(r"\x00", "", captured.out)
+            assert expected_output in cleaned
+        return wrapper
+    return decorator
