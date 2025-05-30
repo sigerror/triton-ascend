@@ -70,9 +70,14 @@ def test_add(shape, dtype):
         znumel = shape[2]
 
     grid = (1, 1, 1)
-    if x.numel() * x.element_size() >= 8192:
-        grid = (1, 1, ZB)
-        ZB = 1
+    if dtype == 'int8':
+        if x.numel() * x.element_size() >= 512:
+            grid = (1, 1, ZB)
+            ZB = 1
+    else:
+        if x.numel() * x.element_size() >= 8192:
+            grid = (1, 1, ZB)
+            ZB = 1
 
     triton_floordiv[grid](output, x, y, z, XB, YB, ZB, xnumel, ynumel, znumel)
 

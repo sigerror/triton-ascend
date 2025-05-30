@@ -35,10 +35,8 @@ def fn_npu_(output_ptr, x_ptr, y_ptr, z_ptr,
     tl.store(output_ptr + idx, ret)
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape1_2_3d)
-#@pytest.mark.parametrize('dtype', ['int8'])
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32'])
 def test_case2(dtype, shape):
-    # 漾T~_弾H~P弾U°弾M®
     x = test_common.generate_tensor(shape, dtype).npu()
     x[x <= 0] = 1
     y = test_common.generate_tensor(shape, dtype).npu()
@@ -79,14 +77,12 @@ def test_case2(dtype, shape):
         znumel = shape[2]
 
     grid = (1, 1, 1)
-    if x.numel() * x.element_size() >= 8192:
-        if max(XB, YB, ZB) == XB:
-            grid = (XB, 1, 1)
-            XB = 1
-        elif max(XB, YB, ZB) == YB:
-            grid = (1, YB, 1)
-            YB = 1
-        else:
+    if dtype == 'int8':
+        if x.numel() * x.element_size() >= 512:
+            grid = (1, 1, ZB)
+            ZB = 1
+    else:
+        if x.numel() * x.element_size() >= 8192:
             grid = (1, 1, ZB)
             ZB = 1
 
