@@ -11,31 +11,45 @@ import tarfile
 import zipfile
 import urllib.request
 import glob
-from io import BytesIO
-from distutils.command.clean import clean
-from pathlib import Path
-from typing import List, NamedTuple, Optional
-
-from setuptools import Extension, setup
-from setuptools.command.build_ext import build_ext
-from setuptools.command.build_py import build_py
-from dataclasses import dataclass
-
-from distutils.command.install import install
-from setuptools.command.develop import develop
-from setuptools.command.egg_info import egg_info
-from wheel.bdist_wheel import bdist_wheel
-
 import pybind11
 
-script_dir = os.path.dirname(__file__)
-triton_python_dir = os.path.join(os.path.dirname(__file__), "triton/python")
-is_manylinux = os.environ.get("IS_MANYLINUX", None)
-readme = os.path.join(script_dir, "README.md")
-if not os.path.exists(readme):
-    raise FileNotFoundError("Unable to find 'README.md'")
-with open(readme, encoding="utf-8") as fdesc:
-    long_description = fdesc.read()
+from io import BytesIO
+from pathlib import Path
+from typing import List, NamedTuple, Optional
+from dataclasses import dataclass
+from setuptools import Extension, setup
+from setuptools.command.build_ext import build_ext
+from distutils.command.clean import clean
+from wheel.bdist_wheel import bdist_wheel
+
+root_dir = os.path.dirname(__file__)
+triton_dir = os.path.join(root_dir, "third_party/triton")
+
+
+# Taken from https://github.com/pytorch/pytorch/blob/master/tools/setup_helpers/env.py
+def check_env_flag(name: str, default: str = "") -> bool:
+    return os.getenv(name, default).upper() in ["ON", "1", "YES", "TRUE", "Y"]
+
+
+def get_env_with_keys(key: list):
+    for k in key:
+        if k in os.environ:
+            return os.environ[k]
+    return ""
+
+
+def get_build_type():
+    if check_env_flag("DEBUG"):
+        return "Debug"
+    elif check_env_flag("REL_WITH_DEB_INFO"):
+        return "RelWithDebInfo"
+    elif check_env_flag("TRITON_REL_BUILD_WITH_ASSERTS"):
+        return "TritonRelBuildWithAsserts"
+    elif check_env_flag("TRITON_BUILD_WITH_O1"):
+        return "TritonBuildWithO1"
+    else:
+        return "Release"
+
 
 @dataclass
 class Backend:
@@ -50,7 +64,6 @@ class Backend:
 
 
 class BackendInstaller:
-
     @staticmethod
     def prepare(
         backend_name: str, backend_src_dir: str = None, is_external: bool = False
@@ -89,7 +102,7 @@ class BackendInstaller:
             ), f"${file} does not exist in ${backend_path}"
 
         install_dir = os.path.join(
-            triton_python_dir, "triton", "backends", backend_name
+            triton_dir, "python", "triton", "backends", backend_name
         )
         package_data = [
             f"{os.path.relpath(p, backend_path)}/*"
@@ -140,50 +153,6 @@ class BackendInstaller:
         ]
 
 
-# Taken from https://github.com/pytorch/pytorch/blob/master/tools/setup_helpers/env.py
-def check_env_flag(name: str, default: str = "") -> bool:
-    return os.getenv(name, default).upper() in ["ON", "1", "YES", "TRUE", "Y"]
-
-
-def get_build_type():
-    if check_env_flag("DEBUG"):
-        return "Debug"
-    elif check_env_flag("REL_WITH_DEB_INFO"):
-        return "RelWithDebInfo"
-    elif check_env_flag("TRITON_REL_BUILD_WITH_ASSERTS"):
-        return "TritonRelBuildWithAsserts"
-    elif check_env_flag("TRITON_BUILD_WITH_O1"):
-        return "TritonBuildWithO1"
-    else:
-        return "Release"
-
-
-def get_env_with_keys(key: list):
-    for k in key:
-        if k in os.environ:
-            return os.environ[k]
-    return ""
-
-
-def is_offline_build() -> bool:
-    """
-    Downstream projects and distributions which bootstrap their own dependencies from scratch
-    and run builds in offline sandboxes
-    may set `TRITON_OFFLINE_BUILD` in the build environment to prevent any attempts at downloading
-    pinned dependencies from the internet or at using dependencies vendored in-tree.
-
-    Dependencies must be defined using respective search paths (cf. `syspath_var_name` in `Package`).
-    Missing dependencies lead to an early abortion.
-    Dependencies' compatibility is not verified.
-
-    Note that this flag isn't tested by the CI and does not provide any guarantees.
-    """
-    return check_env_flag("TRITON_OFFLINE_BUILD", "")
-
-
-# --- third party packages -----
-
-
 class Package(NamedTuple):
     package: str
     name: str
@@ -191,12 +160,6 @@ class Package(NamedTuple):
     include_flag: str
     lib_flag: str
     syspath_var_name: str
-
-
-# json
-def get_json_package_info():
-    url = "https://github.com/nlohmann/json/releases/download/v3.11.3/include.zip"
-    return Package("json", "", url, "JSON_INCLUDE_DIR", "", "JSON_SYSPATH")
 
 
 # llvm
@@ -255,7 +218,7 @@ def get_llvm_package_info():
         )
     # use_assert_enabled_llvm = check_env_flag("TRITON_USE_ASSERT_ENABLED_LLVM", "False")
     # release_suffix = "assert" if use_assert_enabled_llvm else "release"
-    llvm_hash_path = os.path.join(get_triton_root_dir(), "cmake", "llvm-hash.txt")
+    llvm_hash_path = os.path.join(triton_dir, "cmake", "llvm-hash.txt")
     with open(llvm_hash_path, "r") as llvm_hash_file:
         rev = llvm_hash_file.read(8)
     name = f"llvm-{rev}-{system_suffix}"
@@ -263,6 +226,22 @@ def get_llvm_package_info():
     return Package(
         "llvm", name, url, "LLVM_INCLUDE_DIRS", "LLVM_LIBRARY_DIR", "LLVM_SYSPATH"
     )
+
+
+def is_offline_build() -> bool:
+    """
+    Downstream projects and distributions which bootstrap their own dependencies from scratch
+    and run builds in offline sandboxes
+    may set `TRITON_OFFLINE_BUILD` in the build environment to prevent any attempts at downloading
+    pinned dependencies from the internet or at using dependencies vendored in-tree.
+
+    Dependencies must be defined using respective search paths (cf. `syspath_var_name` in `Package`).
+    Missing dependencies lead to an early abortion.
+    Dependencies' compatibility is not verified.
+
+    Note that this flag isn't tested by the CI and does not provide any guarantees.
+    """
+    return check_env_flag("TRITON_OFFLINE_BUILD", "")
 
 
 def open_url(url):
@@ -275,9 +254,6 @@ def open_url(url):
     request = urllib.request.Request(url, None, headers)
     # Set timeout to 300 seconds to prevent the request from hanging forever.
     return urllib.request.urlopen(request, timeout=300)
-
-
-# ---- package data ---
 
 
 def get_triton_cache_path():
@@ -334,56 +310,32 @@ def get_thirdparty_packages(packages: list):
             thirdparty_cmake_args.append(f"-D{p.lib_flag}={package_dir}/lib")
     return thirdparty_cmake_args
 
-# ---- cmake extension ----
-
-
-def get_triton_root_dir():
-    return os.path.abspath(os.path.join(os.path.dirname(__file__), "triton"))
-
 
 def get_cmake_dir():
     plat_name = sysconfig.get_platform()
     python_version = sysconfig.get_python_version()
     dir_name = f"cmake.{plat_name}-{sys.implementation.name}-{python_version}"
-    cmake_dir = Path(get_triton_root_dir()) / "python" / "build" / dir_name
+    cmake_dir = Path(root_dir) / "build" / dir_name
     cmake_dir.mkdir(parents=True, exist_ok=True)
     return cmake_dir
 
 
-class CMakeClean(clean):
-
-    def initialize_options(self):
-        clean.initialize_options(self)
-        self.build_temp = get_cmake_dir()
-
-
-class CMakeBuildPy(build_py):
-
-    def run(self) -> None:
-        self.run_command("build_ext")
-        return super().run()
-
-
 class CMakeExtension(Extension):
-
     def __init__(self, name, path, sourcedir=""):
         Extension.__init__(self, name, sources=[])
         self.sourcedir = os.path.abspath(sourcedir)
-        # self.path = os.path.join(triton_python_dir, path)
         self.path = path
 
-class CMakeBuild(build_ext):
 
-    user_options = build_ext.user_options + [
-        ("base-dir=", None, "base directory of Triton")
+class BuildExt(build_ext):
+    library_path = [
+        "triton/_C/libtriton.so",
+        "triton/backends/huawei/triton-adapter-opt",
     ]
 
-    def initialize_options(self):
-        build_ext.initialize_options(self)
-        self.triton_root_dir = get_triton_root_dir()
-
     def finalize_options(self):
-        build_ext.finalize_options(self)
+        super().finalize_options()
+        self.inplace = False
 
     def run(self):
         try:
@@ -412,26 +364,45 @@ class CMakeBuild(build_ext):
             pybind11_include_dir = pybind11.get_include()
         return [f"-DPYBIND11_INCLUDE_DIR={pybind11_include_dir}"]
 
+    def get_ext_name(self, index):
+        assert index <= len(BuildExt.library_path), "Invalid index"
+        return BuildExt.library_path[index].split("/")[-1]
+
+    def get_ext_path(self, index):
+        assert index <= len(BuildExt.library_path), "Invalid index"
+        loc = BuildExt.library_path[index].rfind("/")
+        return os.path.abspath(
+            os.path.dirname(
+                self.get_ext_fullpath(BuildExt.library_path[index][: loc + 1])
+            )
+        )
+
+    def install_extension(self):
+        for i in range(len(BuildExt.library_path)):
+            shutil.copy(
+                os.path.join(self.get_ext_path(i), self.get_ext_name(i)),
+                os.path.join(root_dir, BuildExt.library_path[i]),
+            )
+
     def build_extension(self, ext):
+        cmake_dir = get_cmake_dir()
         lit_dir = shutil.which("lit")
         ninja_dir = shutil.which("ninja")
-        # lit is used by the test suite
+
         thirdparty_cmake_args = get_thirdparty_packages([get_llvm_package_info()])
         thirdparty_cmake_args += self.get_pybind11_cmake_args()
-        extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.path)))
-        # create build directories
-        if not os.path.exists(self.build_temp):
-            os.makedirs(self.build_temp)
+
         # python directories
         python_include_dir = sysconfig.get_path("platinclude")
+
         cmake_args = [
             "-G",
             "Ninja",  # Ninja is much faster than make
-            "-DCMAKE_MAKE_PROGRAM="
-            + ninja_dir,  # Pass explicit path to ninja otherwise cmake may cache a temporary path
+            "-DCMAKE_MAKE_PROGRAM=" + ninja_dir,
             "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
             "-DLLVM_ENABLE_WERROR=ON",
-            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + extdir,
+            "-DCMAKE_LIBRARY_OUTPUT_DIRECTORY=" + self.get_ext_path(0),
+            "-DCMAKE_RUNTIME_OUTPUT_DIRECTORY=" + self.get_ext_path(1),
             "-DTRITON_BUILD_TUTORIALS=OFF",
             "-DTRITON_BUILD_PYTHON_MODULE=ON",
             "-DPython3_EXECUTABLE:FILEPATH=" + sys.executable,
@@ -446,13 +417,8 @@ class CMakeBuild(build_ext):
             cmake_args.append("-DLLVM_EXTERNAL_LIT=" + lit_dir)
         cmake_args.extend(thirdparty_cmake_args)
 
-        # configuration
         cfg = get_build_type()
-        build_args = ["--config", cfg]
-
         cmake_args += ["-DCMAKE_BUILD_TYPE=" + cfg]
-        max_jobs = os.getenv("MAX_JOBS", str(2 * os.cpu_count()))
-        build_args += ["-j" + max_jobs]
 
         if check_env_flag("TRITON_BUILD_WITH_CLANG_LLD"):
             cmake_args += [
@@ -468,209 +434,26 @@ class CMakeBuild(build_ext):
             cmake_args += [
                 "-DCMAKE_CXX_COMPILER_LAUNCHER=ccache",
             ]
+
         cmake_args += ["-DTRITON_BUILD_PROTON=OFF"]
         cmake_args_append = os.getenv("TRITON_APPEND_CMAKE_ARGS")
         if cmake_args_append is not None:
             cmake_args += shlex.split(cmake_args_append)
-
-        env = os.environ.copy()
-        cmake_dir = get_cmake_dir()
         subprocess.check_call(
-            ["cmake", script_dir] + cmake_args, cwd=cmake_dir, env=env
+            ["cmake", root_dir] + cmake_args, cwd=cmake_dir, env=os.environ.copy()
         )
+
+        # configuration
+        build_args = ["--config", cfg]
+        max_jobs = os.getenv("MAX_JOBS", str(2 * os.cpu_count()))
+        build_args += ["-j" + max_jobs]
         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=cmake_dir)
 
-
-def get_platform_dependent_src_path(subdir):
-    return lambda platform, version: (
-        (
-            lambda version_major, version_minor1, version_minor2,: (
-                f"targets/{platform}/{subdir}"
-                if int(version_major) >= 12 and int(version_minor1) >= 5
-                else subdir
-            )
-        )(*version.split("."))
-    )
+        self.install_extension()
 
 
-_backends = [*BackendInstaller.copy([]), *BackendInstaller.copy_externals()]
-
-
-def add_link_to_backends(backends):
-    for backend in backends:
-        if os.path.islink(backend.install_dir):
-            os.unlink(backend.install_dir)
-        if os.path.exists(backend.install_dir):
-            shutil.rmtree(backend.install_dir)
-        os.symlink(backend.backend_dir, backend.install_dir)
-
-        if backend.language_dir:
-            # Link the contents of each backend's `language` directory into
-            # `triton.language.extra`.
-            extra_dir = os.path.abspath(
-                os.path.join(triton_python_dir, "triton", "language", "extra")
-            )
-            for x in os.listdir(backend.language_dir):
-                src_dir = os.path.join(backend.language_dir, x)
-                install_dir = os.path.join(extra_dir, x)
-                if os.path.islink(install_dir):
-                    os.unlink(install_dir)
-                if os.path.exists(install_dir):
-                    shutil.rmtree(install_dir)
-                os.symlink(src_dir, install_dir)
-
-
-def add_links():
-    add_link_to_backends(_backends)
-
-
-def insert_at_file_start(filepath, import_lines):
-    import tempfile
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
-        if import_lines in content:
-            return False
-        with tempfile.NamedTemporaryFile(mode='w', delete=False) as tmp_file:
-            tmp_file.write(import_lines + '\n\n')
-            with open(filepath, 'r') as original_file:
-                tmp_file.write(original_file.read())
-        backup_path = filepath + '.bak'
-        if os.path.exists(backup_path):
-            os.remove(backup_path)
-        shutil.move(filepath, backup_path)
-        shutil.move(tmp_file.name, filepath)
-        print(f"[INFO]: {filepath} is patched")
-        return True
-    except PermissionError:
-        print(f"[ERROR]: No permission to write to {filepath}!")
-    except FileNotFoundError:
-        print(f"[ERROR]: {filepath} does not exist!")
-    except Exception as e:
-        print(f"[ERROR]: Unknown error: {str(e)}")
-    return False
-
-def append_at_file_end(filepath, import_lines):
-    try:
-        with open(filepath, 'r', encoding='utf-8') as f:
-            content = f.read()
-        if import_lines in content:
-            return False
-        with open(filepath, 'a', encoding='utf-8') as f:
-            f.write('\n' + import_lines)
-        return True
-    except PermissionError:
-        print(f"[ERROR]: No permission to write to {filepath}!")
-    except FileNotFoundError:
-        print(f"[ERROR]: {filepath} does not exist!")
-    except Exception as e:
-        print(f"[ERROR]: Unknown error: {str(e)}")
-    return False
-
-def post_install(self):
-    install_dir = os.path.join(self.install_lib, "triton")
-    init_path = os.path.join(install_dir, "__init__.py")
-    patched_content = f"""
-import sys
-from .triton_patch.language import _utils as ascend_utils
-sys.modules['triton.language._utils'] = ascend_utils
-from .triton_patch.compiler import compiler as ascend_compiler
-sys.modules['triton.compiler.compiler'] = ascend_compiler
-from .triton_patch.compiler import code_generator as ascend_code_generator
-sys.modules['triton.compiler.code_generator'] = ascend_code_generator
-from .triton_patch.compiler import errors as ascend_errors
-sys.modules['triton.compiler.errors'] = ascend_errors
-from .triton_patch.runtime import autotuner as ascend_autotuner
-sys.modules['triton.runtime.autotuner'] = ascend_autotuner
-from .triton_patch import testing as ascend_testing
-sys.modules['triton.testing'] = ascend_testing
-"""
-    insert_at_file_start(init_path, patched_content)
-
-    content_to_append = f"""
-from .triton_patch.language.core import dot, gather, insert, subview
-from .triton_patch.language.standard import flip, sigmoid, softmax
-from .triton_patch.language.math import umulhi, exp, exp2, log, log2, cos, sin, sqrt, sqrt_rn, rsqrt, div_rn, erf, tanh, floor, ceil
-from . import language
-
-language.dot = dot
-language.flip = flip
-language.sigmoid = sigmoid
-language.softmax = softmax
-language.gather = gather
-language.insert = insert
-language.subview = subview
-
-# from .triton_patch.language.core import dtype, pointer_type, block_type, function_type
-# language.core.dtype = dtype
-# language.core.pointer_type = pointer_type
-# language.core.block_type = block_type
-# language.core.function_type = function_type
-
-from .triton_patch.language.semantic import arange, floordiv, atom_red_typechecking_impl, \
-        atomic_max, atomic_min, maximum, minimum
-language.semantic.arange = arange
-language.semantic.floordiv = floordiv
-language.semantic.atom_red_typechecking_impl = atom_red_typechecking_impl
-language.semantic.atomic_max = atomic_max
-language.semantic.atomic_min = atomic_min
-language.semantic.maximum = maximum
-language.semantic.minimum = minimum
-
-language.umulhi = umulhi
-language.exp = exp
-language.exp2 = exp2
-language.log = log
-language.log2 = log2
-language.cos = cos
-language.sin = sin
-language.sqrt = sqrt
-language.sqrt_rn = sqrt_rn
-language.rsqrt = rsqrt
-language.div_rn = div_rn
-language.erf = erf
-language.tanh = tanh
-language.floor = floor
-language.ceil = ceil
-language.math.umulhi = umulhi
-language.math.exp = exp
-language.math.exp2 = exp2
-language.math.log = log
-language.math.log2 = log2
-language.math.cos = cos
-language.math.sin = sin
-language.math.sqrt = sqrt
-language.math.sqrt_rn = sqrt_rn
-language.math.rsqrt = rsqrt
-language.math.div_rn = div_rn
-language.math.erf = erf
-language.math.tanh = tanh
-language.math.floor = floor
-language.math.ceil = ceil
-language.math.isnan = language.extra.ascend.libdevice.isnan
-language.math.isinf = language.extra.ascend.libdevice.isinf
-"""
-    append_at_file_end(init_path, content_to_append)
-
-class plugin_install(install):
-
+class BuildWheel(bdist_wheel):
     def run(self):
-        add_links()
-        install.run(self)
-        post_install(self)
-
-class plugin_develop(develop):
-
-    def run(self):
-        assert False, "[ERROR] develop mode is unsupported for now"
-        add_links()
-        develop.run(self)
-        post_install(self)
-
-class plugin_bdist_wheel(bdist_wheel):
-
-    def run(self):
-        add_links()
         bdist_wheel.run(self)
 
         if is_manylinux:
@@ -695,28 +478,29 @@ class plugin_bdist_wheel(bdist_wheel):
                 os.remove(file)
 
 
-class plugin_egginfo(egg_info):
-
+class BuildClean(clean):
     def run(self):
-        add_links()
-        egg_info.run(self)
+        self.clean_egginfo()
+
+        shutil.rmtree(os.path.join(root_dir, "triton"))
+        shutil.rmtree(os.path.join(root_dir, "build"))
+
+    def clean_egginfo(self):
+        egginfo_dir = os.path.join(root_dir, f"{get_package_name()}" + ".egg-info")
+
+        if os.path.exists(egginfo_dir):
+            shutil.rmtree(egginfo_dir)
 
 
-_package_data = {
-    "triton/tools": ["compile.h", "compile.c"],
-    **{f"triton/backends/{b.name}": b.package_data for b in _backends},
-    "triton/language/extra": sum((b.language_package_data for b in _backends), []),
-}
-
-def get_language_extra_packages():
+def get_language_extra_packages(backends):
     packages = []
-    for backend in _backends:
+    for backend in backends:
         if backend.language_dir is None:
             continue
 
         # Walk the `language` directory of each backend to enumerate
         # any subpackages, which will be added to `triton.language.extra`.
-        for dir, dirs, files in os.walk(backend.language_dir, followlinks=True):
+        for dir, _, files in os.walk(backend.language_dir, followlinks=True):
             if (
                 not any(f for f in files if f.endswith(".py"))
                 or dir == backend.language_dir
@@ -744,55 +528,82 @@ def get_packages(backends):
         "triton/tools",
     ]
     packages += [f"triton/backends/{backend.name}" for backend in backends]
-    packages += get_language_extra_packages()
+    packages += get_language_extra_packages(backends)
     packages += [
         "triton/triton_patch",
         "triton/triton_patch/language",
         "triton/triton_patch/compiler",
         "triton/triton_patch/runtime",
     ]
+
     return packages
 
+
 def get_package_dir(backends):
-    triton_root_rel_dir = "triton/python/triton"
+    triton_prefix_dir = os.path.join(triton_dir, "python/triton")
+    triton_patch_prefix_dir = os.path.join(root_dir, "triton_patch/python/triton_patch")
+
+    # upstream triton
     package_dir = {
-        "triton": f"{triton_root_rel_dir}",
-        "triton/_C": f"{triton_root_rel_dir}/_C",
-        "triton/backends": f"{triton_root_rel_dir}/backends",
-        "triton/compiler": f"{triton_root_rel_dir}/compiler",
-        "triton/language": f"{triton_root_rel_dir}/language",
-        "triton/language/extra": f"{triton_root_rel_dir}/language/extra",
-        "triton/runtime": f"{triton_root_rel_dir}/runtime",
-        "triton/tools": f"{triton_root_rel_dir}/tools",
+        "triton": f"{triton_prefix_dir}",
+        "triton/_C": f"{triton_prefix_dir}/_C",
+        "triton/backends": f"{triton_prefix_dir}/backends",
+        "triton/compiler": f"{triton_prefix_dir}/compiler",
+        "triton/language": f"{triton_prefix_dir}/language",
+        "triton/language/extra": f"{triton_prefix_dir}/language/extra",
+        "triton/runtime": f"{triton_prefix_dir}/runtime",
+        "triton/tools": f"{triton_prefix_dir}/tools",
     }
     for backend in backends:
-        package_dir[f"triton/backends/{backend.name}"] = f"{triton_root_rel_dir}/backends/{backend.name}"
-    language_extra_list = get_language_extra_packages()
+        package_dir[f"triton/backends/{backend.name}"] = (
+            f"{triton_prefix_dir}/backends/{backend.name}"
+        )
+    language_extra_list = get_language_extra_packages(backends)
     for extra_full in language_extra_list:
         extra_name = extra_full.replace("triton/language/extra/", "")
-        package_dir[extra_full] = f"{triton_root_rel_dir}/language/extra/{extra_name}"
-    #
-    triton_patch_root_rel_dir = "triton_patch/python/triton_patch"
-    package_dir["triton/triton_patch"] = f"{triton_patch_root_rel_dir}"
-    package_dir["triton/triton_patch/language"] = f"{triton_patch_root_rel_dir}/language"
-    package_dir["triton/triton_patch/compiler"] = f"{triton_patch_root_rel_dir}/compiler"
-    package_dir["triton/triton_patch/runtime"] = f"{triton_patch_root_rel_dir}/runtime"
+        package_dir[extra_full] = f"{triton_prefix_dir}/language/extra/{extra_name}"
+
+    # triton patch
+    package_dir["triton/triton_patch"] = f"{triton_patch_prefix_dir}"
+    package_dir["triton/triton_patch/language"] = f"{triton_patch_prefix_dir}/language"
+    package_dir["triton/triton_patch/compiler"] = f"{triton_patch_prefix_dir}/compiler"
+    package_dir["triton/triton_patch/runtime"] = f"{triton_patch_prefix_dir}/runtime"
+
+    package_dir["triton/language/_utils.py"] = (
+        f"{triton_patch_prefix_dir}/language/_utils.py"
+    )
+    package_dir["triton/compiler/compiler.py"] = (
+        f"{triton_patch_prefix_dir}/compiler/compiler.py"
+    )
+    package_dir["triton/compiler/code_generator.py"] = (
+        f"{triton_patch_prefix_dir}/compiler/code_generator.py"
+    )
+    package_dir["triton/compiler/errors.py"] = (
+        f"{triton_patch_prefix_dir}/compiler/errors.py"
+    )
+    package_dir["triton/runtime/autotuner.py"] = (
+        f"{triton_patch_prefix_dir}/runtime/autotuner.py"
+    )
+    package_dir["triton/testing.py"] = f"{triton_patch_prefix_dir}/testing.py"
     return package_dir
 
 
-def get_entry_points():
-    entry_points = {}
-    return entry_points
+def get_package_data(backends):
+    return {
+        "triton/tools": ["compile.h", "compile.c"],
+        **{f"triton/backends/{b.name}": b.package_data for b in backends},
+        "triton/language/extra": sum((b.language_package_data for b in backends), []),
+    }
 
 
 def get_git_commit_hash(length=8):
     try:
-        triton_root = os.getcwd()
-        triton_ascend_root = os.environ.get("TRITON_PLUGIN_DIRS", triton_root)
-        os.chdir(triton_ascend_root)
+        current_dir = os.getcwd()
+        os.chdir(os.environ.get("TRITON_PLUGIN_DIRS", current_dir))
+
         cmd = ["git", "rev-parse", f"--short={length}", "HEAD"]
         git_commit_hash = subprocess.check_output(cmd).strip().decode("utf-8")
-        os.chdir(triton_root)
+        os.chdir(current_dir)
         return "+git{}".format(git_commit_hash)
     except Exception:
         return ""
@@ -811,26 +622,82 @@ def get_version():
     return version
 
 
+def get_package_name():
+    return os.environ.get("TRITON_WHEEL_NAME", "triton_ascend")
+
+
+def create_symlink_for_backend(backends):
+    for backend in backends:
+        if os.path.islink(backend.install_dir):
+            os.unlink(backend.install_dir)
+        if os.path.exists(backend.install_dir):
+            shutil.rmtree(backend.install_dir)
+        os.symlink(backend.backend_dir, backend.install_dir)
+
+        if backend.language_dir:
+            # Link the contents of each backend's `language` directory into
+            # `triton.language.extra`.
+            extra_dir = os.path.abspath(
+                os.path.join(triton_dir, "python", "triton", "language", "extra")
+            )
+            for x in os.listdir(backend.language_dir):
+                src_dir = os.path.join(backend.language_dir, x)
+                install_dir = os.path.join(extra_dir, x)
+                if os.path.islink(install_dir):
+                    os.unlink(install_dir)
+                if os.path.exists(install_dir):
+                    shutil.rmtree(install_dir)
+                os.symlink(src_dir, install_dir)
+
+
+def create_symlink_for_triton(link_map):
+    if os.path.exists(root_dir + "/triton"):
+        shutil.rmtree(root_dir + "/triton")
+
+    for target, source in link_map.items():
+        target_path = Path(os.path.join(root_dir, target))
+        source_path = Path(os.path.join(root_dir, source))
+
+        if source_path.is_dir():
+            os.makedirs(target_path, exist_ok=True)
+            for src_file in source_path.glob("*"):
+                if src_file.is_file():
+                    dest_file = target_path / src_file.name
+                    os.symlink(src_file, dest_file)
+        elif source_path.is_file():
+            if target_path.exists():
+                os.unlink(target_path)
+            os.symlink(source_path, target_path)
+        else:
+            print("[ERROR]: wrong file mapping")
+
+
+is_manylinux = os.environ.get("IS_MANYLINUX", None)
+readme = os.path.join(root_dir, "README.md")
+if not os.path.exists(readme):
+    raise FileNotFoundError("Unable to find 'README.md'")
+with open(readme, encoding="utf-8") as fdesc:
+    long_description = fdesc.read()
+
+_backends = [*BackendInstaller.copy_externals()]
+create_symlink_for_backend(_backends)
+create_symlink_for_triton(get_package_dir(_backends))
+
+
 setup(
-    name=os.environ.get("TRITON_WHEEL_NAME", "triton_ascend"),
+    name=get_package_name(),
     version=get_version(),
     description="A language and compiler for custom Deep Learning operations on Huawei hardwares",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    package_dir=get_package_dir(_backends),
     packages=get_packages(_backends),
-    entry_points=get_entry_points(),
-    package_data=_package_data,
+    package_data=get_package_data(_backends),
     include_package_data=True,
     ext_modules=[CMakeExtension("triton", "triton/_C/")],
     cmdclass={
-        "build_ext": CMakeBuild,
-        "build_py": CMakeBuildPy,
-        "clean": CMakeClean,
-        "install": plugin_install,
-        "develop": plugin_develop,
-        "bdist_wheel": plugin_bdist_wheel,
-        "egg_info": plugin_egginfo,
+        "build_ext": BuildExt,
+        "bdist_wheel": BuildWheel,
+        "clean": BuildClean,  # type: ignore[misc]
     },
     zip_safe=False,
     # for PyPI

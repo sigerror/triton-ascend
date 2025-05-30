@@ -5,7 +5,7 @@ kernel_meta/
 .cache/
 fusion_result.json
 compile_commands.json
-*.egg-info/
-build/*
-!build/docker/
+build/
 dist/
+triton/
+*.egg-info/

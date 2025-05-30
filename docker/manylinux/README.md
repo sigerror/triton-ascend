@@ -11,7 +11,7 @@ docker build --build-arg ARCH=aarch64 --build-arg LLVM_PATH=llvm-project --build
 ```shell
 docker run -ti -d --privileged --rm manylinux-python310:latest bash
 cd REPO_ROOT
-./build/build_triton_ascend.sh /root/triton-ascend/triton /root/triton-ascend/ascend/ /usr/local/llvm 0.0.1rc1 bdist_wheel
+./scripts/build.sh /root/triton-ascend/ascend/ /usr/local/llvm 0.0.1rc1 bdist_wheel
 ```
 
 ## Upload wheel to pypi test

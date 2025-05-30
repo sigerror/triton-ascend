@@ -74,6 +74,6 @@ for env in "${environments[@]}"; do
     (
         conda activate "$env" && \
         echo "在 $env 中执行命令" && \
-        bash build/build_triton_ascend.sh $(pwd)/triton $(pwd)/ascend /opt/llvm-b5cc222 ${TRITON_VERSION} bdist_wheel
+        bash scripts/build.sh $(pwd)/ascend /opt/llvm-b5cc222 ${TRITON_VERSION} bdist_wheel
     ) || echo "$env 执行失败"
 done

@@ -1,7 +1,7 @@
 set(MLIR_BINARY_DIR ${CMAKE_BINARY_DIR})
 
 file(RELATIVE_PATH patch_rel_dir "${CMAKE_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}")
-string(REPLACE "triton_patch" "triton" triton_rel_dir "${patch_rel_dir}")
+string(REPLACE "triton_patch" "third_party/triton" triton_rel_dir "${patch_rel_dir}")
 set(triton_abs_dir "${CMAKE_SOURCE_DIR}/${triton_rel_dir}")
 # message(STATUS "triton_abs_dir: ${triton_abs_dir}")
 

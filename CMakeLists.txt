@@ -15,7 +15,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 project(triton)
 include(CTest)
 
-set(TRITON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/triton")
+set(TRITON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/triton")
 set(PATCHED_TRITON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/triton_patch")
 set(PATCHED_TRITON_LIBRARIES
   "TritonIR"
@@ -150,7 +150,7 @@ include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${PATCHED_TRITON_ROOT_DIR}/include)
 include_directories(${PROJECT_BINARY_DIR}/triton_patch/include) # Tablegen'd files
 include_directories(${TRITON_ROOT_DIR}/include)
-include_directories(${PROJECT_BINARY_DIR}/triton/include) # Tablegen'd files
+include_directories(${PROJECT_BINARY_DIR}/third_party/triton/include) # Tablegen'd files
 include_directories(${TRITON_ROOT_DIR}/third_party)
 include_directories(${PROJECT_BINARY_DIR}/third_party) # Tablegen'd files
 
