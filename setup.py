@@ -38,6 +38,11 @@ def get_env_with_keys(key: list):
     return ""
 
 
+def remove_directory(dir_path):
+    if os.path.exists(dir_path) and os.path.isdir(dir_path):
+        shutil.rmtree(dir_path)
+
+
 def get_build_type():
     if check_env_flag("DEBUG"):
         return "Debug"
@@ -290,7 +295,7 @@ def get_thirdparty_packages(packages: list):
             )
         if not is_offline_build() and not input_defined and not input_compatible:
             with contextlib.suppress(Exception):
-                shutil.rmtree(package_root_dir)
+                remove_directory(package_root_dir)
             os.makedirs(package_root_dir, exist_ok=True)
             print(f"downloading and extracting {p.url} ...")
             with open_url(p.url) as response:
@@ -318,7 +323,6 @@ def get_cmake_dir():
     cmake_dir = Path(root_dir) / "build" / dir_name
     cmake_dir.mkdir(parents=True, exist_ok=True)
     return cmake_dir
-
 
 class CMakeExtension(Extension):
     def __init__(self, name, path, sourcedir=""):
@@ -482,14 +486,13 @@ class BuildClean(clean):
     def run(self):
         self.clean_egginfo()
 
-        shutil.rmtree(os.path.join(root_dir, "triton"))
-        shutil.rmtree(os.path.join(root_dir, "build"))
+        remove_directory(os.path.join(root_dir, "triton"))
+        remove_directory(os.path.join(root_dir, "build"))
 
     def clean_egginfo(self):
         egginfo_dir = os.path.join(root_dir, f"{get_package_name()}" + ".egg-info")
 
-        if os.path.exists(egginfo_dir):
-            shutil.rmtree(egginfo_dir)
+        remove_directory(egginfo_dir)
 
 
 def get_language_extra_packages(backends):
@@ -639,8 +642,7 @@ def create_symlink_for_backend(backends):
     for backend in backends:
         if os.path.islink(backend.install_dir):
             os.unlink(backend.install_dir)
-        if os.path.exists(backend.install_dir):
-            shutil.rmtree(backend.install_dir)
+        remove_directory(backend.install_dir)
         os.symlink(backend.backend_dir, backend.install_dir)
 
         if backend.language_dir:
@@ -654,14 +656,12 @@ def create_symlink_for_backend(backends):
                 install_dir = os.path.join(extra_dir, x)
                 if os.path.islink(install_dir):
                     os.unlink(install_dir)
-                if os.path.exists(install_dir):
-                    shutil.rmtree(install_dir)
+                remove_directory(install_dir)
                 os.symlink(src_dir, install_dir)
 
 
 def create_symlink_for_triton(link_map):
-    if os.path.exists(root_dir + "/triton"):
-        shutil.rmtree(root_dir + "/triton")
+    remove_directory(root_dir + "/triton")
 
     for target, source in link_map.items():
         target_path = Path(os.path.join(root_dir, target))
