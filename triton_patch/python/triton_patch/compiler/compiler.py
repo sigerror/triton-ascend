@@ -1,7 +1,17 @@
 from __future__ import annotations
 import hashlib
 import json
-from triton._C.libtriton import get_cache_invalidating_env_vars, ir
+from .._C.libtriton import get_cache_invalidating_env_vars, ir
+from ..backends import backends
+from ..backends.compiler import GPUTarget, AttrsDescriptor
+from .. import __version__
+from ..runtime.autotuner import OutOfResources
+from ..runtime.cache import get_cache_manager, get_dump_manager, get_override_manager
+from ..runtime.driver import driver
+from ..tools.disasm import get_sass
+# TODO: this shouldn't be here
+from .code_generator import ast_to_ttir
+from .errors import MLIRCompilationError
 from pathlib import Path
 import re
 import functools
@@ -56,8 +66,8 @@ def _get_num_warps_from_ir_str(src: str):
 
 
 class ASTSource:
+
     def __init__(self, fn, signature, constants=None, attrs=None) -> None:
-        from triton.backends.compiler import AttrsDescriptor
         self.fn = fn
         self.ext = "ttir"
         self.name = fn.__name__
@@ -88,7 +98,6 @@ class ASTSource:
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
     def make_ir(self, options, codegen_fns, module_map, context):
-        from triton.compiler.code_generator import ast_to_ttir
         return ast_to_ttir(self.fn, self, context=context, options=options, codegen_fns=codegen_fns,
                            module_map=module_map)
 
@@ -125,7 +134,6 @@ class IRSource:
 
 @functools.lru_cache()
 def triton_key():
-    from triton import __version__
     import pkgutil
     TRITON_PATH = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     contents = []
@@ -208,10 +216,6 @@ def filter_traceback(e: BaseException):
 
 
 def compile(src, target=None, options=None):
-    from triton.backends.compiler import GPUTarget
-    from triton.runtime.cache import get_cache_manager, get_dump_manager, get_override_manager
-    from triton.runtime.driver import driver
-    from .errors import MLIRCompilationError
     if target is None:
         target = driver.active.get_current_target()
     assert isinstance(target, GPUTarget), "target must be of GPUTarget type"
@@ -316,7 +320,6 @@ def compile(src, target=None, options=None):
 
 
 def make_backend(target):
-    from triton.backends import backends
     actives = [x.compiler for x in backends.values() if x.compiler.supports_target(target)]
     if len(actives) != 1:
         raise RuntimeError(
@@ -343,7 +346,6 @@ class LazyDict:
 class AsmDict(dict):
 
     def __missing__(self, key):
-        from triton.tools.disasm import get_sass
         if key == "sass":
             value = get_sass(self["cubin"])
         else:
@@ -362,7 +364,6 @@ class CompiledKernel:
 
     def __init__(self, src, metadata_group, hash):
         from collections import namedtuple
-        from triton.backends.compiler import GPUTarget
         metadata_path = next((Path(p) for c, p in metadata_group.items() if c.endswith(".json")))
         metadata = json.loads(metadata_path.read_text())
         metadata['cluster_dims'] = tuple(metadata['cluster_dims'])
@@ -391,16 +392,12 @@ class CompiledKernel:
         self.function = None
 
     def _init_handles(self):
-        from triton.runtime.errors import OutOfResources
-        from triton.runtime.driver import driver
         if self.module is not None:
             return
+        device = driver.active.get_current_device()
         # create launcher
         self.run = driver.active.launcher_cls(self.src, self.metadata)
         # not enough shared memory to run the kernel
-        # on NPU, get_device_properties in fact does not use the device param
-        # but we still need to preserve it because triton defines the API
-        device = driver.active.get_current_device()
         max_shared = driver.active.utils.get_device_properties(device)["max_shared_mem"]
         if self.metadata.shared > max_shared:
             raise OutOfResources(self.metadata.shared, max_shared, "shared memory")
@@ -408,10 +405,12 @@ class CompiledKernel:
         self.module, self.function, self.n_regs, self.n_spills = driver.active.utils.load_binary(
             self.name, self.kernel, self.metadata.shared, device)
 
-    def __getattribute__(self, name):
-        if name == 'run':
-            self._init_handles()
-        return super().__getattribute__(name)
+    # This mechanism introduces heavy runtime overhead.
+    # Commenting this func requires explicitly calling _init_handles()
+    # def __getattribute__(self, name):
+    #     if name == 'run':
+    #         self._init_handles()
+    #     return super().__getattribute__(name)
 
     def launch_metadata(self, grid, stream, *args):
         if CompiledKernel.launch_enter_hook is None:
@@ -434,7 +433,8 @@ class CompiledKernel:
         self._init_handles()
 
         def runner(*args, stream=None):
-            from triton.runtime.driver import driver
+            if stream is None:
+                stream = self.metadata.stream
             if stream is None:
                 device = driver.active.get_current_device()
                 stream = driver.active.get_current_stream(device)

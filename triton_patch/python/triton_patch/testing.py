@@ -4,6 +4,9 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from typing import Any, Dict, List
+from . import language as tl
+from . import runtime
+
 
 def nvsmi(attrs):
     attrs = ','.join(attrs)
@@ -108,7 +111,6 @@ def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, return_m
     """
     assert return_mode in ["min", "max", "mean", "median", "all"]
     import torch
-    from triton import runtime
 
     enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() in ('npu')
     if torch.npu.is_available() and enable_bench_npu:
@@ -453,7 +455,7 @@ def get_dram_gbps(device=None):
     ''' return DRAM bandwidth in GB/s '''
     import torch
 
-    from triton.runtime import driver
+    from .runtime import driver
     if not device:
         device = torch.cuda.current_device()
     mem_clock_khz = driver.active.utils.get_device_properties(device)["mem_clock_rate"]  # in kHz
@@ -464,8 +466,8 @@ def get_dram_gbps(device=None):
 
 def get_max_tensorcore_tflops(dtype, clock_rate, device=None):
     import torch
-    import triton.language as tl
-    from triton.runtime import driver
+
+    from .runtime import driver
     if not device:
         device = torch.cuda.current_device()
 
@@ -550,7 +552,7 @@ def set_gpu_clock(ref_sm_clock=1350, ref_mem_clock=1215):
 def get_max_simd_tflops(dtype, clock_rate, device=None):
     import torch
 
-    from triton.runtime import driver
+    from .runtime import driver
     if not device:
         device = torch.cuda.current_device()
 
@@ -573,12 +575,38 @@ def get_max_simd_tflops(dtype, clock_rate, device=None):
     tflops = num_subcores * clock_rate * ops_per_sub_core * 1e-9
     return tflops
 
-from triton.triton_patch.language.core import dot, gather, insert, subview
-from triton.triton_patch.language.standard import flip, sigmoid, softmax
-from triton.triton_patch.language.math import umulhi, exp, exp2, log, log2, cos, sin, sqrt, sqrt_rn, rsqrt, div_rn, erf, tanh, floor, ceil
-from triton.triton_patch.language.semantic import arange, floordiv, atom_red_typechecking_impl, \
-        atomic_max, atomic_min, maximum, minimum
-from triton import language
+# Patch the triton language API here because triton's __init__.py
+# import testing in the last stages.
+
+from .triton_patch.language.core import dot, gather, insert, subview
+from .triton_patch.language.standard import flip, sigmoid, softmax
+from .triton_patch.language.math import (
+    umulhi,
+    exp,
+    exp2,
+    log,
+    log2,
+    cos,
+    sin,
+    sqrt,
+    sqrt_rn,
+    rsqrt,
+    div_rn,
+    erf,
+    tanh,
+    floor,
+    ceil,
+)
+from .triton_patch.language.semantic import (
+    arange,
+    floordiv,
+    atom_red_typechecking_impl,
+    atomic_max,
+    atomic_min,
+    maximum,
+    minimum,
+)
+from . import language
 
 language.dot = dot
 language.flip = flip
@@ -633,4 +661,3 @@ language.math.floor = floor
 language.math.ceil = ceil
 language.math.isnan = language.extra.ascend.libdevice.isnan
 language.math.isinf = language.extra.ascend.libdevice.isinf
-

@@ -230,6 +230,8 @@ class NPUOptions:
 
     multibuffer: bool = True
 
+    stream: int = None
+
     def hash(self):
         key = '_'.join([f'{name}-{val}' for name, val in self.__dict__.items()])
         return hashlib.md5(key.encode("utf-8")).hexdigest()

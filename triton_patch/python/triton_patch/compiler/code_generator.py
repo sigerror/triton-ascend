@@ -6,14 +6,14 @@ import warnings
 import os
 import textwrap
 from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
-from triton import language
-from triton._C.libtriton import ir
-from triton.language import constexpr, tensor, str_to_ty
-from triton.language.core import _unwrap_if_constexpr, nv_tma_desc_type, _value
-from triton.runtime.jit import _normalize_ty, get_jit_fn_file_line
+from .. import language
+from .._C.libtriton import ir
+from ..language import constexpr, tensor, str_to_ty
+from ..language.core import _unwrap_if_constexpr, nv_tma_desc_type, _value
+from ..runtime.jit import _normalize_ty, get_jit_fn_file_line
 # ideally we wouldn't need any runtime component
-from triton.runtime import JITFunction
-from triton.compiler.errors import (CompilationError, CompileTimeAssertionFailure, UnsupportedLanguageConstruct)
+from ..runtime import JITFunction
+from .errors import (CompilationError, CompileTimeAssertionFailure, UnsupportedLanguageConstruct)
 from types import ModuleType
 
 

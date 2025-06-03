@@ -9,6 +9,7 @@ import textwrap
 from collections import defaultdict
 from functools import cached_property
 from typing import Callable, Generic, Iterable, Optional, TypeVar, Union, overload, Dict, Any, Tuple
+from ..runtime.driver import driver
 from types import ModuleType
 
 TRITON_MODULE = __name__[:-len(".runtime.jit")]
@@ -547,7 +548,7 @@ class JITFunction(KernelInterface[T]):
         """
         Precompute as much as possible.
         """
-        from ..compiler.compiler import CompiledKernel, compile, ASTSource, make_backend
+        from ..compiler import CompiledKernel, compile, ASTSource, make_backend
         self.CompiledKernel = CompiledKernel
         self.compile = compile
         self.ASTSource = ASTSource
@@ -560,13 +561,13 @@ class JITFunction(KernelInterface[T]):
         ]
 
     def run(self, *args, grid, warmup, **kwargs):
-        from triton.runtime.driver import driver
         kwargs["debug"] = kwargs.get("debug", False) or os.environ.get("TRITON_DEBUG", "0") == "1"
 
         # parse options
-        from ..compiler.compiler import make_backend
+        from ..compiler import make_backend
         device = driver.active.get_current_device()
-        stream = driver.active.get_current_stream(device)
+        if ('stream' not in kwargs.keys()):
+            stream = driver.active.get_current_stream(device)
         target = driver.active.get_current_target()
         backend = make_backend(target)
 
@@ -590,7 +591,7 @@ class JITFunction(KernelInterface[T]):
             # deprecated arguments
             assert "device_type" not in kwargs, "device_type option is deprecated; current target will be used"
             assert "device" not in kwargs, "device option is deprecated; current device will be used"
-            assert "stream" not in kwargs, "stream option is deprecated; current stream will be used"
+            # assert "stream" not in kwargs, "stream option is deprecated; current stream will be used"
             for k in excess_kwargs:
                 if k not in options.__dict__:
                     raise KeyError("Keyword argument %s was specified but unrecognised" % k)
@@ -648,8 +649,12 @@ class JITFunction(KernelInterface[T]):
             grid_1 = grid[1] if grid_size > 1 else 1
             grid_2 = grid[2] if grid_size > 2 else 1
 
+            if ('stream' in kwargs.keys()):
+                stream = kwargs["stream"]
             # launch kernel
             launch_metadata = kernel.launch_metadata(grid, stream, *non_constexpr_vals)
+            # explicitly define run method and load kernel binary
+            kernel._init_handles()
             kernel.run(grid_0, grid_1, grid_2, stream, kernel.function, kernel.packed_metadata, launch_metadata,
                        self.CompiledKernel.launch_enter_hook, self.CompiledKernel.launch_exit_hook, *non_constexpr_vals)
         return kernel
@@ -728,11 +733,10 @@ class JITFunction(KernelInterface[T]):
         return self.run(grid=grid, warmup=True, *map(MockTensor.wrap_dtype, args), **kwargs)
 
     def preload(self, specialization_data):
-        from ..compiler.compiler import compile, ASTSource
+        from ..compiler import compile, ASTSource
         from triton.backends.compiler import AttrsDescriptor
         import json
         import triton.language as tl
-        from triton.runtime.driver import driver
         device = driver.active.get_current_device()
         deserialized_obj = json.loads(specialization_data)
         if deserialized_obj['name'] != self.fn.__name__:
@@ -833,7 +837,7 @@ def jit(
     def decorator(fn: T) -> JITFunction[T]:
         assert callable(fn)
         if os.getenv("TRITON_INTERPRET", "0") == "1":
-            from triton.runtime.interpreter import InterpretedFunction
+            from .interpreter import InterpretedFunction
             return InterpretedFunction(fn, version=version, do_not_specialize=do_not_specialize,
                                        do_not_specialize_on_alignment=do_not_specialize_on_alignment, debug=debug,
                                        noinline=noinline, repr=repr, launch_metadata=launch_metadata)

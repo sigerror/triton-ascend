@@ -7,6 +7,9 @@ import inspect
 from typing import Dict
 
 from .jit import KernelInterface
+from .errors import OutOfResources
+from .driver import driver
+
 
 class Autotuner(KernelInterface):
 
@@ -26,7 +29,6 @@ class Autotuner(KernelInterface):
         use_cuda_graph=False,
         do_bench=None,
     ):
-        from triton.runtime.driver import driver
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
             'perf_model': performance model used to predicate running time with different configs, returns running time
@@ -38,7 +40,6 @@ class Autotuner(KernelInterface):
                 Config({}, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
                        reg_dec_producer=0, reg_inc_consumer=0)
             ]
-
         else:
             self.configs = configs
         self.keys = key
@@ -108,7 +109,7 @@ class Autotuner(KernelInterface):
                            "https://github.com/triton-lang/triton/pull/4496 for details."), DeprecationWarning,
                           stacklevel=1)
             if use_cuda_graph:
-                from triton.testing import do_bench_cudagraph
+                from ..testing import do_bench_cudagraph
                 self.do_bench = lambda kernel_call, quantiles: do_bench_cudagraph(
                     kernel_call,
                     rep=rep if rep is not None else 100,
@@ -131,9 +132,7 @@ class Autotuner(KernelInterface):
             self.do_bench = do_bench
 
     def _bench(self, *args, config, **meta):
-        from triton.runtime.errors import OutOfResources
-        from triton.compiler.errors import CompileTimeAssertionFailure
-        from ..compiler.errors import MLIRCompilationError
+        from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
 
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
