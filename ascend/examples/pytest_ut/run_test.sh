@@ -11,18 +11,17 @@ function build_and_test() {
   fi
 
   cd ${WORKSPACE}
+  while true; do
+    pip3 uninstall triton_ascend -y | grep "Found existing installation"
+    if [ $? -eq 1 ]; then
+        echo "All triton_ascend versions are uninstalled"
+        break
+    fi
+  done
   git submodule set-url third_party/triton https://gitee.com/shijingchang/triton.git
   git submodule sync && git submodule update --init --recursive
 
-  LLVM_SYSPATH=${LLVM_BUILD_DIR} \
-  TRITON_PLUGIN_DIRS=${WORKSPACE}/ascend \
-  TRITON_WHEEL_NAME="triton_ascend" \
-  TRITON_VERSION=3.2.0 \
-  TRITON_BUILD_WITH_CCACHE=true \
-  TRITON_BUILD_WITH_CLANG_LLD=true \
-  TRITON_BUILD_PROTON=OFF \
-  TRITON_APPEND_CMAKE_ARGS="-DTRITON_BUILD_UT=OFF" \
-  python3 setup.py install
+  bash scripts/build.sh ${WORKSPACE}/ascend ${LLVM_BUILD_DIR} 3.2.0 install 1
 
   cd ${WORKSPACE}/ascend/examples/pytest_ut
   pytest -n 16 --dist=load . || { exit 1 ; }
