@@ -406,11 +406,7 @@ class CompiledKernel:
             self.name, self.kernel, self.metadata.shared, device)
 
     # This mechanism introduces heavy runtime overhead.
-    # Commenting this func requires explicitly calling _init_handles()
-    # def __getattribute__(self, name):
-    #     if name == 'run':
-    #         self._init_handles()
-    #     return super().__getattribute__(name)
+    # Commenting __getattribute__ requires explicitly calling _init_handles()
 
     def launch_metadata(self, grid, stream, *args):
         if CompiledKernel.launch_enter_hook is None:

@@ -587,6 +587,12 @@ def get_package_dir(backends):
     package_dir["triton/runtime/jit.py"] = (
         f"{triton_patch_prefix_dir}/runtime/jit.py"
     )
+    package_dir["triton/runtime/libentry.py"] = (
+        f"{triton_patch_prefix_dir}/runtime/libentry.py"
+    )
+    package_dir["triton/runtime/code_cache.py"] = (
+        f"{triton_patch_prefix_dir}/runtime/code_cache.py"
+    )
     package_dir["triton/testing.py"] = f"{triton_patch_prefix_dir}/testing.py"
     return package_dir
 

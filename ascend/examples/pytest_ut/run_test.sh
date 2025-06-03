@@ -2,6 +2,18 @@
 
 set -ex
 
+function uninstall_triton_ascend() {
+  set +e
+  while true; do
+    pip3 uninstall triton_ascend -y | grep "Found existing installation"
+    if [ $? -eq 1 ]; then
+        echo "All triton_ascend versions are uninstalled"
+        break
+    fi
+  done
+  set -e
+}
+
 function build_and_test() {
   if [ -d ${HOME}/.triton/dump ];then
     rm -rf ${HOME}/.triton/dump
@@ -11,13 +23,10 @@ function build_and_test() {
   fi
 
   cd ${WORKSPACE}
-  while true; do
-    pip3 uninstall triton_ascend -y | grep "Found existing installation"
-    if [ $? -eq 1 ]; then
-        echo "All triton_ascend versions are uninstalled"
-        break
-    fi
-  done
+  # Run uninstall once because the while-loop does not stop. No idea why.
+  # uninstall_triton_ascend
+  pip3 uninstall triton_ascend -y
+
   git submodule set-url third_party/triton https://gitee.com/shijingchang/triton.git
   git submodule sync && git submodule update --init --recursive
 
@@ -35,10 +44,10 @@ export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 COMPILER_ROOT=/home/shared/bisheng_toolkit_20250519
 export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/ccec_compiler/bin:$PATH
 
-# build in torch 2.3.1
-source /opt/miniconda3/bin/activate torch_231
-build_and_test
-
 # build in torch 2.6.0
 source /opt/miniconda3/bin/activate torch_260
+build_and_test
+
+# build in torch 2.3.1
+source /opt/miniconda3/bin/activate torch_231
 build_and_test
