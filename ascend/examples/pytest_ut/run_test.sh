@@ -47,7 +47,3 @@ export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/ccec_compiler/bin:$PATH
 # build in torch 2.6.0
 source /opt/miniconda3/bin/activate torch_260
 build_and_test
-
-# build in torch 2.3.1
-source /opt/miniconda3/bin/activate torch_231
-build_and_test
