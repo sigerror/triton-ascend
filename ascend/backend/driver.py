@@ -9,7 +9,7 @@ import hashlib
 from triton.runtime.cache import get_cache_manager, get_dump_manager
 from triton.backends.driver import DriverBase
 from triton.backends.compiler import GPUTarget
-from triton.backends.huawei.utils import _build_npu_ext, _check_cxx11_abi, convert_sigtype_to_int
+from triton.backends.ascend.utils import _build_npu_ext, _check_cxx11_abi, convert_sigtype_to_int
 
 class NPUUtils(object):
     def __new__(cls):
@@ -83,7 +83,7 @@ class NPULauncher(object):
     def __call__(self, *args, **kwargs):
         profiler_registered = self.launch(*args, **kwargs)
         import triton
-        triton.backends.huawei.utils.TRITON_PROFILER_REGISTERED = True if profiler_registered == 1 else False
+        triton.backends.ascend.utils.TRITON_PROFILER_REGISTERED = True if profiler_registered == 1 else False
 
 class NPUDriver(DriverBase):
     def __init__(self):
@@ -94,7 +94,7 @@ class NPUDriver(DriverBase):
     @classmethod
     def is_active(cls):
         def test_npucompiler():
-            from triton.backends.huawei.utils import _get_bisheng_path
+            from triton.backends.ascend.utils import _get_bisheng_path
             npucompiler = _get_bisheng_path()
             targets = subprocess.check_output([npucompiler, "-print-targets"]).decode().strip().split()
             return "hiipu64" in targets

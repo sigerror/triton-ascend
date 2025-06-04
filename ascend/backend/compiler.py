@@ -14,7 +14,7 @@ import hashlib
 import ctypes
 from typing import Optional
 
-from triton.backends.huawei.utils import downgrade_llir, _get_llvm_path, _get_mlir_path, _get_triton_adapter_opt_path, \
+from triton.backends.ascend.utils import downgrade_llir, _get_llvm_path, _get_mlir_path, _get_triton_adapter_opt_path, \
     _get_kernel_target, _get_npucompiler_path, _is_ascend_sanitizer_enabled
 
 # TODO: materialize the concrete min shape
@@ -261,7 +261,7 @@ class CPUOptions:
         return hashlib.md5(key.encode("utf-8")).hexdigest()
 
 @register_descriptor
-class HuaweiAttrsDescriptor(AttrsDescriptor):
+class AscendAttrsDescriptor(AttrsDescriptor):
 
     def _add_backend_properties(self, params=None, values=None):
         if params is None or values is None:
@@ -287,7 +287,8 @@ class HuaweiAttrsDescriptor(AttrsDescriptor):
                 shapes[idx] = val
         return shapes
 
-class HuaweiBackend(BaseBackend):
+
+class AscendBackend(BaseBackend):
 
     @staticmethod
     def supports_target(target: GPUTarget):
@@ -311,11 +312,11 @@ class HuaweiBackend(BaseBackend):
         return options
 
     def pack_metadata(self, metadata):
-        from triton.backends.huawei.utils import TRITON_PROFILER_REGISTERED
+        from triton.backends.ascend.utils import TRITON_PROFILER_REGISTERED
         # collect necessary metadata to launch kernels
         # TORCHINDUCTOR_UNIQUE_KERNEL_NAMES=1 could set unique name.
         # Get this name as the kernel_name to CANN runtime.
-        # kernel_name is unique to Huawei backend and should not be public.
+        # kernel_name is unique to Ascend backend and should not be public.
         # CANN runtime limits the length of kernel name <= 50.
         # Considering '\n' is appended, thus the real kernel name <= 49.
         KERNEL_NAME_MAX_LEN = 49
@@ -348,7 +349,7 @@ class HuaweiBackend(BaseBackend):
         pass
 
     def get_attrs_descriptor(self, params, args):
-        return HuaweiAttrsDescriptor(params, args)
+        return AscendAttrsDescriptor(params, args)
 
     def add_stages(self, stages, options):
         if self.target.backend == 'npu':

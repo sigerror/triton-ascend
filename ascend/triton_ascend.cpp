@@ -5,7 +5,7 @@
 #include <pybind11/pybind11.h>
 namespace py = pybind11;
 
-// register huawei passes to triton
-void init_triton_huawei(py::module &&m) {
+// register ascend passes to triton
+void init_triton_ascend(py::module &&m) {
   // currently no extra modules needed to plug-in libtriton.so
 }

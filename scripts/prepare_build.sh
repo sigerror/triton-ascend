@@ -21,7 +21,6 @@ for env_name in "${!py_map[@]}"; do
 done
 
 # LLVM
-# TODO: upload to gitee or huawei-yellow intranet. Then we only need to download it.
 cd $SHARED_DIR
 if [ ! -d llvm-project ]; then
   git clone --depth 1 https://gitclone.com/github.com/llvm/llvm-project.git

@@ -7,7 +7,7 @@ namespace mlir {
 namespace triton {
 
 #define GEN_PASS_REGISTRATION
-#include "huawei/triton-adapter/include/TritonToLinalg/Passes.h.inc"
+#include "ascend/triton-adapter/include/TritonToLinalg/Passes.h.inc"
 
 } // namespace triton
 } // namespace mlir

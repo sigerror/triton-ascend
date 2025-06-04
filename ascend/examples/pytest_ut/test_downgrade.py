@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 import pytest
-from triton.backends.huawei.utils import downgrade_llir, _downgrade_mem_attrs, _downgrade_stacksaverestore_intrinsics
+from triton.backends.ascend.utils import downgrade_llir, _downgrade_mem_attrs, _downgrade_stacksaverestore_intrinsics
 
 @pytest.mark.parametrize("new_attr,legacy_attrs", [
     ("memory(none)" , ["readnone"]),

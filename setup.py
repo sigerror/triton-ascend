@@ -330,7 +330,7 @@ class CMakeExtension(Extension):
 class BuildExt(build_ext):
     library_path = [
         "triton/_C/libtriton.so",
-        "triton/backends/huawei/triton-adapter-opt",
+        "triton/backends/ascend/triton-adapter-opt",
     ]
 
     def finalize_options(self):
@@ -696,7 +696,7 @@ create_symlink_for_triton(get_package_dir(_backends))
 setup(
     name=get_package_name(),
     version=get_version(),
-    description="A language and compiler for custom Deep Learning operations on Huawei hardwares",
+    description="A language and compiler for custom Deep Learning operations on Ascend hardwares",
     long_description=long_description,
     long_description_content_type="text/markdown",
     packages=get_packages(_backends),
