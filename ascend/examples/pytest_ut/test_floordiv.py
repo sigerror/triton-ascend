@@ -50,15 +50,11 @@ def test_floordiv(sigtype, N):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 invalid_types = [
-    # 'float32',
-    # 'float16',
-    # 'bfloat16',
     'bool',
 ]
 
 @pytest.mark.parametrize("sigtype", invalid_types)
-@test_common.raises_with_match(triton.compiler.errors.CompilationError, "unexpected type")
-def test_floordiv_invalid_dtype(sigtype):
+def test_floordiv_bool(sigtype):
     N = 32
     x0 = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
     x1 = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()

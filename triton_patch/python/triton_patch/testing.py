@@ -603,6 +603,7 @@ from .triton_patch.language.semantic import (
     atom_red_typechecking_impl,
     atomic_max,
     atomic_min,
+    _load_legacy,
     maximum,
     minimum,
 )
@@ -626,6 +627,7 @@ language.semantic.floordiv = floordiv
 language.semantic.atom_red_typechecking_impl = atom_red_typechecking_impl
 language.semantic.atomic_max = atomic_max
 language.semantic.atomic_min = atomic_min
+language.semantic._load_legacy = _load_legacy
 language.semantic.maximum = maximum
 language.semantic.minimum = minimum
 

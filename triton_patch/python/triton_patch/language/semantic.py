@@ -250,6 +250,66 @@ def insert(ful: tl.tensor, sub: tl.tensor, offsets: List[tl.tensor], sizes: List
     out = builder.create_insert(ful.handle, sub.handle, new_offsets, sizes, strides)
     return tl.tensor(out, ret_type)
 
+def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder):
+    # Load by a tensor of pointers or a pointer of scalar: `block_type<pointer_type<>>` or `pointer_type<>`
+    if not ptr.type.scalar.is_ptr():
+        raise ValueError(f"Unsupported ptr type {ptr.type.__repr__()} in `tl.load`")
+
+    # Check `mask`, `other`, `boundary_check`, and `padding` arguments
+    if mask is None and other is not None:
+        raise ValueError("`other` cannot be provided without `mask`")
+    if padding or boundary_check:
+        raise ValueError("`padding_option` or `boundary_check` argument is not supported for loading a tensor of"
+                         "pointers or loading a scalar. Because the compiler does not know the boundary; please "
+                         "use block pointers (defined by `make_block_ptr`) instead")
+
+    # For a pointer of scalar, check the type of `mask` and `other`
+    if not ptr.type.is_block():
+        if mask and mask.type.is_block():
+            raise ValueError("Mask argument cannot be block type if pointer argument is not a block")
+        if other and other.type.is_block():
+            raise ValueError("Other argument cannot be block type if pointer argument is not a block")
+
+    # Make `mask` and `other` into the same shape as `ptr`
+    if ptr.type.is_block():
+        if mask is not None:
+            mask = broadcast_impl_shape(mask, ptr.type.get_block_shapes(), builder)
+        if other is not None:
+            other = broadcast_impl_shape(other, ptr.type.get_block_shapes(), builder)
+
+    # Get `pointer_type<elt_ty>` and `elt_ty`
+    ptr_ty = ptr.type.scalar
+    elt_ty = ptr_ty.element_ty
+
+    # Treat `pointer_type<tl.int1>` as `pointer_type<tl.int8>`
+    is_bool = elt_ty == tl.int1
+    if is_bool:
+        elt_ty = tl.int8
+        ptr_ty = tl.pointer_type(elt_ty, ptr_ty.address_space)
+        ptr = cast(ptr, ptr_ty, builder)
+
+    # Cast `other` into `elt_ty` type
+    if other is not None:
+        other = cast(other, elt_ty, builder)
+
+    # Create loaded result type `dst_ty`
+    if ptr.type.is_block():
+        shape = ptr.type.get_block_shapes()
+        dst_ty = tl.block_type(elt_ty, shape)
+    else:
+        # Load by de-referencing the pointer of scalar
+        dst_ty = elt_ty
+
+    # Build IR
+    if mask is None:
+        ret = tl.tensor(builder.create_load(ptr.handle, cache, eviction, is_volatile), dst_ty)
+    else:
+        ret = tl.tensor(
+            builder.create_masked_load(ptr.handle, mask.handle, other.handle if other else None, cache, eviction,
+                                       is_volatile), dst_ty)
+    # Do not cast back to int1 when is_bool=true. We directly use the int8 tensor given by tl.load
+    return ret
+
 def minimum(x: tl.tensor, y: tl.tensor, propagate_nan: tl.PropagateNan, builder: ir.builder):
     x, y = binary_op_type_checking_impl(x, y, builder)
     dtype = x.dtype
