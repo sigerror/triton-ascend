@@ -76,9 +76,14 @@ def test_case2(dtype, shape):
         znumel = shape[2]
 
     grid = (1, 1, 1)
-    if x.numel() * x.element_size() >= 8192:
-        grid = (1, 1, ZB)
-        ZB = 1
+    if dtype == 'int8':
+        if x.numel() * x.element_size() >= 512:
+            grid = (1, 1, ZB)
+            ZB = 1
+    else:
+        if x.numel() * x.element_size() >= 8192:
+            grid = (1, 1, ZB)
+            ZB = 1
 
     fn_npu_[grid](output, x, y, z, XB, YB, ZB, xnumel, ynumel, znumel)
 
