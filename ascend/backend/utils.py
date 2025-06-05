@@ -1,37 +1,41 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
-import re
-import os
-from pathlib import Path
 import functools
-import sysconfig
+import os
+import re
 import shutil
 import subprocess
+import sysconfig
+from pathlib import Path
+
 import pybind11
 
 TRITON_PROFILER_REGISTERED = False
+
 
 def downgrade_llir(llir):
     llir = _downgrade_mem_attrs(llir)
     llir = _downgrade_stacksaverestore_intrinsics(llir)
     return llir
 
+
 def _downgrade_mem_attrs(llir: str):
     memory_pattern = r"memory\([^()]*\)"
+
     def replace_mem_attr(m):
         attrs = m[0][7:-1].split(",")
         if len(attrs) == 0:
             return "readnone"
-        loc_map = {"argmem":1, "inaccessiblemem":2, "other":4}
+        loc_map = {"argmem": 1, "inaccessiblemem": 2, "other": 4}
         loc_attr = 0
-        rw_map = {"readwrite":3, "write":2, "read":1, "none":0}
+        rw_map = {"readwrite": 3, "write": 2, "read": 1, "none": 0}
         rw_attr = 0
         for attr_pair in attrs:
             pair = attr_pair.split(":")
             assert len(pair) <= 2
             if len(pair) == 1:
                 rw = rw_map[pair[0].strip()]
-                loc = loc_map["other"] # all location
+                loc = loc_map["other"]  # all location
             else:
                 rw = rw_map[pair[1].strip()]
                 loc_str = pair[0].strip()
@@ -47,23 +51,31 @@ def _downgrade_mem_attrs(llir: str):
             rw_attr_str = rev_rw_map[rw_attr]
         else:
             rw_attr_str = ""
-        rev_loc_map = {1: "argmemonly", 2: "inaccessiblememonly", 3: "inaccessiblemem_or_argmemonly"}
+        rev_loc_map = {
+            1: "argmemonly",
+            2: "inaccessiblememonly",
+            3: "inaccessiblemem_or_argmemonly",
+        }
         if loc_attr in rev_loc_map:
             loc_attr_str = rev_loc_map[loc_attr]
         else:
             loc_attr_str = ""
         return rw_attr_str + " " + loc_attr_str
+
     return re.sub(memory_pattern, replace_mem_attr, llir)
+
 
 def _downgrade_stacksaverestore_intrinsics(llir: str):
     llir = re.sub(r"llvm\.stacksave\.\w+", "llvm.stacksave", llir)
     llir = re.sub(r"llvm\.stackrestore\.\w+", "llvm.stackrestore", llir)
     return llir
 
+
 def _get_triton_adapter_opt_path() -> str:
     path = os.path.dirname(__file__)
     path = os.path.join(path, "triton-adapter-opt")
     return path
+
 
 def _get_mlir_path(path: str, *paths) -> str:
     root_path = os.getenv("MLIR_ROOT", "")
@@ -71,29 +83,37 @@ def _get_mlir_path(path: str, *paths) -> str:
         raise EnvironmentError("MLIR_ROOT is not set.")
     return os.path.join(root_path, path, *paths)
 
+
 def _get_llvm_path(path: str, *paths) -> str:
     root_path = os.getenv("LLVM_ROOT", "")
     if root_path == "":
         raise EnvironmentError("LLVM_ROOT is not set.")
     return os.path.join(root_path, path, *paths)
 
+
 def _get_npucompiler_path() -> str:
     npu_compiler_path = shutil.which("bishengir-compile")
     if npu_compiler_path is None:
         npu_compiler_root = os.getenv("TRITON_NPU_COMPILER_PATH", "")
         if npu_compiler_root is None:
-            raise EnvironmentError("Couldn't find executable bishengir-compile or TRITON_NPU_COMPILER_PATH.")
+            raise EnvironmentError(
+                "Couldn't find executable bishengir-compile or TRITON_NPU_COMPILER_PATH."
+            )
         npu_compiler_path = os.path.join(npu_compiler_root, "npuc")
     return npu_compiler_path
+
 
 def _get_bisheng_path() -> str:
     bisheng_path = shutil.which("bisheng")
     if bisheng_path is None:
         npu_compiler_root = os.getenv("TRITON_NPU_COMPILER_PATH", "")
         if npu_compiler_root is None:
-            raise EnvironmentError("Couldn't find executable bisheng or TRITON_NPU_COMPILER_PATH")
+            raise EnvironmentError(
+                "Couldn't find executable bisheng or TRITON_NPU_COMPILER_PATH"
+            )
         bisheng_path = os.path.join(npu_compiler_root, "ccec")
     return bisheng_path
+
 
 # grep bishengir-compile's option limit-auto-multi-buffer-buffer to check
 # if bishengir-compile is a newer version which does not generate kernel_reloc.o
@@ -116,19 +136,25 @@ def _check_bishengir_api_change() -> bool:
             return False
     except Exception as e:
         print(f"ERROR: {e}")
+        return False
+
 
 @functools.lru_cache(None)
 def _get_ascend_path() -> str:
     path = os.getenv("ASCEND_HOME_PATH", "")
     if path == "":
-        raise EnvironmentError("ASCEND_HOME_PATH is not set, source <ascend-toolkit>/set_env.sh first")
+        raise EnvironmentError(
+            "ASCEND_HOME_PATH is not set, source <ascend-toolkit>/set_env.sh first"
+        )
     return Path(path)
 
+
 def _is_ascend_sanitizer_enabled() -> bool:
-    return os.getenv("TRITON_ENABLE_SANITIZER", 'false').lower() in ('true', '1')
+    return os.getenv("TRITON_ENABLE_SANITIZER", "false").lower() in ("true", "1")
+
 
 def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) -> str:
-    suffix = sysconfig.get_config_var('EXT_SUFFIX')
+    suffix = sysconfig.get_config_var("EXT_SUFFIX")
     so_path = os.path.join(src_dir, f"{obj_name}{suffix}")
 
     cxx = os.environ.get("CC")
@@ -142,14 +168,14 @@ def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) ->
     # disable all warnings
     cc_cmd += [f"-w"]
     # find the python library
-    if hasattr(sysconfig, 'get_default_scheme'):
+    if hasattr(sysconfig, "get_default_scheme"):
         scheme = sysconfig.get_default_scheme()
     else:
         scheme = sysconfig._get_default_scheme()
     # 'posix_local' is a custom scheme on Debian. However, starting Python 3.10, the default install
     # path changes to include 'local'. This change is required to use triton with system-wide python.
-    if scheme == 'posix_local':
-        scheme = 'posix_prefix'
+    if scheme == "posix_local":
+        scheme = "posix_prefix"
     py_include_dir = sysconfig.get_paths(scheme=scheme)["include"]
     cc_cmd += [f"-I{py_include_dir}"]
     # device_print.h
@@ -162,12 +188,14 @@ def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) ->
         f"-I{os.path.join(asc_path, 'include/experiment/msprof')}",
         f"-I{pybind11.get_include()}",
         f"-L{os.path.join(asc_path, 'lib64')}",
-        "-lruntime", "-lascendcl",
-        ]
+        "-lruntime",
+        "-lascendcl",
+    ]
 
     if kernel_launcher == "torch":
         import torch
         import torch_npu
+
         torch_path = os.path.dirname(os.path.realpath(torch.__file__))
         torch_npu_path = os.path.dirname(os.path.realpath(torch_npu.__file__))
         use_cxx11_abi = _check_cxx11_abi()
@@ -188,12 +216,13 @@ def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) ->
     else:
         raise RuntimeError("Failed to compile " + src_path)
 
+
 def _get_kernel_target(metadata: dict):
     if "target" not in metadata:
         raise Exception("No target provided!")
     sub_target = metadata["target"].arch
     assert isinstance(sub_target, str)
-    if sub_target.startswith('Ascend910B'):
+    if sub_target.startswith("Ascend910B"):
         mix_mode = metadata["mix_mode"]
         if mix_mode.lower().strip("_").startswith("aiv"):
             return "ascend_910b_vec", "c220-vec", "aiv"
@@ -201,30 +230,30 @@ def _get_kernel_target(metadata: dict):
             return "ascend_910b_cube", "c220-cube", "aic"
         else:
             return "ascend_910b", "c220", "mix"
-    elif sub_target.startswith('Ascend910'):
+    elif sub_target.startswith("Ascend910"):
         return "ascend_910", "c100", "mix"
     else:
         raise NotImplementedError(f"NPU subtarget {sub_target} not supported yet")
 
+
 def _check_cxx11_abi():
     import torch
+
     return 1 if torch._C._GLIBCXX_USE_CXX11_ABI else 0
+
 
 def convert_sigtype_to_int(sigty: str):
     MAP_SIGTYPE_TO_INT = {
         # Boolean
         "i1": 12,  # BOOL
-
         # Integer types
         "i8": 2,  # INT8
         "i16": 6,  # INT16
         "i32": 3,  # INT32
         "i64": 9,  # INT64
-
         # Unsigned integer types
         "u32": 8,  # UINT32
         "u64": 10,  # UINT64
-
         # Floating point types
         "fp16": 1,  # FLOAT16
         "bf16": 27,  # DT_BF16
