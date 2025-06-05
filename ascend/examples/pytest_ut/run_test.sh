@@ -36,6 +36,53 @@ function build_and_test() {
   pytest -n 16 --dist=load . || { exit 1 ; }
 }
 
+function validate_git_commit_title() {
+  if [ $# -lt 1 ]; then
+    echo "Usage: $0 <commit_title>"
+    exit 1
+  fi
+  commit_title=$1
+  if ! echo "${commit_title}" | grep -qE "^(feat|fix|docs|style|refactor|test|chore|revert)(\(.*\))?: .+"; then
+    echo "❌ The git commit title does not comply with the specifications!"
+    echo "Format Requirements: <type>(<scope>): <subject>"
+    echo "e.g.: feat(user): The login function is added."
+    echo "Allowed Types: feat | fix | docs | style | refactor | test | chore | revert"
+    exit 1
+  fi
+  echo "✅ The submitted information complies with the specifications."
+  exit 0
+}
+
+function validate_pr_all_commits_title() {
+  commit_titles=$(git log master..HEAD --oneline | sed 's/^[^ ]* //')
+  if [ -z "$commit_titles" ]; then
+    echo "No commits found between HEAD and master."
+    exit 0
+  fi
+  echo "Validating commit titles..."
+  echo "----------------------------"
+  while IFS= read -r title; do
+    echo "Checking: $title"
+    if ! validate_git_commit_title "$title" 2>/dev/null; then
+      echo "Error in commit: $title" >&2
+      HAS_ERROR=true
+    fi
+  done <<< "$commit_titles"
+  if [ "$HAS_ERROR" = true ]; then
+    echo "----------------------------"
+    echo "❌ Some commit titles do not meet the specifications." >&2
+    exit 1
+  else
+    echo "----------------------------"
+    echo "✅ All commit titles meet the specifications."
+    exit 0
+  fi
+}
+
+if ! validate_pr_all_commits_title 2>/dev/null; then
+  exit 1
+fi
+
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
