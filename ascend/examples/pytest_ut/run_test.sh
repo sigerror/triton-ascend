@@ -88,7 +88,7 @@ export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
 # FIXME: 20250508 the bishengir-compile in the CANN 8.0.T115 fails lots of cases
 #        So we need to use another version of compiler.
-COMPILER_ROOT=/home/shared/bisheng_toolkit_20250519
+COMPILER_ROOT=/home/shared/bisheng_toolkit_20250605
 export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/ccec_compiler/bin:$PATH
 
 # build in torch 2.6.0

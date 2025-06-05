@@ -15,7 +15,7 @@ import ctypes
 from typing import Optional
 
 from triton.backends.ascend.utils import downgrade_llir, _get_llvm_path, _get_mlir_path, _get_triton_adapter_opt_path, \
-    _get_kernel_target, _get_npucompiler_path, _is_ascend_sanitizer_enabled
+    _get_kernel_target, _get_npucompiler_path, _is_ascend_sanitizer_enabled, _check_bishengir_api_change
 
 # TODO: materialize the concrete min shape
 def min_dot_size(target: GPUTarget):
@@ -174,7 +174,11 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         ttadapter_path = os.path.join(tmpdir, "kernel.ttadapter.mlir")
         Path(ttadapter_path).write_text(linalg)
         bin_file = os.path.join(tmpdir, "kernel")
-        bin_path = os.path.join(tmpdir, "kernel_reloc.o")
+        if _check_bishengir_api_change():
+            bin_file_with_ext = "kernel.o"
+        else:
+            bin_file_with_ext = "kernel_reloc.o"
+        bin_path = os.path.join(tmpdir, bin_file_with_ext)
         callback_path = os.path.join(tmpdir, "libkernel.so")
         multibuffer = metadata['multibuffer']
         _compile_option_list = [
