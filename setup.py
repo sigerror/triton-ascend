@@ -324,6 +324,7 @@ def get_cmake_dir():
     cmake_dir.mkdir(parents=True, exist_ok=True)
     return cmake_dir
 
+
 class CMakeExtension(Extension):
     def __init__(self, name, path, sourcedir=""):
         Extension.__init__(self, name, sources=[])
@@ -587,9 +588,7 @@ def get_package_dir(backends):
     package_dir["triton/runtime/autotuner.py"] = (
         f"{triton_patch_prefix_dir}/runtime/autotuner.py"
     )
-    package_dir["triton/runtime/jit.py"] = (
-        f"{triton_patch_prefix_dir}/runtime/jit.py"
-    )
+    package_dir["triton/runtime/jit.py"] = f"{triton_patch_prefix_dir}/runtime/jit.py"
     package_dir["triton/runtime/libentry.py"] = (
         f"{triton_patch_prefix_dir}/runtime/libentry.py"
     )
@@ -661,7 +660,7 @@ def create_symlink_for_backend(backends):
 
 
 def create_symlink_for_triton(link_map):
-    remove_directory(root_dir + "/triton")
+    remove_directory(os.path.join(root_dir, "triton"))
 
     for target, source in link_map.items():
         target_path = Path(os.path.join(root_dir, target))
@@ -681,7 +680,7 @@ def create_symlink_for_triton(link_map):
             print("[ERROR]: wrong file mapping")
 
 
-is_manylinux = os.environ.get("IS_MANYLINUX", None)
+is_manylinux = check_env_flag("IS_MANYLINUX", "FALSE")
 readme = os.path.join(root_dir, "README.md")
 if not os.path.exists(readme):
     raise FileNotFoundError("Unable to find 'README.md'")
@@ -712,10 +711,4 @@ setup(
     # for PyPI
     keywords=["Compiler", "Deep Learning"],
     url="https://gitee.com/ascend/triton-ascend/",
-    extras_require={
-        "build": [
-            "cmake>=3.20",
-            "lit",
-        ]
-    },
 )

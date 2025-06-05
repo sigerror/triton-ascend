@@ -13,6 +13,30 @@ TRITON_ASCEND_VERSION=$3
 BUILD_MODE=$4
 IS_MANYLINUX_VAL=$5
 
+case "$BUILD_MODE" in
+  "develop")
+    echo "Building in editable/development mode..."
+    cmd="pip install --no-build-isolation --editable ."
+    ;;
+  "install")
+    echo "Building in normal install mode..."
+    cmd="pip install --no-build-isolation ."
+    ;;
+  "bdist_wheel")
+    echo "Building wheel package..."
+    cmd="python -m build --wheel"
+    ;;
+  "clean")
+    echo "Cleaning build artifacts..."
+    python3 setup.py clean
+    ;;
+  *)
+    echo "Error: Unknown BUILD_MODE: ${BUILD_MODE}"
+    echo "Valid options: develop, install, bdist_wheel"
+    exit 1
+    ;;
+esac
+
 TRITON_ASCEND_PROJECT_ROOT=$(readlink -f "${TRITON_ASCEND_ROOT}/..")
 
 cd $TRITON_ASCEND_PROJECT_ROOT
@@ -24,4 +48,4 @@ TRITON_BUILD_WITH_CLANG_LLD=true \
 TRITON_WHEEL_NAME="triton_ascend" \
 TRITON_VERSION=${TRITON_ASCEND_VERSION} \
 IS_MANYLINUX=${IS_MANYLINUX_VAL} \
-python3 setup.py ${BUILD_MODE}
+${cmd}

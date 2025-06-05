@@ -30,7 +30,7 @@ function build_and_test() {
   git submodule set-url third_party/triton https://gitee.com/shijingchang/triton.git
   git submodule sync && git submodule update --init --recursive
 
-  bash scripts/build.sh ${WORKSPACE}/ascend ${LLVM_BUILD_DIR} 3.2.0 install 1
+  bash scripts/build.sh ${WORKSPACE}/ascend ${LLVM_BUILD_DIR} 3.2.0 install 0
 
   cd ${WORKSPACE}/ascend/examples/pytest_ut
   pytest -n 16 --dist=load . || { exit 1 ; }
