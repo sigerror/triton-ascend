@@ -4,6 +4,7 @@ import json
 from .._C.libtriton import get_cache_invalidating_env_vars, ir
 from ..backends import backends
 from ..backends.compiler import GPUTarget, AttrsDescriptor
+from ..backends.ascend.compiler import AscendAttrsDescriptor
 from .. import __version__
 from ..runtime.autotuner import OutOfResources
 from ..runtime.cache import get_cache_manager, get_dump_manager, get_override_manager
@@ -87,7 +88,7 @@ class ASTSource:
                 if not isinstance(k, str):
                     raise TypeError("Constants keys must be string")
         if self.attrs is None:
-            self.attrs = AttrsDescriptor()
+            self.attrs = AscendAttrsDescriptor()
 
     def hash(self):
         sorted_sig = [v for k, v in sorted(self.signature.items())]

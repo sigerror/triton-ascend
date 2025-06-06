@@ -38,6 +38,8 @@ LOG_FILE="${WORKSPACE}/test_results_$(date +%Y%m%d).log"
 # 定义要运行的测试目录
 TEST_generalization="${WORKSPACE}/ascend/examples/generalization_cases"
 TEST_prof="${WORKSPACE}/ascend/examples/prof_cases"
+#in future, need clone all testcase from pytorch.test_inductor
+TEST_inductor="${WORKSPACE}/ascend/examples/inductor_cases"
 pwd
 ls -al
 # 记录测试开始时间
@@ -66,8 +68,15 @@ cd ${WORKSPACE}
 ls -al
 run_tests "${TEST_prof}"
 r2=$?
+cd ${WORKSPACE}
+
+EXPORT PYTHONPATH=${PYTHONPATH}:TEST_inductor
+ls -al
+run_tests "${TEST_inductor}"
+r3=$?
+
 echo -e "\n===== 测试结束时间: $(date +"%Y-%m-%d %H:%M:%S") =====" >> "$LOG_FILE"
-if [ $r1 -ne 0 ] || [ $r2 -ne 0 ]; then
+if [ $r1 -ne 0 ] || [ $r2 -ne 0 ] || [ $r3 -ne 0 ]; then
   echo "some tests failed. Check log for details."
   cp "$LOG_FILE" "/triton_depends/daily_log"
   exit 1

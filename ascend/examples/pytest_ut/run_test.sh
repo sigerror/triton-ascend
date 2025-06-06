@@ -32,7 +32,12 @@ function build_and_test() {
 
   bash scripts/build.sh ${WORKSPACE}/ascend ${LLVM_BUILD_DIR} 3.2.0 install 0
 
-  cd ${WORKSPACE}/ascend/examples/pytest_ut
+  TEST_triton="${WORKSPACE}/ascend/examples/pytest_ut"
+  cd ${TEST_triton}
+  pytest -n 16 --dist=load . || { exit 1 ; }
+
+  TEST_inductor="${WORKSPACE}/ascend/examples/inductor_cases"
+  cd ${TEST_inductor}
   pytest -n 16 --dist=load . || { exit 1 ; }
 }
 
