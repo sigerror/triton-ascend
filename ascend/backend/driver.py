@@ -70,8 +70,9 @@ class NPULauncher(object):
         constants = {cst_key(key): value for key, value in constants.items()}
         signature = {cst_key(key): value for key, value in src.signature.items()}
         shapes = src.attrs.get_shapes()
+        mix_mode = metadata.mix_mode
         wrapper_src = generate_npu_wrapper_src(constants, signature, shapes, \
-                                               workspace_size)
+                                               workspace_size, mix_mode)
         so_launcher_path = make_npu_launcher_stub(wrapper_src, debug_mode)
         # initialize launcher
         import importlib.util
@@ -197,7 +198,7 @@ def make_npu_launcher_stub(src, debug=False):
 
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
-def generate_npu_wrapper_src(constants, signature, shapes, workspace_size):
+def generate_npu_wrapper_src(constants, signature, shapes, workspace_size, mix_mode):
     import os
     def _ty_to_cpp(ty):
         if ty[0] == '*':
@@ -261,7 +262,7 @@ def generate_npu_wrapper_src(constants, signature, shapes, workspace_size):
 
     enable_device_print = os.getenv("TRITON_DEVICE_PRINT", 'false').lower() in ('true', '1')
     enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
-
+    task_type = "MSPROF_GE_TASK_TYPE_AIV" if mix_mode == "aiv" else "MSPROF_GE_TASK_TYPE_AI_CORE"
     LINE_CHANGE_CHAR = chr(10) # it is \n
     # tensorData <=5, cause MSPROF_GE_TENSOR_DATA_LEN = 5
     max_tensors_num = min(len(shapes), 5)
@@ -389,7 +390,7 @@ extern "C" {
       nodeBasicInfo.timeStamp = endTime;
       nodeBasicInfo.data.nodeBasicInfo.opName = opNameHashID;
       nodeBasicInfo.data.nodeBasicInfo.opType = opNameHashID;
-      nodeBasicInfo.data.nodeBasicInfo.taskType = MSPROF_GE_TASK_TYPE_AI_CORE;
+      nodeBasicInfo.data.nodeBasicInfo.taskType = {task_type};
       nodeBasicInfo.data.nodeBasicInfo.blockDim = blockNum;
       MsprofReportCompactInfo(0, static_cast<void *>(&nodeBasicInfo), sizeof(MsprofCompactInfo));
     }}
