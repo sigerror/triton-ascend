@@ -73,7 +73,6 @@ def test_permute_3d(shape, dtype):
     fn_npu_210[1, 1, 1](triton_res, x, shape[0], shape[1], shape[2])
     test_common.validate_cmp(dtype, triton_res, torch_res)
 
-    # not support yet
     triton_res = torch.empty((shape[0], shape[2], shape[1]), dtype=data_type).npu()
     torch_res = torch.permute(x, (0, 2, 1))
     fn_npu_021[1, 1, 1](triton_res, x, shape[0], shape[1], shape[2])

@@ -23,7 +23,14 @@ triton-ascend 版本。
 
 您可以访问昇腾社区官网，根据其提供的软件安装指引完成 CANN 的安装配置。
 
-在安装过程中，请选择 CANN 版本 **8.2.RC1.alpha002**，并根据实际环境指定CPU架构(AArch64/X86_64)，NPU硬件型号(910b)。
+在安装过程中，请选择 CANN 版本 **8.2.RC1.alpha002**，并根据实际环境指定CPU架构(AArch64/X86_64)，NPU硬件型号对应的软件包。
+
+建议下载安装:
+
+| 软件类型 | 软件包说明       | 软件包名称                       |
+|----------|------------------|----------------------------------|
+| Toolkit  | CANN开发套件包   | Ascend-cann-toolkit_version_linux-arch.run  |
+| Kernels  | CANN二进制算子包 | Ascend-cann-kernels-chip_type_version_linux-arch.run |
 
 社区下载链接：
 ```
@@ -34,6 +41,13 @@ https://www.hiascend.com/developer/download/community/result?module=cann
 https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha002/softwareinst/instg/instg_0001.html?Mode=PmIns&OS=Ubuntu&Software=cannToolKit
 ```
 该文档提供了完整的安装流程说明与依赖项配置建议，适用于需要全面部署 CANN 环境的用户。
+
+CANN安装完成后，需要配置环境变量才能生效。请用户根据set_env.sh的实际路径执行如下命令。
+```
+source ${HOME}/Ascend/ascend-toolkit/set_env.sh
+```
+- 注：如果用户未指定安装路径，则软件会安装到默认路径下，默认安装路径如下。root用户：“/usr/local/Ascend”，非root用户：“${HOME}/Ascend”，${HOME}为当前用户目录。
+上述环境变量配置只在当前窗口生效，用户可以按需将以上命令写入环境变量配置文件（如.bashrc文件）。
 
 ### 安装python依赖
 ```
@@ -182,15 +196,15 @@ git clone https://gitee.com/ascend/triton-ascend.git --recurse-submodules --shal
    TRITON_APPEND_CMAKE_ARGS="-DTRITON_BUILD_UT=OFF" \
    python3 setup.py install
    ```
-- 注3：如果遇到报错信息 ld.lld: error: unable to find library -lstdc++fs，说明链接器无法找到 stdc++fs 库。该库用于支持 GCC 9 之前版本的文件系统特性。此时需要手动删除以下两个 CMake 文件中相关的代码片段：
+- 注3：推荐GCC >= 9.4.0，如果GCC < 9.4，可能报错 “ld.lld: error: unable to find library -lstdc++fs”，说明链接器无法找到 stdc++fs 库。
+该库用于支持 GCC 9 之前版本的文件系统特性。此时需要手动把 CMake 文件中相关代码片段的注释打开：
 - triton-ascend/CMakeLists.txt
-- triton-ascend/triton/CMakeLists.txt
    ```
    if (NOT WIN32 AND NOT APPLE)
    link_libraries(stdc++fs)
    endif()
    ```
-  删除后重新构建项目即可解决该问题。
+  打开注释后重新构建项目即可解决该问题。
 
 2. 运行Triton示例
    ```
