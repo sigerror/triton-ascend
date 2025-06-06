@@ -56,13 +56,8 @@ fi
 # triton-ascend
 cd $WORKSPACE
 
-triton_commit=$(git submodule status | awk '{print $1}' | cut -c 2-)
-triton_url=$(git config --file=.gitmodules submodule.triton.url)
-mirror_triton_url=$(echo "$triton_url" | sed 's|https://github.com|https://gitclone.com/github.com|')
-git clone --depth 1 ${mirror_triton_url}
-cd triton
-git fetch --depth 1 origin ${triton_commit}
-git checkout ${triton_commit}
+git submodule set-url third_party/triton https://gitee.com/shijingchang/triton.git
+git submodule sync && git submodule update --init --recursive
 # In the future, we will propose a PR to apply the following change.
 
 cd $WORKSPACE
@@ -73,6 +68,6 @@ for env in "${environments[@]}"; do
     (
         conda activate "$env" && \
         echo "在 $env 中执行命令" && \
-        bash scripts/build.sh $(pwd)/ascend /opt/llvm-b5cc222 ${TRITON_VERSION} bdist_wheel
+        bash scripts/build.sh $(pwd)/ascend /opt/llvm-b5cc222 ${TRITON_VERSION} bdist_wheel 1
     ) || echo "$env 执行失败"
 done

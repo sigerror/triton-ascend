@@ -16,13 +16,10 @@ if [ -d ~/.triton/cache ];then
 fi
 
 cd ${WORKSPACE}
-git clone --depth 1 https://gitee.com/shijingchang/triton.git
-cd triton/python
-TRITON_PLUGIN_DIRS=${WORKSPACE}/ascend \
-LLVM_SYSPATH=$LLVM_BUILD_DIR \
-TRITON_BUILD_WITH_CLANG_LLD=true \
-TRITON_APPEND_CMAKE_ARGS="-DTRITON_BUILD_UT=OFF" \
-pip install -e . --no-build-isolation -v
+git submodule set-url third_party/triton https://gitee.com/shijingchang/triton.git
+git submodule sync && git submodule update --init --recursive
+
+bash scripts/build.sh ${WORKSPACE}/ascend ${LLVM_BUILD_DIR} 3.2.0 install 1
 
 if [ -d __pycache__ ];then
   rm -rf __pycache__
