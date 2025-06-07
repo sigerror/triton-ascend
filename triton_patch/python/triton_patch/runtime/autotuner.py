@@ -4,7 +4,7 @@ import builtins
 import os
 import time
 import inspect
-from typing import Dict
+from typing import Dict, List
 
 from .jit import KernelInterface
 from .errors import OutOfResources
@@ -19,6 +19,9 @@ class Autotuner(KernelInterface):
         arg_names,
         configs,
         key,
+        split_params,
+        tiling_params,
+        low_dims,
         reset_to_zero,
         restore_value,
         pre_hook=None,
@@ -28,6 +31,8 @@ class Autotuner(KernelInterface):
         rep=None,
         use_cuda_graph=False,
         do_bench=None,
+        dual_reduction=False,
+        persistent_reduction=False
     ):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
@@ -36,13 +41,18 @@ class Autotuner(KernelInterface):
             'prune_num_stages_by'(optional): a function used to prune num_stages. It takes configs:List[Config] as its input, and returns pruned configs.
         """
         if not configs:
-            self.configs = [
-                Config({}, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
-                       reg_dec_producer=0, reg_inc_consumer=0)
-            ]
+            self.user_configs = []
         else:
-            self.configs = configs
+            self.user_configs = configs
+        self.gen_configs = []       # generated configs from TileGenerator
         self.keys = key
+        self.split_params = split_params
+        self.tiling_params = tiling_params
+        self.low_dims = low_dims
+        self.dual_reduction = dual_reduction
+        self.persistent_reduction = persistent_reduction
+        self.auto_gen_tile = True if self.split_params or self.tiling_params else False
+
         self.cache = {}
         self.arg_names = arg_names
 
@@ -131,6 +141,46 @@ class Autotuner(KernelInterface):
         else:
             self.do_bench = do_bench
 
+    def _gen_tile_configs(self, kv_dict: Dict[str, int], dtype) -> List[Config]:
+        if self.auto_gen_tile:
+            from .tile_generator import KernelMeta, TileGenerator
+
+            _dim_names = {'x', 'y', 'z', 'w', 'v', 't', 'rx', 'ry', 'rz', 'rw', 'rv', 'rt'}
+            axis_sizes = {}
+            for k, v in kv_dict.items():
+                if k not in _dim_names:
+                    continue
+                if not isinstance(v, int):
+                    raise ValueError(f"Not supported dim type: {type(v)}, `int` is the only supported type")
+                
+                axis_sizes[k] = v
+
+            # check if split & tiling axis's name in axis names
+            for k in (list(self.split_params.keys()) + list(self.tiling_params.keys())):
+                if k not in axis_sizes and ('r' + k) not in axis_sizes:
+                    raise KeyError(f"Cannot identify {k} axis's size")
+                
+            # check if low_dims's name in axis names
+            for k in self.low_dims:
+                if k not in axis_sizes and ('r' + k) not in axis_sizes:
+                    raise KeyError(f"Unknown low dims name: {k}, should be in {axis_sizes.keys()}")
+                
+            kernel_meta = KernelMeta(axis_sizes, self.split_params, self.tiling_params, self.low_dims,
+                                     dtype, self.persistent_reduction, self.dual_reduction)
+            tile_gen = TileGenerator(kernel_meta=kernel_meta)
+            tile_gen.descend_split_tiling()
+
+            self.gen_configs.clear()
+            self.gen_configs = list(tile_gen.configs.values())
+
+        if len(self.gen_configs) == 0 and len(self.user_configs) == 0:
+            return [
+                Config({}, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
+                       reg_dec_producer=0, reg_inc_consumer=0)
+            ]
+        else:
+            return self.gen_configs + self.user_configs
+
     def _bench(self, *args, config, **meta):
         from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
 
@@ -170,18 +220,35 @@ class Autotuner(KernelInterface):
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
         used_cached_result = True
-        if len(self.configs) > 1:
-            all_args = {**self.nargs, **kwargs}
-            _args = {k: v for (k, v) in all_args.items() if k in self.arg_names}
-            key = [_args[key] for key in self.keys if key in _args]
-            for _, arg in _args.items():
-                if hasattr(arg, "dtype"):
-                    key.append(str(arg.dtype))
-            key = tuple(key)
-            if key not in self.cache:
-                # prune configs
+
+        # generate key
+        all_args = {**self.nargs, **kwargs}
+        _args = {k: v for (k, v) in all_args.items() if k in self.arg_names}
+        _kv_dict = {}
+        if isinstance(self.keys, list):
+            # compatible with original autotune
+            _kv_dict = {k: _args[k] for k in self.keys if k in _args}
+        elif isinstance(self.keys, dict):
+            _kv_dict = {k: _args[v] for k, v in self.keys.items() if v in _args}
+        else:
+            raise ValueError("The data type of keys must be list or dict!")
+        key = list(_kv_dict.values())
+        # Currently, we assume the input & output's dtype is the same
+        dtype = None
+        for _, arg in _args.items():
+            if hasattr(arg, "dtype"):
+                key.append(str(arg.dtype))
+                dtype = arg.dtype
+        if dtype is None:
+            raise ValueError("Cannot identify the inputs or outputs' data type!")
+        
+        key = tuple(key)
+        if key not in self.cache:
+            # prune configs
+            configs = self._gen_tile_configs(_kv_dict, dtype)
+            pruned_configs = self.prune_configs(configs, kwargs)
+            if len(pruned_configs) > 1:
                 used_cached_result = False
-                pruned_configs = self.prune_configs(kwargs)
                 bench_start = time.time()
                 timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
                 bench_end = time.time()
@@ -190,9 +257,12 @@ class Autotuner(KernelInterface):
                 full_nargs = {**self.nargs, **kwargs, **self.cache[key].all_kwargs()}
                 self.pre_hook(full_nargs, reset_only=True)
                 self.configs_timings = timings
-            config = self.cache[key]
+                config = self.cache[key]
+            else:
+                config = pruned_configs[0]
         else:
-            config = self.configs[0]
+            config = self.cache[key]
+
         self.best_config = config
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
@@ -208,14 +278,14 @@ class Autotuner(KernelInterface):
         self.nargs = None
         return ret
 
-    def prune_configs(self, kwargs):
-        pruned_configs = self.configs
+    def prune_configs(self, configs, kwargs):
+        pruned_configs = configs
         if self.early_config_prune:
-            pruned_configs = self.early_config_prune(self.configs, self.nargs, **kwargs)
+            pruned_configs = self.early_config_prune(configs, self.nargs, **kwargs)
         if self.perf_model:
             top_k = self.configs_top_k
             if isinstance(top_k, float) and top_k <= 1.0:
-                top_k = int(len(self.configs) * top_k)
+                top_k = int(len(configs) * top_k)
             if len(pruned_configs) > top_k:
                 est_timing = {
                     config: self.perf_model(
@@ -231,7 +301,7 @@ class Autotuner(KernelInterface):
     def warmup(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
         ret = []
-        for config in self.prune_configs(kwargs):
+        for config in self.prune_configs(self.user_configs, kwargs):
             ret.append(self.fn.warmup(
                 *args,
                 **kwargs,
@@ -307,8 +377,9 @@ class Config:
         return ", ".join(res)
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, pre_hook=None, post_hook=None,
-             warmup=None, rep=None, use_cuda_graph=False, do_bench=None):
+def autotune(configs, key, split_params=None, tiling_params=None, low_dims=None, dual_reduction=False,
+             persistent_reduction=False, prune_configs_by=None, reset_to_zero=None, restore_value=None,
+             pre_hook=None, post_hook=None, warmup=None, rep=None, use_cuda_graph=False, do_bench=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -365,9 +436,9 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     """
 
     def decorator(fn):
-        return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
-                         post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
-                         use_cuda_graph=use_cuda_graph)
+        return Autotuner(fn, fn.arg_names, configs, key, split_params, tiling_params, low_dims, reset_to_zero, restore_value,
+                         pre_hook=pre_hook, post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
+                         use_cuda_graph=use_cuda_graph, dual_reduction=dual_reduction, persistent_reduction=persistent_reduction)
 
     return decorator
 

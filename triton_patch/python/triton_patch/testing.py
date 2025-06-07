@@ -1,6 +1,8 @@
 import functools
 import os
 import subprocess
+import multiprocessing
+import os
 import sys
 from contextlib import contextmanager
 from typing import Any, Dict, List
@@ -114,7 +116,8 @@ def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, return_m
 
     enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() in ('npu')
     if torch.npu.is_available() and enable_bench_npu:
-        return do_bench_npu(fn, warmup=max(5, warmup), active=max(30, rep))
+        avg_time = do_bench_npu(fn, warmup=max(5, warmup), active=max(30, rep))
+        return _summarize_statistics(torch.tensor([avg_time], dtype=torch.float), quantiles, return_mode)
 
     di = runtime.driver.active.get_device_interface()
 
@@ -175,11 +178,30 @@ def collect_files(base_dir):
             return float('inf')
     return float('inf')
 
+
+def collect_single(base_dir: str, key: str = None) -> float:
+    import pandas as pd
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if file != 'op_statistic.csv':
+                continue
+            target_file = os.path.join(root, file)
+            df = pd.read_csv(target_file)
+            if key is not None:
+                key_rows = df[df['OP Type'].str.startswith(key, na=False)]
+                if not key_rows.empty:
+                    return key_rows['Avg Time(us)'].values[0]
+                return float('inf')
+            else:
+                # default: read the first row except header
+                return df.loc[0, 'Avg Time(us)']
+    
+    return float('inf')
+
 def do_bench_npu(fn, warmup=5, active=30):
     import torch
     import torch_npu
-    import hashlib
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     stream = torch.npu.current_stream()
     experimental_config = torch_npu.profiler._ExperimentalConfig(
@@ -192,8 +214,12 @@ def do_bench_npu(fn, warmup=5, active=30):
     wait = 0
     repeat = 1
     total = skip_first + (wait + warmup + active) * repeat
-    md5_hash = hashlib.md5(datetime.now().strftime('%Y-%m-%d').encode('utf-8')).hexdigest()
-    torch_path="./profile_result/"+md5_hash
+    process = multiprocessing.current_process()
+    pid = process.pid
+    process_name = process.name
+    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+    base_path = "./_triton_profile_results/"
+    torch_path = os.path.join(base_path, f"prof_{timestamp}_{process_name}-{pid}")
     with torch_npu.profiler.profile(
         activities=[
             torch_npu.profiler.ProfilerActivity.NPU
@@ -213,10 +239,9 @@ def do_bench_npu(fn, warmup=5, active=30):
             prof.step()
         stream.synchronize()
 
-    time = collect_files(torch_path)
+    time = collect_single(torch_path)
 
     import shutil
-    import os
     if os.path.exists(torch_path):
         shutil.rmtree(torch_path)
     # TODO: use logging

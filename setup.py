@@ -589,6 +589,12 @@ def get_package_dir(backends):
         f"{triton_patch_prefix_dir}/runtime/autotuner.py"
     )
     package_dir["triton/runtime/jit.py"] = f"{triton_patch_prefix_dir}/runtime/jit.py"
+    package_dir["triton/runtime/tile_generator.py"] = (
+        f"{triton_patch_prefix_dir}/runtime/tile_generator.py"
+    )
+    package_dir["triton/runtime/utils.py"] = (
+        f"{triton_patch_prefix_dir}/runtime/utils.py"
+    )
     package_dir["triton/runtime/libentry.py"] = (
         f"{triton_patch_prefix_dir}/runtime/libentry.py"
     )
