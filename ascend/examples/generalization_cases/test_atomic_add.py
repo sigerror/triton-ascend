@@ -26,9 +26,9 @@ def test_atomic_add(dtype, shape):
     block_size = shape[0] * shape[1] / ncore
     split_size = shape[0] // ncore
     x0_value = 3
-    x0 = torch.full(shape, x0_value, dtype = eval('torch.float32')).npu()
-    x1 = torch.full((split_size, shape[1]), 2, dtype = eval('torch.float32')).npu()
-    y = torch.full((split_size, shape[1]), -10, dtype = eval('torch.float32')).npu()
+    x0 = torch.full(shape, x0_value, dtype = dtype=eval('torch.' + dtype)).npu()
+    x1 = torch.full((split_size, shape[1]), 2, dtype=eval('torch.' + dtype)).npu()
+    y = torch.full((split_size, shape[1]), -10, dtype=eval('torch.' + dtype)).npu()
 
     y_ref = x1 + 0
     x1_ref = x1 + ncore * x0_value

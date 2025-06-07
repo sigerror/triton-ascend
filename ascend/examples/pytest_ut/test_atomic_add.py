@@ -6,7 +6,7 @@ import torch
 import torch_npu
 
 @triton.jit
-def atomic_add(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE : tl.constexpr):
+def atomic_add(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
     xoffset = tl.program_id(0) * BLOCK_SIZE
     xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
     yindex = tl.arange(0, BLOCK_SIZE)[:]
@@ -17,6 +17,19 @@ def atomic_add(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE : tl.constexp
     tmp1 = tl.atomic_add(out_ptr0 + (x1), tmp0, xmask)
     tl.store(out_ptr1 + (x1), tmp1, xmask)
 
+
+@triton.jit
+def atomic_add_supply(
+    in_ptr0, out_ptr0, n_elements, BLOCK_SIZE: tl.constexpr
+):
+    xoffset = tl.program_id(0) * BLOCK_SIZE
+    xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
+    yindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
+    xmask = xindex < n_elements
+    x0 = xindex
+    x1 = yindex
+    tmp0 = tl.load(in_ptr0 + (x0), xmask)
+    tmp1 = tl.atomic_add(out_ptr0 + (x1), tmp0, xmask)
 @pytest.mark.parametrize('param_list',
                          [
                              ['int16', (32, 32), 2],
@@ -97,6 +110,24 @@ def test_atomic_add_2d(param_list):
     x1_ref = x1 + ncore * x0_value
 
     atomic_add_2d[ncore, 1, 1](x0, x1, y, shape[0], shape[1], BLOCK_SIZE_0=block_size_0, BLOCK_SIZE_1=block_size_1)
+    test_common.validate_cmp(dtype, x1, x1_ref)
+
+
+@pytest.mark.parametrize('shape', [(3, 1), (13, 1), (32, 1), (256, 1)])
+@pytest.mark.parametrize('dtype', ['float32'])
+def test_atomic_add_2d_supply(dtype, shape):
+    ncore = 1
+    block_size = shape[0] * shape[1] / ncore
+    split_size = shape[0] // ncore
+    x0_value = 3
+    x0 = torch.full(shape, x0_value, dtype=eval('torch.' + dtype)).npu()
+    x1 = torch.full((split_size, shape[1]), 2, dtype=eval('torch.' + dtype)).npu()
+
+    y_ref = x1 + 0
+    x1_ref = x1 + ncore * x0_value
+
+    n_elements = shape[0] * shape[1]
+    atomic_add_supply[shape[0], 1, 1](x0, x1, n_elements, BLOCK_SIZE=shape[1])
     test_common.validate_cmp(dtype, x1, x1_ref)
 
 if __name__ == "__main__":
