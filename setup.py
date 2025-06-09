@@ -19,10 +19,11 @@ from typing import List, NamedTuple, Optional
 from dataclasses import dataclass
 from setuptools import Extension, setup
 from setuptools.command.build_ext import build_ext
+from setuptools.command.install import install
 from distutils.command.clean import clean
 from wheel.bdist_wheel import bdist_wheel
 
-root_dir = os.path.dirname(__file__)
+root_dir = os.path.dirname(os.path.abspath(__file__))
 triton_dir = os.path.join(root_dir, "third_party/triton")
 
 
@@ -457,6 +458,12 @@ class BuildExt(build_ext):
         self.install_extension()
 
 
+class BuildInstall(install):
+    def run(self):
+        self.single_version_externally_managed = True
+        super().run()
+
+
 class BuildWheel(bdist_wheel):
     def run(self):
         bdist_wheel.run(self)
@@ -573,35 +580,23 @@ def get_package_dir(backends):
     package_dir["triton/triton_patch/compiler"] = f"{triton_patch_prefix_dir}/compiler"
     package_dir["triton/triton_patch/runtime"] = f"{triton_patch_prefix_dir}/runtime"
 
-    package_dir["triton/language/_utils.py"] = (
-        f"{triton_patch_prefix_dir}/language/_utils.py"
-    )
-    package_dir["triton/compiler/compiler.py"] = (
-        f"{triton_patch_prefix_dir}/compiler/compiler.py"
-    )
-    package_dir["triton/compiler/code_generator.py"] = (
-        f"{triton_patch_prefix_dir}/compiler/code_generator.py"
-    )
-    package_dir["triton/compiler/errors.py"] = (
-        f"{triton_patch_prefix_dir}/compiler/errors.py"
-    )
-    package_dir["triton/runtime/autotuner.py"] = (
-        f"{triton_patch_prefix_dir}/runtime/autotuner.py"
-    )
-    package_dir["triton/runtime/jit.py"] = f"{triton_patch_prefix_dir}/runtime/jit.py"
-    package_dir["triton/runtime/tile_generator.py"] = (
-        f"{triton_patch_prefix_dir}/runtime/tile_generator.py"
-    )
-    package_dir["triton/runtime/utils.py"] = (
-        f"{triton_patch_prefix_dir}/runtime/utils.py"
-    )
-    package_dir["triton/runtime/libentry.py"] = (
-        f"{triton_patch_prefix_dir}/runtime/libentry.py"
-    )
-    package_dir["triton/runtime/code_cache.py"] = (
-        f"{triton_patch_prefix_dir}/runtime/code_cache.py"
-    )
-    package_dir["triton/testing.py"] = f"{triton_patch_prefix_dir}/testing.py"
+    patch_paths = {
+        "language/_utils.py",
+        "compiler/compiler.py",
+        "compiler/code_generator.py",
+        "compiler/errors.py",
+        "runtime/autotuner.py",
+        "runtime/jit.py",
+        "runtime/tile_generator.py",
+        "runtime/utils.py",
+        "runtime/libentry.py",
+        "runtime/code_cache.py",
+        "testing.py",
+    }
+
+    for path in patch_paths:
+        package_dir[f"triton/{path}"] = f"{triton_patch_prefix_dir}/{path}"
+
     return package_dir
 
 
@@ -710,6 +705,7 @@ setup(
     ext_modules=[CMakeExtension("triton", "triton/_C/")],
     cmdclass={
         "build_ext": BuildExt,
+        "install": BuildInstall,
         "bdist_wheel": BuildWheel,
         "clean": BuildClean,  # type: ignore[misc]
     },
