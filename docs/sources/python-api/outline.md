@@ -1,5 +1,6 @@
-# PYTHON API
-## 1. triton op支持度总表
+# triton 总览
+
+## triton op 支持度总览
 
 |                          |        Triton Op       | int8 | int16 | int32 | uint32 | int64 | fp16 | fp32 | bf16 | bool |
 |:------------------------:|:----------------------:|------|-------|-------|--------|-------|------|------|------|------|
@@ -111,7 +112,8 @@
 |                          | device_print           | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ✓    |
 |                          | device_assert          | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 
-### 约束说明
+## 约束说明
+
 - dot: 两个输入A[batch(optional), M, K], B[batch(optional), K, N]，M，N按照16对齐，K按照32B对齐。
 
 - gather: triton.gather(x, index, axis)，假设x的shape为n维度，目前只支持axis=n-1。
@@ -133,16 +135,3 @@
 - trans: 不支持不相邻轴转置，如`(0, 1, 2) -> (2, 1, 0)`
 
 - ALL: int8类型由于特殊处理，会占用更大的片上空间，编译时容易造成ub overflow报错，通常调整tilling即可解决
-
-## 2. Testing
-### 基础用例
-各类算子的基础用例，代码路径如下，可单个用例执行，也可多线程执行所有用例
-```
-cd /triton-ascend/ascend/examples/pytest_ut
-
-# 单个用例执行：test_add.py 示例
-pytest test_add.py
-
-# 多线程执行所有用例：-n 16，以16个线程执行当前目录下所有用例
-pytest ./ -n 16
-```

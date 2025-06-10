@@ -1,8 +1,10 @@
 # 矩阵乘法 （Matrix Multiplication）
+
 在本节中，我们展示了使用 Triton 进行矩阵乘法的内核实现。
 
-**计算内核**
-```
+## 计算内核
+
+```Python
 import pytest
 import torch
 import torch_npu
@@ -26,8 +28,10 @@ def triton_dot_2_None(output_ptr, x_ptr, y_ptr, z_ptr,A : tl.constexpr,B : tl.co
     oidx=bidx[:,None]*D+didx[None,:]
     tl.store(output_ptr+oidx,ret)
 ```
-**工具方法**
-```
+
+## 工具方法
+
+```Python
 def torch_dot_None(x0, x1):
     res = torch.matmul(x0, x1)
     return res
@@ -82,9 +86,9 @@ def validate_cmp(dtype, y_cal, y_ref):
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 ```
 
+## 参数化测试
 
-**参数化测试**
-```
+```Python
 testlist = [   
     (3, 16, 16, 16), 
 ]
@@ -111,8 +115,11 @@ def test_dot_2_None(sigtype, A, B, C, D):
 if __name__ == "__main__":
     test_dot_2_None("float16", 3, 16, 16, 16)
 ```
-```
+
 Out:
-```
+
+```Python
 Test matmul with dtype=float16, shape=(3,16,16,16) PASSED!
+```
+
 上面输出日志表明Triton和Pytorch上的输出结果完全一致。

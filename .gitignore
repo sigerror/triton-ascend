@@ -1,12 +1,24 @@
-ascend/backend/triton-adapter-opt
+# python
 __pycache__/
-kernel_meta/
-.vscode/
-.cache/
+
+# cann
 fusion_result.json
-compile_commands.json
-build/
-dist/
+kernel_meta/
+
+# compilation
 triton/
+build/
+compile_commands.json
+
+# artifact
+dist/
 *.egg-info/
 .eggs/
+
+# docs
+docs/_build
+docs/sources/python-api/generated/
+
+# others
+.vscode/
+.cache/

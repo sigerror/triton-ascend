@@ -1,7 +1,8 @@
 # 融合注意力 （Fused Attention）
+
 在本节中，我们将编写一个比较复杂的 Tri Dao 的 Flash Attention v2 算法的 Triton 实现。
 
-```
+```Python
 import pytest
 import torch
 import torch_npu
@@ -274,9 +275,10 @@ if __name__ == "__main__":
    test_op(2,2,128,256, causal=False, dtype=torch.float16, BM = 32,BN = 128)
    test_op(1,2,256,256, causal=False, dtype=torch.float16, BM = 32,BN = 256)
 ```
-```
-Out
-```
+
+Out:
+
+```bash
 Attention BM: 32, BN: 32, dtype: torch.float16 PASSED!
 Attention BM: 32, BN: 64, dtype: torch.float16 PASSED!
 Attention BM: 32, BN:128, dtype: torch.float16 PASSED!
@@ -284,4 +286,6 @@ Attention BM: 64, BN: 128, dtype: torch.float16 PASSED!
 Attention BM: 32, BN: 128, dtype: torch.float16 PASSED!
 Attention BM: 32, BN: 128, dtype: torch.float16 PASSED!
 Attention BM: 32, BN: 256, dtype: torch.float16 PASSED!
+```
+
 上面输出日志表明Triton和PyTorch上的输出结果完全一致。

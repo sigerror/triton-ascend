@@ -1,10 +1,11 @@
 # 自动调优 （Autotune）
+
 在本节中，我们将展示使用 Triton 的 autotune 方法以自动选择最优的 kernel 配置参数。
 
 说明：
 当前Triton-Ascend autotune支持block size、multibuffer，未来还会持续增加autotune可调项。与社区相比，Triton-Ascend支持bishengir在MLIR编译过程中失败后继续测试下一组config，而非中断autotune。
 
-```
+```Python
 import torch, torch_npu
 import triton
 import triton.language as tl
@@ -64,5 +65,4 @@ def test_triton_autotune():
 if __name__ == "__main__":
     test_triton_autotune()
     print("success: test_triton_autotune")  # 输出成功标志 / Print success message
-
 ```

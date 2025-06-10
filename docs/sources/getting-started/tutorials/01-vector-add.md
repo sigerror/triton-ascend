@@ -1,11 +1,14 @@
 # 向量相加 （Vector Addition）
+
 在本节中，我们将使用 Triton 编写一个简单的向量相加的程序。
 在此过程中，你会学习到：
+
 - Triton 的基本编程模式。
 - 用于定义 Triton 内核的`triton.jit`装饰器（decorator）。
 
-**计算内核**
-```
+计算内核:
+
+```bash
 import torch
 import torch_npu
 
@@ -39,10 +42,11 @@ def add_kernel(x_ptr,  # 指向第一个输入向量的指针。
 ```
 
 创建一个辅助函数用于：
+
 - 生成 z 张量；
 - 用适当的 grid/block sizes 将上述内核加入队列。
 
-```
+```Python
 def add(x: torch.Tensor, y: torch.Tensor):
     # 需要预分配输出。
     output = torch.empty_like(x)
@@ -59,9 +63,10 @@ def add(x: torch.Tensor, y: torch.Tensor):
     # 返回 z 的句柄。
     return output
 ```
+
 使用上述函数计算两个 `torch.tensor` 对象的 element-wise sum，并测试其正确性：
 
-```
+```Python
 torch.manual_seed(0)
 size = 98432
 x = torch.rand(size, device='npu')
@@ -73,10 +78,13 @@ print(output_triton)
 print(f'The maximum difference between torch and triton is '
       f'{torch.max(torch.abs(output_torch - output_triton))}')
 ```
+
 Out:
-```
+
+```bash
 tensor([0.8329, 1.0024, 1.3639,  ..., 1.0796, 1.0406, 1.5811], device='npu:0')
 tensor([0.8329, 1.0024, 1.3639,  ..., 1.0796, 1.0406, 1.5811], device='npu:0')
 The maximum difference between torch and triton is 0.0
 ```
-"The maximum difference between torch and triton is 0.0"表示Triton和PyTorch的输出结果一致。
+
+"The maximum difference between torch and triton is 0.0" 表示Triton和PyTorch的输出结果一致。

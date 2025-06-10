@@ -1,9 +1,10 @@
 # 层标准化 （Layer Normalization）
+
 在本节中，我们将使用 Triton 编写一个比 PyTorch 实现运行更快的高性能层标准化 (layer normalization) 内核。
 
-**计算内核**
+## 计算内核
 
-```
+```Python
 import pytest
 import torch
 import triton
@@ -59,8 +60,10 @@ def _layer_norm_fwd_fused(
         # 写入输出
         tl.store(Y + cols, y, mask=mask)
 ```
+
 使用 Triton 自定义的 LayerNorm 实现方式
-```
+
+```Python
 @torch.inference_mode()
 def layer_norm(x, normalized_shape, weight, bias, eps=1e-5):
     # 分配与输入相同形状和数据类型的输出张量
@@ -108,8 +111,10 @@ if __name__ == '__main__':
     _layer_norm(128, 128, torch.bfloat16)
     _layer_norm(128, 128, torch.float32)
 ```
+
 结果
-```
+
+```bash
 y_tri: tensor([[ 0.2512,  0.0647,  0.8389,  ...,  2.3652,  1.5039,  1.1904],
         [ 1.0908,  1.5391,  0.2269,  ...,  1.6846,  1.0996,  0.9614],
         [-0.2974,  0.5918,  0.3225,  ...,  2.2891, -0.8418,  0.6885],
@@ -162,6 +167,7 @@ y_ref: tensor([[-0.2980,  0.2922,  0.6481,  ...,  0.9786,  0.7304,  0.8982],
        device='npu:0', grad_fn=<NativeLayerNormBackward0>)
 Layer Normalization 128,128 torch.float32 PASSED!
 ```
+
 "Layer Normalization 128,128 torch.float16 PASSED!、\
 Layer Normalization 128,128 torch.bfloat16 PASSED! \
-Layer Normalization 128,128 torch.float32 PASSED!"表明Triton和PyTorch上float16、bfloat16、float32数据类型的输出结果完全一致。
+Layer Normalization 128,128 torch.float32 PASSED!" 表明Triton和PyTorch上float16、bfloat16、float32数据类型的输出结果完全一致。
