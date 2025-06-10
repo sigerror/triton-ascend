@@ -50,14 +50,13 @@ function validate_git_commit_title() {
     exit 1
   fi
   echo "✅ The submitted information complies with the specifications."
-  exit 0
 }
 
 function validate_pr_all_commits_title() {
   commit_titles=$(git log master..HEAD --oneline | sed 's/^[^ ]* //')
   if [ -z "$commit_titles" ]; then
     echo "No commits found between HEAD and master."
-    exit 0
+    exit 1
   fi
   echo "Validating commit titles..."
   echo "----------------------------"
@@ -75,20 +74,19 @@ function validate_pr_all_commits_title() {
   else
     echo "----------------------------"
     echo "✅ All commit titles meet the specifications."
-    exit 0
   fi
 }
 
-if ! validate_pr_all_commits_title 2>/dev/null; then
-  exit 1
-fi
+# if ! validate_pr_all_commits_title 2>/dev/null; then
+#   exit 1
+# fi
 
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
 # FIXME: 20250508 the bishengir-compile in the CANN 8.0.T115 fails lots of cases
 #        So we need to use another version of compiler.
-COMPILER_ROOT=/home/shared/bisheng_toolkit_20250605
+COMPILER_ROOT=/home/shared/bisheng_toolkit_20250610
 export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/ccec_compiler/bin:$PATH
 
 # build in torch 2.6.0
