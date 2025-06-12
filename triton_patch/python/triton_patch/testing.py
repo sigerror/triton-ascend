@@ -631,6 +631,9 @@ from .triton_patch.language.semantic import (
     _load_legacy,
     maximum,
     minimum,
+    invert,
+    logical_and,
+    not_,
 )
 from . import language
 
@@ -655,6 +658,9 @@ language.semantic.atomic_min = atomic_min
 language.semantic._load_legacy = _load_legacy
 language.semantic.maximum = maximum
 language.semantic.minimum = minimum
+language.semantic.invert = invert
+language.semantic.logical_and = logical_and
+language.semantic.not_ = not_
 
 language.umulhi = umulhi
 language.exp = exp

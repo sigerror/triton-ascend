@@ -32,7 +32,7 @@ def fn_npu_(output_ptr, x_ptr, y_ptr, z_ptr,
     X = tl.load(x_ptr + idx)
     Y = tl.load(y_ptr + idx)
 
-    ret = ~X
+    ret = not(X)
 
     tl.store(output_ptr + idx, ret)
 
