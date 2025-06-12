@@ -149,6 +149,54 @@ from . import semantic
 #         ret_types = [ret_type.to_ir(builder) for ret_type in self.ret_types]
 #         return builder.get_function_ty(ir_param_types, ret_types)
 
+def _unwrap_iterable(x):
+    """Returns x[0] if x has one element and x[0] is iterable."""
+    if len(x) == 1:
+        # Determine whether x[0] is iterable.
+        #
+        # You might want to use collections.abc.Iterable instead of this
+        # try/except block.  Unfortunately, this doesn't work with constexpr.
+        #
+        # The problem is that abc.Iterable checks for __iter__ on the *class*.
+        # But we want constexpr to expose an __iter__ method if and only if the
+        # wrapped *object* (i.e. self.value) is iterable.  Therefore there's no
+        # right answer for whether the class constexpr defines __iter__, and
+        # abc.Iterable doesn't work (at least not without some metaclass magic).
+        try:
+            iter(x[0])
+            return x[0]
+        except TypeError:
+            pass
+
+    return x
+
+@_tensor_member_fn
+@builtin
+def trans(input: tensor, *dims, _builder=None):
+    """
+    Permutes the dimensions of a tensor.
+
+    If the parameter :code:`dims` is not specified, the function defaults to a (1,0) permutation,
+    effectively transposing a 2D tensor.
+
+    :param input: The input tensor.
+    :param dims: The desired ordering of dimensions.  For example,
+        :code:`(2, 1, 0)` reverses the order dims in a a 3D tensor.
+
+    :code:`dims` can be passed as a tuple or as individual parameters: ::
+
+        # These are equivalent
+        trans(x, (2, 1, 0))
+        trans(x, 2, 1, 0)
+
+    :py:func:`permute` is equivalent to this function, except it doesn't
+    have the special case when no permutation is specified.
+    """
+    if not dims:
+        dims = (1, 0)
+    dims = _unwrap_iterable(dims)
+    return real_semantic.permute(input, dims, _builder)
+
 @builtin
 def dot(input, other, acc=None, input_precision=None, allow_tf32=None, max_num_imprecise_acc=None, out_dtype=float32,
         _builder=None):

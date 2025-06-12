@@ -603,7 +603,7 @@ def get_max_simd_tflops(dtype, clock_rate, device=None):
 # Patch the triton language API here because triton's __init__.py
 # import testing in the last stages.
 
-from .triton_patch.language.core import dot, gather, insert, subview
+from .triton_patch.language.core import dot, gather, insert, subview, trans
 from .triton_patch.language.standard import flip, sigmoid, softmax
 from .triton_patch.language.math import (
     umulhi,
@@ -645,6 +645,8 @@ language.gather = gather
 language.insert = insert
 language.subview = subview
 
+
+language.trans = trans
 # from .triton_patch.language.core import dtype, pointer_type, block_type, function_type
 # language.core.dtype = dtype
 # language.core.pointer_type = pointer_type
