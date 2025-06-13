@@ -180,6 +180,9 @@ def collect_files(base_dir):
 
 
 def collect_single(base_dir: str, key: str = None) -> float:
+    if not os.path.exists(base_dir):
+        return float('inf')
+    
     import pandas as pd
     for root, _, files in os.walk(base_dir):
         for file in files:
@@ -218,7 +221,7 @@ def do_bench_npu(fn, warmup=5, active=30):
     pid = process.pid
     process_name = process.name
     timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
-    base_path = "./_triton_profile_results/"
+    base_path = os.path.join(runtime.cache.get_home_dir(), ".triton", "profile_results")
     torch_path = os.path.join(base_path, f"prof_{timestamp}_{process_name}-{pid}")
     with torch_npu.profiler.profile(
         activities=[

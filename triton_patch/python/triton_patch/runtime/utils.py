@@ -10,7 +10,7 @@ prop = driver.active.utils.get_device_properties(device)
 num_cube_core = prop["num_aicore"]
 num_vector_core = prop["num_aicore"]
 
-if ("Ascend910B" in target.arch):
+if "Ascend910B" in target.arch:
     num_vector_core = num_cube_core * 2
 
 # wrapper npu 32 bytes align, get and pass unalign info to triton meta
@@ -28,8 +28,31 @@ byte_per_numel = {
     torch.bool: 1,  # torch.bool
     torch.complex32: 4,  # torch.complex32 (not yet available in PyTorch as of the latest stable release)
     torch.complex64: 8,  # torch.complex64
-    torch.complex128: 16  # torch.complex128
+    torch.complex128: 16,  # torch.complex128
 }
+
+valid_axis_names = {
+    "x",
+    "y",
+    "z",
+    "w",
+    "v",
+    "t",
+    "rx",
+    "ry",
+    "rz",
+    "rw",
+    "rv",
+    "rt",
+}
+
+
+def get_byte_per_numel(dtype: torch.dtype) -> int:
+    return 1 if dtype is None else byte_per_numel[dtype]
+
+
+def is_valid_axis_name(name: str) -> bool:
+    return name in valid_axis_names
 
 
 # move to an appropriate place, currently duplicated with triton.__init__.py

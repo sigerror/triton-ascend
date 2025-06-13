@@ -6,9 +6,13 @@ import time
 from typing import Dict, List
 
 from .autotuner import Autotuner, Config
+from .utils import get_byte_per_numel, is_valid_axis_name
 
 
 class AutoTilingTuner(Autotuner):
+    """
+    Automatic generateing candidate tiling configs and evaluating their performance to get the best config.
+    """
 
     def __init__(
         self,
@@ -29,8 +33,29 @@ class AutoTilingTuner(Autotuner):
         tiling_params=None,
         low_dims=None,
         dual_reduction=False,
-        persistent_reduction=False
+        persistent_reduction=False,
     ):
+        """
+        :param key: a dict of axis name: argument name, where the change of arguments in value will triger re-generating candidates configs and evaluating.
+            The axis name should be in {'x','y','z','w','v','t','rx','ry','rz','rw','rv','rt}, where the prefix 'r' means a reduction axis.
+            Only the axis name in this param should add perfix 'r' if it's a reduction axis.
+        :type key: Dict[str, str]
+        :param split_params: a dict of axis name: argument name, the argument is an adjustable parameter in a split axis, such as 'XBLOCK'.
+            The axis name must be in key's axis names. Do not add prefix 'r' before the axis name.
+            This param can be empty. Note that the auto tiling feature will be disabled when the split_params and tiling_params are both empty.
+            The split axis can usually be identified according to `tl.program_id()` expression.
+        :type split_params: Dict[str, str]
+        :param tiling_params: a dict of axis name: argument name, the argument is an adjustable parameter in a tiling axis, such as 'XBLOCK_SUB'.
+            The axis name must be in key's axis names. Do not add prefix 'r' before the axis name.
+            This param can be empty. Note that the auto tiling feature will be disabled when the split_params and tiling_params are both empty.
+            The tiling axis can usually be identified according to `tl.arange()` expression.
+        :type tiling_params: Dict[str, str]
+        :param low_dims: a list of axis name in which the corresponding axis is low dim aixs.
+            The axis name must be in key's axis names. Do not add prefix 'r' before the axis name.
+        :type low_dims: List[str]
+        :param dual_reduction: performing reduction on more than one axis.
+        :param persistent_reduction: there is no splitting in reduction axis.
+        """
         super().__init__(
             fn,
             arg_names,
@@ -44,14 +69,14 @@ class AutoTilingTuner(Autotuner):
             warmup,
             rep,
             use_cuda_graph,
-            do_bench
+            do_bench,
         )
 
         if not configs:
             self.user_configs = []
         else:
             self.user_configs = configs
-        self.gen_configs = []   # generated configs from TileGenerator
+        self.gen_configs = []  # generated configs from TileGenerator
 
         self.split_params = split_params
         self.tiling_params = tiling_params
@@ -59,41 +84,52 @@ class AutoTilingTuner(Autotuner):
         self.dual_reduction = dual_reduction
         self.persistent_reduction = persistent_reduction
 
-    def _gen_tile_configs(self, kv_dict: Dict[str, int], dtype) -> List[Config]:
+    def _gen_tile_configs(
+        self, kv_dict: Dict[str, int], dtype: torch.dtype
+    ) -> List[Config]:
         from .tile_generator import KernelMeta, TileGenerator
 
-        _dim_names = {'x', 'y', 'z', 'w', 'v', 't', 'rx', 'ry', 'rz', 'rw', 'rv', 'rt'}
         axis_sizes = {}
         for k, v in kv_dict.items():
-            if k not in _dim_names:
+            if not is_valid_axis_name(k):
                 continue
             if not isinstance(v, int):
-                raise ValueError(f"Not supported dim type: {type(v)}, `int` is the only supported type")
-            
+                raise ValueError(
+                    f"Not supported dim type: {type(v)}, `int` is the only supported type"
+                )
             axis_sizes[k] = v
 
-        # check if split & tiling axis's name in axis names
-        for k in (list(self.split_params.keys()) + list(self.tiling_params.keys())):
-            if k not in axis_sizes and ('r' + k) not in axis_sizes:
-                raise KeyError(f"Cannot identify {k} axis's size")
-            
-        # check if low_dims's name in axis names
-        for k in self.low_dims:
-            if k not in axis_sizes and ('r' + k) not in axis_sizes:
-                raise KeyError(f"Unknown low dims name: {k}, should be in {axis_sizes.keys()}")
-            
-        kernel_meta = KernelMeta(axis_sizes, self.split_params, self.tiling_params, self.low_dims,
-                                    dtype, self.persistent_reduction, self.dual_reduction)
+        kernel_meta = KernelMeta(
+            axis_sizes,
+            self.split_params,
+            self.tiling_params,
+            self.low_dims,
+            dtype,
+            self.persistent_reduction,
+            self.dual_reduction,
+        )
         tile_gen = TileGenerator(kernel_meta=kernel_meta)
         tile_gen.descend_split_tiling()
 
         self.gen_configs.clear()
         self.gen_configs = list(tile_gen.configs.values())
+        if len(self.gen_configs) == 0:
+            print(
+                "[WARNING] The generated candidate tiling configs are empty based on provided parameters!"
+            )
 
         if len(self.gen_configs) == 0 and len(self.user_configs) == 0:
             return [
-                Config({}, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
-                       reg_dec_producer=0, reg_inc_consumer=0)
+                Config(
+                    {},
+                    num_warps=4,
+                    num_stages=2,
+                    num_ctas=1,
+                    num_buffers_warp_spec=0,
+                    num_consumer_groups=0,
+                    reg_dec_producer=0,
+                    reg_inc_consumer=0,
+                )
             ]
         else:
             return self.gen_configs + self.user_configs
@@ -107,15 +143,20 @@ class AutoTilingTuner(Autotuner):
         _args = {k: v for (k, v) in all_args.items() if k in self.arg_names}
         _kv_dict = {k: _args[v] for k, v in self.keys.items() if v in _args}
         key = list(_kv_dict.values())
-        # Currently, we assume the input & output's dtype is the same
+
+        # Currently, we use the dtype with maximum byte length
         dtype = None
         for _, arg in _args.items():
             if hasattr(arg, "dtype"):
                 key.append(str(arg.dtype))
-                dtype = arg.dtype
+                dtype = (
+                    arg.dtype
+                    if get_byte_per_numel(arg.dtype) > get_byte_per_numel(dtype)
+                    else dtype
+                )
         if dtype is None:
-            raise ValueError("Cannot identify the inputs or outputs' data type!")
-        
+            raise NotImplementedError("Not support for non-Tensor inputs")
+
         key = tuple(key)
         if key not in self.cache:
             # prune configs
@@ -124,7 +165,10 @@ class AutoTilingTuner(Autotuner):
             if len(pruned_configs) > 1:
                 used_cached_result = False
                 bench_start = time.time()
-                timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
+                timings = {
+                    config: self._bench(*args, config=config, **kwargs)
+                    for config in pruned_configs
+                }
                 bench_end = time.time()
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)
@@ -139,8 +183,10 @@ class AutoTilingTuner(Autotuner):
 
         self.best_config = config
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
-            print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
-                  f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
+            print(
+                f"Triton autotuning for function {self.base_fn.__name__} finished after "
+                f"{self.bench_time:.2f}s; best config selected: {self.best_config};"
+            )
         if config.pre_hook is not None:
             full_nargs = {**self.nargs, **kwargs, **config.all_kwargs()}
             config.pre_hook(full_nargs)
