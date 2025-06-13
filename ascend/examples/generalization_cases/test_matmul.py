@@ -1,11 +1,14 @@
+import logging
+import pytest
 import torch
 import torch_npu
 import triton
 import triton.language as tl
-import pytest
-import logging
+
+import acc_util
 import test_common
 from test_common import TestUtils, avoid_not_support, get_dtype_size
+
 
 @triton.jit
 def matmul_kernel(
@@ -48,6 +51,7 @@ def matmul_kernel(
     c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
     tl.store(c_ptrs, c, mask=c_mask)
 
+
 @avoid_not_support('matmul')
 @pytest.mark.parametrize('shape', TestUtils.test_shape2d)
 @pytest.mark.parametrize('dtype', TestUtils.dtype_list)
@@ -57,19 +61,35 @@ def test_matmul(shape, dtype):
     # bisheng not support yet
     if M % 16 != 0 or N % 16 != 0 or get_dtype_size(dtype) * K % 32 != 0:
         return
-
-    BLOCK_M, BLOCK_N, BLOCK_K = min(max(M, 16), 32), min(max(N, 16), 32), min(max(K, 16), 32)
+    kalign = 32 / get_dtype_size(dtype)  # 32byte/Dtype_bytes
+    BLOCK_M, BLOCK_N, BLOCK_K = min(max(M, 16), 32), min(max(N, 16), 32), min(max(K, kalign), 32)
     a = test_common.generate_tensor((M, K), dtype)
     b = test_common.generate_tensor((K, N), dtype)
-    torch_res = torch.mm(a, b).npu()
+
     triton_res = torch.zeros((M, N), dtype=eval('torch.' + dtype)).npu()
-    grid = (triton.cdiv(M, BLOCK_M) * triton.cdiv(N, BLOCK_N), )
+    grid = (triton.cdiv(M, BLOCK_M) * triton.cdiv(N, BLOCK_N),)
     matmul_kernel[grid](a.npu(), b.npu(), triton_res, M, N, K, tl.float32,
                         a.stride(0), a.stride(1), b.stride(0), b.stride(1),
                         triton_res.stride(0), triton_res.stride(1),
                         BLOCK_M, BLOCK_N, BLOCK_K)
-    logging.debug(f'triton:\n{triton_res}\ntorch:\n{torch_res}')
-    test_common.validate_cmp(dtype, triton_res, torch_res)
+
+    a_gold = a.to(torch.float32)
+    b_gold = b.to(torch.float32)
+    cpu_res = torch.mm(a_gold, b_gold)
+
+    a_npu = a.npu()
+    b_npu = b.npu()
+    torch_res = torch.mm(a_npu, b_npu)
+
+    try:
+        print("starting compare of cpu vs triton:")
+        acc_util.assert_close(cpu_res, triton_res)
+    except Exception as e:
+        print(e)
+        print("starting compare of cpu vs triton vs torch_npu:")
+        acc_util.benchmark_compare_close(cpu_res, triton_res, torch_res)
+    print("PASSED")
+
 
 if __name__ == "__main__":
     test_matmul((16, 32), 'float32')

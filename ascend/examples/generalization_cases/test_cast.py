@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 
+import math
 import triton
 import triton.language as tl
 
@@ -8,7 +9,7 @@ import torch
 import torch_npu
 import pytest
 import test_common
-from test_common import TestUtils
+from test_common import TestUtils, check_ub_mem_overflow, get_dtype_size
 
 @triton.jit
 def cast_to_bool(output_ptr, x_ptr, x_stride, y_stride, z_stride,
@@ -247,6 +248,17 @@ def structParam(x0):
 def test_cast(srcDtype, dstDtype, shape):
     if srcDtype == dstDtype:
         return
+    srcBytes = get_dtype_size(srcDtype)
+    dstBytes = get_dtype_size(dstDtype)
+    dtype_size = max(srcBytes, dstBytes)
+    if dstDtype == 'int8':
+        if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 100):
+            print(f"srcDtype:{srcDtype}, dstDtype:{dstDtype}, shape:{shape} mem overflow")
+            return
+    elif dtype_size * math.prod(shape) >= (TestUtils.ub_size / 12):
+        print(f"srcDtype:{srcDtype}, dstDtype:{dstDtype}, shape:{shape} mem overflow")
+        return
+    
     x0 = test_common.generate_tensor(shape, srcDtype)
     torch_res = x0.to(eval("torch." + dstDtype))
     x0 = x0.npu()

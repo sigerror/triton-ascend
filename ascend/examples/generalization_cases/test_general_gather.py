@@ -1,11 +1,13 @@
+import math
+import numpy as np
 import torch
 import torch_npu
 import triton
 import triton.language as tl
 import triton.language.extra.ascend.libdevice as libdevice
-import numpy as np
 import test_common
 import pytest
+from test_common import TestUtils, check_ub_mem_overflow, get_dtype_size
 
 # @pytest.mark.skip(reason="waiting for the compiler to support.")
 @pytest.mark.parametrize("src_shape, indices_shape, axis", [
@@ -50,6 +52,12 @@ def test_gather(src_shape, indices_shape, axis):
     DEV = "npu"
     src = torch.randn(src_shape, device=DEV)
     indices = torch.randint(0, src.shape[axis], indices_shape, device=DEV)
+
+    dtype_size = get_dtype_size('int32')
+    if dtype_size * math.prod(src.shape) >= (TestUtils.ub_size / 8):
+        print(f"dtype:int32 shape:{src.shape} mem overflow")
+        return
+
     ref = torch.gather(src, axis, indices)
     result = triton_gather(src, axis, indices)
     torch.testing.assert_close(result, ref, rtol=0, atol=0)

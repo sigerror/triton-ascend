@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2024-2025. All rights reserved.
+import math
 import triton
 import triton.language as tl
 import torch
 import pytest
 import test_common
 from test_common import TestUtils
-import math
 def torch_sum(x1,dim):
     if x1.dtype == torch.float16 or x1.dtype == torch.bfloat16:
         res = torch.sum(x1.to(torch.float32), dim, keepdim=False).to(x1.dtype)

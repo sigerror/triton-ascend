@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2024-2025. All rights reserved.
+import math
 import triton
 import triton.language as tl
 import torch
 import torch_npu
 import pytest
 import test_common
-from test_common import TestUtils, check_ub_mem_overflow
+from test_common import TestUtils, check_ub_mem_overflow, get_dtype_size
 
 # <<<<<<< test_max_1d
 def torch_max(x0, dim, keepdim):
@@ -54,8 +55,15 @@ def triton_max_2d(in_ptr0, out_ptr0, dim : tl.constexpr, M : tl.constexpr, N : t
 @pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
 @pytest.mark.parametrize('dim', [0, 1])
 def test_max_2d(dtype, shape, dim):
-    if check_ub_mem_overflow(dtype, shape):
+    dtype_size = get_dtype_size(dtype)
+    if dtype == 'int8':
+        if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 20):
+            print(f"dtype:{dtype} shape:{shape} mem overflow")
+            return
+    elif dtype_size * math.prod(shape) >= (TestUtils.ub_size / 5):
+        print(f"dtype:{dtype} shape:{shape} mem overflow")
         return
+
     shapex, shapey = shape
     x0 = test_common.generate_tensor(shape, dtype).npu()
     triton_res = torch.empty([shape[1-dim], ], dtype=eval("torch." + dtype)).npu()

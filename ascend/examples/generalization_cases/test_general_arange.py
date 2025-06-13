@@ -1,10 +1,10 @@
+import math
 import triton
 import triton.language as tl
 import torch
 import pytest
 import test_common
 from test_common import TestUtils
-import math
 
 def torch_pointwise(length):
     res = (torch.arange(0,length) / 2.7) * torch.arange(0, length)
@@ -20,7 +20,7 @@ def triton_arange(out_ptr0, length:tl.constexpr, numel: tl.constexpr):
     tl.store(out_ptr0 + idx, b, mask)
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape1d)
-@pytest.mark.parametrize('dtype', ['int32', 'int16', 'int8'])
+@pytest.mark.parametrize('dtype', ['int32', 'int16', 'int8', 'int64'])
 def test_case(dtype, shape):
     x0 = test_common.generate_tensor(shape, dtype).npu()
     x1 = test_common.generate_tensor(shape, dtype).npu()
