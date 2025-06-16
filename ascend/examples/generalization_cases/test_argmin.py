@@ -67,11 +67,11 @@ def test_argmin_2d(dtype, shape, dim):
 # <<<<<<< test_argmin_3d
 def torch_argmin_3d(x0, no_reduce_dim):
     if no_reduce_dim == 0:
-        return torch.argmin(torch.argmin(x0, 1), 1)
+        return torch.argmin(torch.min(x0, 1)[0], 1)
     elif no_reduce_dim == 1:
-        return torch.argmin(torch.argmin(x0, 0), 1)
+        return torch.argmin(torch.min(x0, 0)[0], 1)
     elif no_reduce_dim == 2:
-        return torch.argmin(torch.argmin(x0, 0), 0)
+        return torch.argmin(torch.min(x0, 0)[0], 0)
     else:
         assert False, f"no reduce dim not right, no_reduce_dim = {no_reduce_dim}"
 
@@ -88,7 +88,7 @@ def triton_argmin_3d_0_1(in_ptr, out_ptr,
 
     x = tl.load(in_ptr + idx)
 
-    tmp = tl.argmin(x, 0)
+    tmp = tl.min(x, 0)
     ret = tl.argmin(tmp, 0)
     oidx = zidx
     tl.store(out_ptr + oidx, ret)
@@ -106,7 +106,7 @@ def triton_argmin_3d_0_2(in_ptr, out_ptr,
 
     x = tl.load(in_ptr + idx)
 
-    tmp = tl.argmin(x, 0)
+    tmp = tl.min(x, 0)
     ret = tl.argmin(tmp, 1)
     oidx = yidx
     tl.store(out_ptr + oidx, ret)
@@ -124,7 +124,7 @@ def triton_argmin_3d_1_2(in_ptr, out_ptr,
 
     x = tl.load(in_ptr + idx)
 
-    tmp = tl.argmin(x, 1)
+    tmp = tl.min(x, 1)
     ret = tl.argmin(tmp, 1)
     oidx = xidx
     tl.store(out_ptr + oidx, ret)

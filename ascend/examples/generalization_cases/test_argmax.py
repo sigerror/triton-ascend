@@ -69,11 +69,11 @@ def test_argmax_2d(dtype, shape, dim):
 def torch_argmax_3d(x0, no_reduce_dim):
     x0 = x0 if x0.device == "cpu" else x0.cpu()
     if no_reduce_dim == 0:
-        return torch.argmax(torch.argmax(x0, 1), 1).npu()
+        return torch.argmax(torch.max(x0, 1)[0], 1).npu()
     elif no_reduce_dim == 1:
-        return torch.argmax(torch.argmax(x0, 0), 1).npu()
+        return torch.argmax(torch.max(x0, 0)[0], 1).npu()
     elif no_reduce_dim == 2:
-        return torch.argmax(torch.argmax(x0, 0), 0).npu()
+        return torch.argmax(torch.max(x0, 0)[0], 0).npu()
     else:
         assert False, f"no reduce dim not right, no_reduce_dim = {no_reduce_dim}"
 
@@ -90,7 +90,7 @@ def triton_argmax_3d_0_1(in_ptr, out_ptr,
 
     x = tl.load(in_ptr + idx)
 
-    tmp = tl.argmax(x, 0)
+    tmp = tl.max(x, 0)
     ret = tl.argmax(tmp, 0)
     oidx = zidx
     tl.store(out_ptr + oidx, ret)
@@ -108,7 +108,7 @@ def triton_argmax_3d_0_2(in_ptr, out_ptr,
 
     x = tl.load(in_ptr + idx)
 
-    tmp = tl.argmax(x, 0)
+    tmp = tl.max(x, 0)
     ret = tl.argmax(tmp, 1)
     oidx = yidx
     tl.store(out_ptr + oidx, ret)
@@ -126,7 +126,7 @@ def triton_argmax_3d_1_2(in_ptr, out_ptr,
 
     x = tl.load(in_ptr + idx)
 
-    tmp = tl.argmax(x, 1)
+    tmp = tl.max(x, 1)
     ret = tl.argmax(tmp, 1)
     oidx = xidx
     tl.store(out_ptr + oidx, ret)
