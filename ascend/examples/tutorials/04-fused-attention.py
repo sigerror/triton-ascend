@@ -19,7 +19,9 @@ import torch_npu
 import triton
 import triton.language as tl
 
+
 DEVICE = "npu"
+
 
 @triton.jit
 def _attn_fwd_inner(acc, l_i, m_i, q,  # Accumulator, local l, local m, query vector
@@ -90,6 +92,7 @@ def _attn_fwd_inner(acc, l_i, m_i, q,  # Accumulator, local l, local m, query ve
         K_block_ptr = tl.advance(K_block_ptr, (BLOCK_N, 0))
     return acc, l_i, m_i  # Return accumulated output acc, softmax denominator l_i, and max value m_i
 
+
 @triton.jit
 def _attn_fwd(Q, K, V, M, Out, sm_scale,  
               stride_qz: tl.constexpr, stride_qh: tl.constexpr, stride_qm: tl.constexpr, stride_qk: tl.constexpr, 
@@ -105,134 +108,6 @@ def _attn_fwd(Q, K, V, M, Out, sm_scale,
               ):
     # Assert that BLOCK_N does not exceed HEAD_DIM
     tl.static_assert(BLOCK_N <= HEAD_DIM)
-
-    # Current M-dimension block index
-    start_m = tl.program_id(0)
-
-    # Loop through all (Z * H) attention groups
-    for off_hz in range(0,Z*H):
-        # Compute batch and head index
-        off_z = off_hz // H
-        off_h = off_hz % H
-
-        # Offset for current batch and head
-        qvk_offset = off_z.to(tl.int64) * stride_qz + off_h.to(tl.int64) * stride_qh
-
-        # Construct Q block pointer (BLOCK_M, HEAD_DIM)
-        Q_block_ptr = tl.make_block_ptr(
-            base=Q + qvk_offset,
-            shape=(N_CTX, HEAD_DIM),
-            strides=(stride_qm, stride_qk),
-            offsets=(start_m * BLOCK_M, 0),
-            block_shape=(BLOCK_M, HEAD_DIM),
-            order=(1, 0),
-        )
-
-        # Construct V block pointer (starts from 0,0; advanced in inner)
-        V_block_ptr = tl.make_block_ptr(
-            base=V + qvk_offset,
-            shape=(N_CTX, HEAD_DIM),
-            strides=(stride_vn, stride_vk),
-            offsets=(0, 0),
-            block_shape=(BLOCK_N, HEAD_DIM),
-            order=(1, 0),
-        )
-
-        # Construct K block pointer
-        K_block_ptr = tl.make_block_ptr(
-            base=K + qvk_offset,
-            shape=(N_CTX, HEAD_DIM),
-            strides=(stride_kn, stride_kk),
-            offsets=(0, 0),
-            block_shape=(BLOCK_N, HEAD_DIM),
-            order=(1, 0),
-        )
-
-        # Construct Out block pointer
-        O_block_ptr = tl.make_block_ptr(
-            base=Out + qvk_offset,
-            shape=(N_CTX, HEAD_DIM),
-            strides=(stride_om, stride_on),
-            offsets=(start_m * BLOCK_M, 0),
-            block_shape=(BLOCK_M, HEAD_DIM),
-            order=(1, 0),
-        )
-
-        # Construct offset indices along M and N
-        offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
-        offs_n = tl.arange(0, BLOCK_N)
-
-        # Initialize m_i and l_i for softmax normalization
-        m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
-        l_i = tl.zeros([BLOCK_M], dtype=tl.float32) + 1.0
-        acc = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)
-
-        # Apply softmax scale and convert to log2 base
-        qk_scale = sm_scale
-        qk_scale *= 1.44269504  # 1 / log(2)
-
-        # Load current Q block
-        q = tl.load(Q_block_ptr)
-
-        # STAGE controls whether to run stage 1 (off-band) or stage 2 (on-band)
-        # stage 1: off-band
-        # For causal = True, STAGE = 3 and _attn_fwd_inner gets 1
-        # For causal = False, STAGE = 1 and _attn_fwd_inner gets 3
-        if STAGE & 1:
-            # Off-diagonal attention computation
-            acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q, K_block_ptr, V_block_ptr,  
-                                            start_m, qk_scale,  
-                                            BLOCK_M, HEAD_DIM, BLOCK_N,  
-                                            4 - STAGE,  # STAGE=1 -> inner=3, STAGE=3 -> inner=1
-                                            offs_m, 
-                                            offs_n, 
-                                            N_CTX, 
-                                            V.dtype.element_ty == tl.float8e5  # whether to use fp8
-                                            )
-
-        # stage 2: on-band
-        if STAGE & 2:
-            # Diagonal block attention computation
-            acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q, K_block_ptr, V_block_ptr,
-                                            start_m, qk_scale,
-                                            BLOCK_M, HEAD_DIM, BLOCK_N,
-                                            2, offs_m, offs_n, N_CTX, V.dtype.element_ty == tl.float8e5
-                                            )
-
-        # Epilogue: normalize and compute logsumexp
-        m_i += tl.math.log2(l_i)  # compute logsumexp
-        acc = acc / l_i[:, None]  # normalize output
-
-        # Store logsumexp to M and final output to Out
-        m_ptrs = M + off_hz * N_CTX + offs_m
-        tl.store(m_ptrs, m_i)
-        tl.store(O_block_ptr, acc.to(Out.type.element_ty))
-
-
-@triton.autotune(
-    configs=[],
-    key={'x': "N_CTX", 'y': "N_CTX"},
-    split_params={'x': "BLOCK_M", 'y': "BLOCK_N"},
-    tiling_params={},
-    low_dims=[],
-    persistent_reduction=False,
-    dual_reduction=True,
-)
-@triton.jit
-def _attn_fwd_autotune(Q, K, V, M, Out, sm_scale,  
-                       stride_qz: tl.constexpr, stride_qh: tl.constexpr, stride_qm: tl.constexpr, stride_qk: tl.constexpr, 
-                       stride_kz: tl.constexpr, stride_kh: tl.constexpr, stride_kn: tl.constexpr, stride_kk: tl.constexpr, 
-                       stride_vz: tl.constexpr, stride_vh: tl.constexpr, stride_vn: tl.constexpr, stride_vk: tl.constexpr, 
-                       stride_oz: tl.constexpr, stride_oh: tl.constexpr, stride_om: tl.constexpr, stride_on: tl.constexpr, 
-                       Z: tl.constexpr, H: tl.constexpr,
-                       N_CTX: tl.constexpr, 
-                       HEAD_DIM: tl.constexpr,
-                       BLOCK_M: tl.constexpr,
-                       BLOCK_N: tl.constexpr,
-                       STAGE: tl.constexpr
-                       ):
-    # Assert that BLOCK_N does not exceed HEAD_DIM
-    # tl.static_assert(BLOCK_N <= HEAD_DIM)
 
     # Current M-dimension block index
     start_m = tl.program_id(0)
@@ -384,37 +259,6 @@ class _attention(torch.autograd.Function):
 attention = _attention.apply
 
 
-def triton_fa_autotune(q, k, v, causal, sm_scale):
-    # shape constraints
-    HEAD_DIM_Q, HEAD_DIM_K = q.shape[-1], k.shape[-1]
-    # when v is in float8_e5m2 it is transposed.
-    HEAD_DIM_V = v.shape[-1]
-    assert HEAD_DIM_Q == HEAD_DIM_K and HEAD_DIM_K == HEAD_DIM_V
-    assert HEAD_DIM_K in {16, 32, 64, 128, 256}
-
-    o = torch.empty_like(q)
-
-    # stage = 3
-    stage = 3 if causal else 1
-    extra_kern_args = {}
-
-    N_CTX = q.shape[2]
-    grid = lambda meta: (triton.cdiv(N_CTX, meta["BLOCK_M"]), 1, 1)
-    # (1, 2, 1024)
-    M = torch.empty((q.shape[0], q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32)
-    _attn_fwd_autotune[grid](
-        q, k, v, M, o, sm_scale, #
-        q.stride(0), q.stride(1), q.stride(2), q.stride(3),  #
-        k.stride(0), k.stride(1), k.stride(2), k.stride(3),  #
-        v.stride(0), v.stride(1), v.stride(2), v.stride(3),  #
-        o.stride(0), o.stride(1), o.stride(2), o.stride(3),  #
-        q.shape[0], q.shape[1], N_CTX=q.shape[2],  # why varidic??
-        HEAD_DIM=HEAD_DIM_K, STAGE=stage, debug=True, **extra_kern_args
-    )
-
-    return o
-
-
 @pytest.mark.parametrize("Z, H, N_CTX, HEAD_DIM, causal, dtype, BM , BN",[
     (4, 32, 32, 64, False, torch.float16, 32, 32),
     (4, 32, 64, 64, False, torch.float16, 32, 64),
@@ -440,15 +284,14 @@ def test_op(Z, H, N_CTX, HEAD_DIM, causal, dtype,BM ,BN ):
     p = torch.softmax(p.float(), dim=-1).half()
     ref_out = torch.matmul(p, v)
     tri_out = attention(q, k, v, causal, sm_scale,BM,BN ).half()
-    tri_out_autotune = triton_fa_autotune(q, k, v, causal, sm_scale).half()
     
     try:
         torch.testing.assert_close(ref_out, tri_out, atol=1e-2, rtol=1e-2)
-        torch.testing.assert_close(ref_out, tri_out_autotune, atol=1e-2, rtol=1e-2)
         print(f"Test Fused-Attention PASS!")
     except AssertionError as e:
         print(f"Test Fused-Attention FAILED with ({Z},{H},{N_CTX},{HEAD_DIM}), causal={causal}, dtype={dtype}, BM={BM}, BN={BN} ! ERROR:{e}")
-   
+
+
 if __name__ == "__main__":
    test_op(4,32,32,64, causal=False, dtype=torch.float16, BM = 32,BN = 32)
    test_op(4,32,64,64, causal=False, dtype=torch.float16, BM = 32,BN = 64)
