@@ -1,12 +1,21 @@
 import os
 from typing import List
-from triton.language.core import _tensor_member_fn, builtin, _constexpr_to_value, tensor, constexpr
-from triton.language.core import dtype as real_dtype
-from triton.language import semantic as real_semantic
+
 from triton._C.libtriton import ir
-from triton.language.core import float32
+from triton.language import semantic as real_semantic
+from triton.language.core import (
+    _constexpr_to_value,
+    _tensor_member_fn,
+    _unwrap_iterable,
+    builtin,
+    constexpr,
+)
+from triton.language.core import dtype as real_dtype
+from triton.language.core import float32, tensor
+
 # from triton.language.core import _unwrap_if_constexpr, _unwrap_shape
 from . import semantic
+
 # from ._utils import validate_block_shape
 
 # class dtype(real_dtype):
@@ -149,26 +158,6 @@ from . import semantic
 #         ret_types = [ret_type.to_ir(builder) for ret_type in self.ret_types]
 #         return builder.get_function_ty(ir_param_types, ret_types)
 
-def _unwrap_iterable(x):
-    """Returns x[0] if x has one element and x[0] is iterable."""
-    if len(x) == 1:
-        # Determine whether x[0] is iterable.
-        #
-        # You might want to use collections.abc.Iterable instead of this
-        # try/except block.  Unfortunately, this doesn't work with constexpr.
-        #
-        # The problem is that abc.Iterable checks for __iter__ on the *class*.
-        # But we want constexpr to expose an __iter__ method if and only if the
-        # wrapped *object* (i.e. self.value) is iterable.  Therefore there's no
-        # right answer for whether the class constexpr defines __iter__, and
-        # abc.Iterable doesn't work (at least not without some metaclass magic).
-        try:
-            iter(x[0])
-            return x[0]
-        except TypeError:
-            pass
-
-    return x
 
 @_tensor_member_fn
 @builtin
@@ -197,21 +186,44 @@ def trans(input: tensor, *dims, _builder=None):
     dims = _unwrap_iterable(dims)
     return real_semantic.permute(input, dims, _builder)
 
+
 @builtin
-def dot(input, other, acc=None, input_precision=None, allow_tf32=None, max_num_imprecise_acc=None, out_dtype=float32,
-        _builder=None):
-    assert input_precision is None or allow_tf32 is None, "Only one of input_precision and allow_tf32 can be specified"
-    assert not allow_tf32, "allow_tf32 is deprecated, please use input_precision='hf32' on Ascend instead."
+def dot(
+    input,
+    other,
+    acc=None,
+    input_precision=None,
+    allow_tf32=None,
+    max_num_imprecise_acc=None,
+    out_dtype=float32,
+    _builder=None,
+):
+    assert (
+        input_precision is None or allow_tf32 is None
+    ), "Only one of input_precision and allow_tf32 can be specified"
+    assert (
+        not allow_tf32
+    ), "allow_tf32 is deprecated, please use input_precision='hf32' on Ascend instead."
     if input_precision is None:
-        supports_tf32 = _builder and "tf32" in _builder.options.allowed_dot_input_precisions
-        default_precision = "tf32" if (supports_tf32 and (allow_tf32 or allow_tf32 is None)) else "ieee"
+        supports_tf32 = (
+            _builder and "tf32" in _builder.options.allowed_dot_input_precisions
+        )
+        default_precision = (
+            "tf32" if (supports_tf32 and (allow_tf32 or allow_tf32 is None)) else "ieee"
+        )
         input_precision = os.getenv("TRITON_F32_DEFAULT", default_precision)
     else:
-        assert (input_precision not in ["tf32", "tf32x3"]), "input_precision == tf32 or tf32x3 is invalid, please use input_precision='hf32' on Ascend instead."
+        assert input_precision not in [
+            "tf32",
+            "tf32x3",
+        ], "input_precision == tf32 or tf32x3 is invalid, please use input_precision='hf32' on Ascend instead."
     input_precision = _constexpr_to_value(input_precision)
     out_dtype = _constexpr_to_value(out_dtype)
     max_num_imprecise_acc = _constexpr_to_value(max_num_imprecise_acc)
-    return semantic.dot(input, other, acc, input_precision, max_num_imprecise_acc, out_dtype, _builder)
+    return semantic.dot(
+        input, other, acc, input_precision, max_num_imprecise_acc, out_dtype, _builder
+    )
+
 
 @_tensor_member_fn
 @builtin
@@ -226,6 +238,7 @@ def gather(src, index, axis, _builder=None):
     """
     axis = _constexpr_to_value(axis)
     return semantic.gather(src, index, axis, _builder)
+
 
 @_tensor_member_fn
 @builtin
@@ -244,11 +257,15 @@ def insert(ful, sub, offsets, sizes, strides, _builder=None, _generator=None) ->
     :param strides:
     :type strides: tuple of ints
     """
-    assert(len(ful.shape) > 0)
-    assert(len(ful.shape) == len(sub.shape))
-    new_offsets = [real_semantic.to_tensor(o, _builder) if isinstance(o, constexpr) else o for o in offsets]
+    assert len(ful.shape) > 0
+    assert len(ful.shape) == len(sub.shape)
+    new_offsets = [
+        real_semantic.to_tensor(o, _builder) if isinstance(o, constexpr) else o
+        for o in offsets
+    ]
     out = semantic.insert(ful, sub, new_offsets, sizes, strides, _builder)
     return out
+
 
 @_tensor_member_fn
 @builtin
@@ -265,7 +282,10 @@ def subview(ful, offsets, sizes, strides, _builder=None, _generator=None) -> ten
     :param strides:
     :type strides: tuple of ints
     """
-    assert(len(ful.shape) > 0)
-    new_offsets = [real_semantic.to_tensor(o, _builder) if isinstance(o, constexpr) else o for o in offsets]
+    assert len(ful.shape) > 0
+    new_offsets = [
+        real_semantic.to_tensor(o, _builder) if isinstance(o, constexpr) else o
+        for o in offsets
+    ]
     sub = semantic.subview(ful, new_offsets, sizes, strides, _builder)
     return sub
