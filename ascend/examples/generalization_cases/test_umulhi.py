@@ -31,11 +31,11 @@ def umulhi32(a, b):
 def test_case2(dtype, shape):
     N = shape[0]
     dtypes = eval('torch.' + dtype)
-    x = torch.randint(low=0, high=2000, size=(N,), dtype=dtypes)
-    y = torch.randint(low=0, high=2000, size=(N,), dtype=dtypes)
+    x = torch.randint(low=0, high=2000, size=shape, dtype=dtypes)
+    y = torch.randint(low=0, high=2000, size=shape, dtype=dtypes)
     xx = x.npu()
     yy = y.npu()
-    z_tri = torch.zeros(size=(N,), dtype=dtypes).npu()
+    z_tri = torch.zeros(size=shape, dtype=dtypes).npu()
     umulhi_kernel[(1,)](xx, yy, z_tri, N=N)
 
     xxx = x.numpy()

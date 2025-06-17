@@ -4,7 +4,7 @@ import triton.language as tl
 from triton._C.libtriton import ir
 from triton.language.semantic import wrap_tensor, _str_to_rounding_mode, not_equal, _str_to_dot_input_precision, \
     binary_op_type_checking_impl, integer_promote_impl, broadcast_impl_shape, _str_to_sem, _str_to_scope, bitcast, \
-    bitwise_op_type_checking_impl, and_, xor_
+    bitwise_op_type_checking_impl, and_, or_, xor_
 
 
 def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
@@ -275,6 +275,20 @@ def logical_and(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.t
     if not other.type.is_int1():
         other = bitcast(other, tl.dtype("int1"), builder)
     return and_(input, other, builder)
+
+
+def logical_or(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
+    if hasattr(input, 'was_bool_to_int8'):
+        assert input.type.scalar.is_int8(), "input wat bool to int8. However, input.type is not int8."
+        input = cast(input, tl.int1, builder)
+    if not input.type.is_int1():
+        input = bitcast(input, tl.dtype("int1"), builder)
+    if hasattr(other, 'was_bool_to_int8'):
+        assert other.type.scalar.is_int8(), "Other wat bool to int8. However, other.type is not int8."
+        other = cast(other, tl.int1, builder)
+    if not other.type.is_int1():
+        other = bitcast(other, tl.dtype("int1"), builder)
+    return or_(input, other, builder)
 
 
 def not_(input: tl.tensor, builder: ir.builder):

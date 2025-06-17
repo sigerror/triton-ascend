@@ -633,6 +633,7 @@ from .triton_patch.language.semantic import (
     minimum,
     invert,
     logical_and,
+    logical_or,
     not_,
 )
 from . import language
@@ -662,6 +663,7 @@ language.semantic.maximum = maximum
 language.semantic.minimum = minimum
 language.semantic.invert = invert
 language.semantic.logical_and = logical_and
+language.semantic.logical_or = logical_or
 language.semantic.not_ = not_
 
 language.umulhi = umulhi
