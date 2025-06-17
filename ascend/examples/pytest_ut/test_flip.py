@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
- 
+
 import triton
 import triton.language as tl
 
@@ -8,44 +8,46 @@ import torch
 import torch_npu
 import pytest
 import test_common
-import triton.language.extra.ascend.libdevice as libdevice
-
-@triton.jit
-def fn_npu_(output_ptr, x_ptr,XB : tl.constexpr,YB : tl.constexpr,ZB : tl.constexpr):
-    xidx=tl.arange(0,XB)
-    yidx=tl.arange(0,YB)
-    zidx=tl.arange(0,ZB)
-
-    idx=xidx[:,None,None]*YB*ZB+yidx[None,:,None]*ZB+zidx[None,None,:]
-
-    X = tl.load(x_ptr+idx)
-
-    ret = libdevice.flip(X,2)
-
-    oidx=xidx[:,None,None]*YB*ZB+yidx[None,:,None]*ZB+zidx[None,None,:]
-
-    tl.store(output_ptr+idx,ret)
+from triton.runtime.libentry import libentry
 
 
-@pytest.mark.parametrize('para_type,data_type,XB,YB,ZB',
-                         [
-                             ['float32',torch.float32,2,256,16],
-                             ['float32',torch.float32,4,8,8],
-                             ['float16',torch.float16,2,256,16],
-                             ['float16',torch.float16,4,4,8],
-                             ['int8',torch.int8,2,256,16],
-                             ['int8',torch.int8,4,4,8],
-                         ]
-                         )
-def test_flip(para_type,data_type,XB,YB,ZB):
-    x = torch.randint(low=-128,high=128,size=(XB,YB,ZB),dtype=data_type).npu()
+@pytest.mark.parametrize(
+    "para_type,data_type,shape",
+    [
+        ["float32", torch.float32, (3, 11, 17)],
+        ["float16", torch.float16, (3, 11, 17)],
+        ["int8", torch.int8, (3, 11, 17)],
+    ],
+)
+def test_flip(para_type, data_type, shape):
 
-    ans = torch.flip(x,dims=(-1,))
-    print(f"toch_npu: {ans}")
+    def torch_func(x):
+        return torch.flip(x, dims=(2,))
 
-    
-    output = torch.randint(1, (XB,YB,ZB), dtype=data_type).npu()
-    fn_npu_[1,1,1](output,x, XB, YB, ZB)
-    print(f"triton: {output}")
+    @libentry()
+    @triton.jit
+    def triton_kernel(
+        output_ptr0, in_ptr0, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr
+    ):
+        xidx = tl.arange(0, XB)
+        yidx = tl.arange(0, YB)
+        zidx = tl.arange(0, ZB)
+        idx = (
+            xidx[:, None, None] * YB * ZB
+            + yidx[None, :, None] * ZB
+            + zidx[None, None, :]
+        )
+        tmp0 = tl.load(in_ptr0 + idx)
+        tmp1 = tl.flip(tmp0, 2)
+        tl.store(output_ptr0 + idx, tmp1)
 
-    test_common.validate_cmp(para_type, ans, output)
+    def triton_func(x):
+        XB, YB, ZB = shape
+        y = torch.empty_like(x)
+        triton_kernel[1, 1, 1](y, x, XB, YB, ZB)
+        return y
+
+    x = torch.randint(low=-128, high=128, size=shape, dtype=data_type).npu()
+    torch_ref = torch_func(x)
+    triton_cal = triton_func(x)
+    test_common.validate_cmp(para_type, torch_ref, triton_cal)

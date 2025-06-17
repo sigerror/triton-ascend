@@ -1,6 +1,7 @@
 from triton.language import core, math
 from triton.language.standard import max, sum
 from triton.runtime.jit import jit
+from triton.language.extra.ascend.libdevice import flip as ascend_flip
 
 @core._tensor_member_fn
 @jit
@@ -13,9 +14,7 @@ def flip(x, dim=None):
     :param dim: the dimension to flip along (currently only final dimension supported)
     :type dim: int
     """
-    core.static_print("tl.flip is unsupported for now. Use libdevice.flip instead.")
-    core.static_assert(False)
-    return x
+    return ascend_flip(x, dim)
 
 @core._tensor_member_fn
 @jit
