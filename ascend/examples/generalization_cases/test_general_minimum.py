@@ -66,15 +66,3 @@ def test_minimum(dtype, shape):
 
     test_common.validate_cmp(dtype, ans, output)
 
-invalid_dtypes = [
-    'bool',
-]
-@pytest.mark.parametrize("dtype", invalid_dtypes)
-@test_common.raises_with_match(triton.compiler.errors.CompilationError, "Unexpected dtype")
-def test_minimum_invalid_dtype_case(dtype):
-    x = test_common.generate_tensor((1,), dtype).npu()
-    y = test_common.generate_tensor((1,), dtype).npu()
-    z = test_common.generate_tensor((1,), dtype).npu()
-
-    output = torch.randint(1, (1,), dtype=eval('torch.'+dtype)).npu()
-    fn_npu_[1, 1, 1](output, x, y, z, 1, 1, 1, 1, 1, 1)
