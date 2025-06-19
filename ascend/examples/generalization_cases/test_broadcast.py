@@ -76,7 +76,7 @@ def test_broadcast_to_dim0(shape, dtype):
     x0 = test_common.generate_tensor(shape=(1, M, N), dtype=dtype).npu()
     ans = x0.repeat(L, 1, 1)
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
-    triton_broadcast_to_dim0[1, 1, 1](x0, output, L, M, N, debug=True)
+    triton_broadcast_to_dim0[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
 
 
@@ -100,7 +100,7 @@ def test_broadcast_to_dim1(shape, dtype):
     x0 = test_common.generate_tensor(shape=(L, 1, N), dtype=dtype).npu()
     ans = x0.repeat(1, M, 1)
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
-    triton_broadcast_to_dim1[1, 1, 1](x0, output, L, M, N, debug=True)
+    triton_broadcast_to_dim1[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
 
 
@@ -124,7 +124,7 @@ def test_broadcast_to_dim2(shape, dtype):
     x0 = test_common.generate_tensor(shape=(L, M, 1), dtype=dtype).npu()
     ans = x0.repeat(1, 1, N)
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
-    triton_broadcast_to_dim2[1, 1, 1](x0, output, L, M, N, debug=True)
+    triton_broadcast_to_dim2[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
 
 
@@ -148,7 +148,7 @@ def test_broadcast_to_dim01(shape, dtype):
     x0 = test_common.generate_tensor(shape=(1, 1, N), dtype=dtype).npu()
     ans = x0.repeat(L, M, 1)
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
-    triton_broadcast_to_dim01[1, 1, 1](x0, output, L, M, N, debug=True)
+    triton_broadcast_to_dim01[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
 
 
@@ -172,7 +172,7 @@ def test_broadcast_to_dim02(shape, dtype):
     x0 = test_common.generate_tensor(shape=(1, M, 1), dtype=dtype).npu()
     ans = x0.repeat(L, 1, N)
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
-    triton_broadcast_to_dim02[1, 1, 1](x0, output, L, M, N, debug=True)
+    triton_broadcast_to_dim02[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
 
 
@@ -196,5 +196,5 @@ def test_broadcast_to_dim12(shape, dtype):
     x0 = test_common.generate_tensor(shape=(L, 1, 1), dtype=dtype).npu()
     ans = x0.repeat(1, M, N)
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
-    triton_broadcast_to_dim12[1, 1, 1](x0, output, L, M, N, debug=True)
+    triton_broadcast_to_dim12[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
