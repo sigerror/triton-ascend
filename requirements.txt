@@ -1,0 +1,2 @@
+torch-npu==2.6.0rc1
+pybind11

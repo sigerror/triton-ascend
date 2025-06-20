@@ -1,0 +1,8 @@
+cmake
+ninja
+pybind11
+wheel
+pytest
+pytest-xdist
+einops
+expecttest
