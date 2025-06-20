@@ -11,7 +11,7 @@ from triton.language.core import (
     constexpr,
 )
 from triton.language.core import dtype as real_dtype
-from triton.language.core import float32, tensor
+from triton.language.core import float32, tensor, check_bit_width, _unwrap_if_constexpr
 
 # from triton.language.core import _unwrap_if_constexpr, _unwrap_shape
 from . import semantic
@@ -289,3 +289,25 @@ def subview(ful, offsets, sizes, strides, _builder=None, _generator=None) -> ten
     ]
     sub = semantic.subview(ful, new_offsets, sizes, strides, _builder)
     return sub
+
+
+@builtin
+def __lshift__(self, other, _builder=None):
+    if self.type.scalar.is_floating():
+        raise TypeError(f"unexpected type {self.type.scalar}")
+    check_bit_width(self, other)
+    other = _unwrap_if_constexpr(other)
+    return semantic.shl(self, other, _builder)
+
+
+@builtin
+def __rshift__(self, other, _builder=None):
+    if self.type.scalar.is_floating():
+        raise TypeError(f"unexpected type {self.type.scalar}")
+    other = _unwrap_if_constexpr(other)
+    check_bit_width(self, other)
+    if self.dtype.is_int_signed():
+        return semantic.ashr(self, other, _builder)
+    else:
+        return semantic.lshr(self, other, _builder)
+

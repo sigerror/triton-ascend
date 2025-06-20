@@ -4,7 +4,8 @@ import triton.language as tl
 from triton._C.libtriton import ir
 from triton.language.semantic import wrap_tensor, _str_to_rounding_mode, not_equal, _str_to_dot_input_precision, \
     binary_op_type_checking_impl, integer_promote_impl, broadcast_impl_shape, _str_to_sem, _str_to_scope, bitcast, \
-    bitwise_op_type_checking_impl, and_, or_, xor_
+    bitwise_op_type_checking_impl, shl, ashr, lshr, fdiv, sub, mul
+import triton.language.math as math
 
 
 def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
@@ -222,6 +223,51 @@ def floordiv(input: Union[tl.tensor, numbers.Number], other: Union[tl.tensor, nu
             return tl.tensor(builder.create_udiv(input.handle, other.handle), input.type)
     raise TypeError(f"unexpected type {input_scalar_ty}")
 
+
+def mod(input: tl.tensor | numbers.Number, other: tl.tensor | numbers.Number, builder: ir.builder) -> tl.tensor:
+    input, other = binary_op_type_checking_impl(input, other, builder, False, False, True, True)
+    scalar_ty = input.type.scalar
+    other_scalar_ty = other.type.scalar
+    if scalar_ty.is_floating():
+        floor = math.floor(fdiv(input, other, False, builder), _builder=builder)
+        ret = sub(input, mul(floor, other, True, builder), True, builder)
+        return ret
+    # % int
+    elif scalar_ty.is_int():
+        if scalar_ty.is_int64():
+            raise TypeError(f"unexpected type {scalar_ty}")
+        if scalar_ty.int_signedness != other_scalar_ty.int_signedness:
+            raise TypeError("Cannot mod " + scalar_ty.__repr__() + " by " + other_scalar_ty.__repr__() + " "
+                            "because they have different signedness;"
+                            "this is unlikely to result in a useful answer. Cast them to the same signedness.")
+        if scalar_ty.is_int_signed():
+            return tl.tensor(builder.create_srem(input.handle, other.handle), input.type)
+        else:
+            return tl.tensor(builder.create_urem(input.handle, other.handle), input.type)
+    raise TypeError(f"unexpected type {scalar_ty}")
+
+
+def and_(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
+    if input.type.scalar.is_floating():
+        raise TypeError(f"unexpected type {input.type.scalar}")
+    input, other = bitwise_op_type_checking_impl(input, other, builder)
+    return tl.tensor(builder.create_and(input.handle, other.handle), input.type)
+
+
+def or_(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
+    if input.type.scalar.is_floating():
+        raise TypeError(f"unexpected type {input.type.scalar}")
+    input, other = bitwise_op_type_checking_impl(input, other, builder)
+    return tl.tensor(builder.create_or(input.handle, other.handle), input.type)
+
+
+def xor_(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
+    if input.type.scalar.is_floating():
+        raise TypeError(f"unexpected type {input.type.scalar}")
+    input, other = bitwise_op_type_checking_impl(input, other, builder)
+    return tl.tensor(builder.create_xor(input.handle, other.handle), input.type)
+
+
 def gather(src: tl.tensor, index: tl.tensor, axis: int, builder: ir.builder) -> tl.tensor:
     assert index.dtype.is_int(), "index must be an integer tensor"
 
@@ -257,7 +303,9 @@ def invert(input: tl.tensor, builder: tl.tensor) -> tl.tensor:
         assert input.type.scalar.is_int8(), "input wat bool to int8. However, input.type is not int8."
         input = cast(input, tl.int1, builder)
     input_sca_ty = input.type.scalar
-    if input_sca_ty.is_ptr() or input_sca_ty.is_floating():
+    if input_sca_ty.is_floating():
+        raise TypeError(f"unexpected type {input_sca_ty}")
+    if input_sca_ty.is_ptr():
         raise ValueError("wrong type argument to unary invert (" + input_sca_ty.__repr__() + ")")
     _1 = tl.tensor(builder.get_all_ones_value(input_sca_ty.to_ir(builder)), input_sca_ty)
     return xor_(input, _1, builder)
@@ -295,6 +343,8 @@ def not_(input: tl.tensor, builder: ir.builder):
     if hasattr(input, 'was_bool_to_int8'):
         assert input.type.scalar.is_int8(), "input wat bool to int8. However, input.type is not int8."
         input = cast(input, tl.int1, builder)
+    if input.type.scalar.is_floating():
+        raise TypeError(f"unexpected type {input.type.scalar}")
     return invert(input, builder)
 
 

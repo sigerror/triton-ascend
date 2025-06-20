@@ -84,3 +84,22 @@ def test_case2(dtype, shape):
 
     test_common.validate_cmp(dtype, ans, output)
 
+invalid_types = [
+    'float16',
+    'float32',
+    'bfloat16',
+]
+
+
+@pytest.mark.parametrize("sigtype", invalid_types)
+@test_common.raises_with_match(triton.compiler.errors.CompilationError, "unexpected type")
+def test_invalid_types(sigtype):
+    N = 32
+    x = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+    y = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+    z = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+    output = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+
+    fn_npu_[1, 1, 1](output, x, y, z, 32, 1, 1, 32, 1, 1)
+
+

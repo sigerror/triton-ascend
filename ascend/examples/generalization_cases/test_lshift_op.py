@@ -145,3 +145,20 @@ def test_lshift_4d_5d(shape, dtype):
     triton_lshift_4d_5d[grid](x, output, *blocks, *blocks, *strides)
 
     test_common.validate_cmp(dtype, ans, output)
+
+invalid_types = [
+    'float16',
+    'float32',
+    'bfloat16',
+]
+
+
+@pytest.mark.parametrize("sigtype", invalid_types)
+@test_common.raises_with_match(triton.compiler.errors.CompilationError, "unexpected type")
+def test_invalid_types(sigtype):
+    N = 32
+    x = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+    output = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+
+    triton_lshift_1d[1, 1, 1](x, output, N)
+
