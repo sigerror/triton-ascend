@@ -328,7 +328,7 @@ testlist += [
 
 @pytest.mark.parametrize('testfunc, sigtype, dtype, shape', testlist)
 def test_npu(testfunc, sigtype, dtype, shape):
-    x = 0;
+    x = 0
     output = 0
     if len(shape) == 3:
         if dtype == torch.bool:
@@ -358,4 +358,66 @@ def test_npu(testfunc, sigtype, dtype, shape):
             x = torch.full((shape[0], ), 100, dtype=dtype).npu()
         output = torch.randint(1, (shape[0],), dtype=dtype).npu()
         testfunc[1, 1, 1](output, shape[0], debug=True)
+    test_common.validate_cmp(sigtype, output, x)
+
+
+@triton.jit
+def fn_npu_multi_d(output_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+    dtype = output_ptr.type.element_ty
+
+    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    if (YB * ZB * MB * NB) > 1:
+        offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    if (ZB * MB * NB) > 1:
+        offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    if (MB * NB) > 1:
+        offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    if NB > 1:
+        offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+
+    if (YB * ZB * MB * NB) == 1:
+        ret = tl.full((XB, ), value=100, dtype=dtype)
+    elif (ZB * MB * NB) == 1:
+        ret = tl.full((XB, YB), value=100, dtype=dtype)
+    elif (MB * NB) == 1:
+        ret = tl.full((XB, YB, ZB), value=100, dtype=dtype)
+    elif NB == 1:
+        ret = tl.full((XB, YB, ZB, MB), value=100, dtype=dtype)
+    else:
+        ret = tl.full((XB, YB, ZB, MB, NB), value=100, dtype=dtype)
+
+    tl.store(output_ptr + offsets, ret)
+
+
+testlist_multi_d = [
+    (fn_npu_multi_d, 'float32', torch.float32, (4, 2, 16, 16)),
+    (fn_npu_multi_d, 'float32', torch.float32, (2, 4, 2, 16, 16)),
+
+    (fn_npu_multi_d, 'float32', torch.float16, (4, 2, 16, 16)),
+    (fn_npu_multi_d, 'float32', torch.float16, (2, 4, 2, 16, 16)),
+
+    (fn_npu_multi_d, 'float32', torch.int8, (4, 2, 16, 16)),
+    (fn_npu_multi_d, 'float32', torch.int8, (2, 4, 2, 16, 16)),
+]
+
+
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('testfunc, sigtype, dtype, shape', testlist_multi_d)
+def test_npu_4d_5d(testfunc, sigtype, dtype, shape):
+    x = torch.full(shape, 100, dtype=dtype).npu()
+
+    print(f"shape = {x.shape}")
+    print(x.dtype)
+    print(torch.flatten(x)[0:16])
+
+    output = torch.randint(1, shape, dtype=dtype).npu()
+
+    print(f"output.dtype={output.dtype}")
+
+    triton_shape = [*shape]
+    while len(triton_shape) < 5:
+        triton_shape.append(1)
+    testfunc[(1,)](output, *triton_shape)
+    print(torch.flatten(output)[0:16])
+
     test_common.validate_cmp(sigtype, output, x)

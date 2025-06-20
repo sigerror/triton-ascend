@@ -74,6 +74,53 @@ def test_npu(shape, dtype):
 
     test_common.validate_cmp(dtype, triton_res, torch_res)
 
+
+@triton.jit
+def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    if (YB * ZB * MB * NB) > 1:
+        offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    if (ZB * MB * NB) > 1:
+        offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    if (MB * NB) > 1:
+        offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    if NB > 1:
+        offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+
+    X = tl.load(x_ptr + offsets)
+    ret = tl.zeros_like(X)
+
+    tl.store(output_ptr + offsets, ret)
+
+
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('param_list',
+                         [
+                            ('float32', (4, 2, 16, 16)),
+                            ('float32', (2, 4, 2, 16, 16)),
+
+                            ('float32', (4, 2, 16, 16)),
+                            ('float32', (2, 4, 2, 16, 16)),
+
+                            ('float32', (4, 2, 16, 16)),
+                            ('float32', (2, 4, 2, 16, 16)),
+                         ]
+                         )
+def test_case_4d_5d(param_list):
+    dtype, shape = param_list
+    x0 = test_common.generate_tensor(shape, dtype)
+    y_ref = torch.zeros_like(x0, dtype=eval('torch.' + dtype)).npu()
+    print(f"y_ref = {torch.flatten(y_ref)[0:4]}")
+    y_cal = torch.ones(shape, dtype=eval('torch.' + dtype)).npu()
+
+    triton_shape = [*shape]
+    while len(triton_shape) < 5:
+        triton_shape.append(1)
+    fn_npu_multi_d[(1,)](y_cal, x0, *triton_shape)
+    print(f"y_cal = {torch.flatten(y_cal)[0:4]}")
+    test_common.validate_cmp(dtype, y_cal, y_ref)
+
+
 if __name__ == "__main__":
     for dtype in TestUtils.dtype_list:
         for shape in [(37,), (37, 3), (1, 22, 39)]:

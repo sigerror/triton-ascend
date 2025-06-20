@@ -270,6 +270,88 @@ def test_cast(srcDtype, dstDtype, shape):
     triton_func[1, 1, 1](triton_res, x0, stride0, stride1, stride2, dim, XB, YB, ZB)
     test_common.validate_cmp(dstDtype, triton_res, torch_res)
 
+
+@triton.jit
+def cast_to_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+    dtype = output_ptr.type.element_ty
+
+    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    if (YB * ZB * MB * NB) > 1:
+        offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    if (ZB * MB * NB) > 1:
+        offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    if (MB * NB) > 1:
+        offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    if NB > 1:
+        offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+
+    X = tl.load(x_ptr + offsets)
+    ret = tl.cast(X, dtype=dtype)
+
+    tl.store(output_ptr + offsets, ret)
+
+
+def cast_npu_multi_d(para_type, data_type, to_para, to_dtype, XB, YB, ZB, MB, NB):
+    print(f"TESTING: cast from {para_type} to {to_para} in shape ({XB}, {YB}, {ZB}, {MB}, {NB})")
+
+    if para_type == '*i1':
+        x = torch.randint(low=0, high=2, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
+    elif para_type == '*i8' or para_type == '*i16' or para_type == '*i32' or para_type == '*64':
+        x = torch.randint(low=-128, high=128, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
+    elif para_type == '*i16':
+        x = torch.randint(low=-32768, high=32768, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
+    elif para_type == '*i32':
+        x = torch.randint(low=-65536, high=65536, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
+    elif para_type == '*i64':
+        x = torch.randint(low=-65536, high=65536, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
+    else:  # float
+        x = torch.randn((XB, YB, ZB, MB, NB), dtype=data_type).npu()
+
+    if to_para == '*i1':
+        cmp_type = "bool"
+    elif to_para == '*i8':
+        cmp_type = "int8"
+    elif to_para == '*i16':
+        cmp_type = "int16"
+    elif to_para == '*i32':
+        cmp_type = "int32"
+    elif to_para == '*i64':
+        cmp_type = "int64"
+    elif to_para == '*fp16':
+        cmp_type = "float16"
+    elif to_para == '*fp32':
+        cmp_type = "float32"
+    elif to_para == '*bf16':
+        cmp_type = "bfloat16"
+
+    output = torch.randint(1, (XB, YB, ZB, MB, NB), dtype=to_dtype).npu()
+
+    a = x.to(to_dtype)
+
+    cast_to_multi_d[(1, )](output, x, XB, YB, ZB, MB, NB)
+
+    test_common.validate_cmp(cmp_type, a, output)
+
+
+@pytest.mark.shape_4d_5d
+def test_cast_high_priority_dtype_4d_5d():
+    typelist = [
+        (torch.int8, '*i8'),
+        (torch.float32, '*fp32'),
+        (torch.float16, '*fp16'),
+    ]
+
+    shapes = [(4, 6, 2, 4, 2)]
+    ContinueList = []
+    for src in typelist:
+        for dst in typelist:
+            if src != dst and (src[1], dst[1]) not in ContinueList:
+                for shape in shapes:
+                    cast_npu_multi_d(src[1], src[0], dst[1], dst[0], shape[0], shape[1], shape[2], shape[3], shape[4])
+
+    print("test_cast_full_multi_d passed")
+
+
 if __name__ == "__main__":
     for shape in [(3, ), (3, 3), (3, 3, 3)]:
         for srcDtype in ['int8', 'float32', 'bool']:

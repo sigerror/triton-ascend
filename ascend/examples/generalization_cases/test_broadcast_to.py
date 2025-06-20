@@ -194,3 +194,48 @@ def test_broadcast_to_dim12(shape, dtype):
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
     triton_broadcast_to_dim12[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
+
+
+NBLOCKS = 1
+XS: tl.constexpr = 64
+YS: tl.constexpr = 4
+ZS: tl.constexpr = 8
+MS: tl.constexpr = 2
+NS: tl.constexpr = 2
+NUMEL_3D: tl.constexpr = XS * ZS
+NUMEL_4D: tl.constexpr = XS * ZS
+NUMEL_5D: tl.constexpr = XS * ZS * NS
+
+
+@triton.jit
+def fn_broadcast_4d(output_ptr, x_ptr):
+    col_offsets = tl.arange(0, NUMEL_4D)
+    input = tl.load(x_ptr + col_offsets)
+    result = input.reshape((XS, 1, ZS, 1)).broadcast_to((XS, YS, ZS, MS)).reshape((XS * YS * ZS * MS))
+    brc_col_offsets = tl.arange(0, NUMEL_4D * YS * MS)
+    tl.store(output_ptr + brc_col_offsets, result)
+
+
+@triton.jit
+def fn_broadcast_5d(output_ptr, x_ptr):
+    col_offsets = tl.arange(0, NUMEL_5D)
+    input = tl.load(x_ptr + col_offsets)
+    result = input.reshape((XS, 1, ZS, 1, NS)).broadcast_to((XS, YS, ZS, MS, NS)).reshape((XS * YS * ZS * MS * NS))
+    brc_col_offsets = tl.arange(0, NUMEL_5D * YS * MS)
+    tl.store(output_ptr + brc_col_offsets, result)
+
+
+@pytest.mark.shape_4d_5d
+def test_broadcast_4d():
+    x = torch.randn((XS, 1, ZS, 1), dtype=torch.float32).npu()
+    output = torch.randn((XS, YS, ZS, MS), dtype=torch.float32).npu()
+    fn_broadcast_4d[(1,)](output, x)
+    assert(torch.equal(output, x.repeat(1, YS, 1, MS)))
+
+
+@pytest.mark.shape_4d_5d
+def test_broadcast_5d():
+    x = torch.randn((XS, 1, ZS, 1, NS), dtype=torch.float32).npu()
+    output = torch.zeros((XS, YS, ZS, MS, NS), dtype=torch.float32).npu()
+    fn_broadcast_5d[(1,)](output, x)
+    assert(torch.equal(output, x.repeat(1, YS, 1, MS, 1)))
