@@ -113,6 +113,13 @@ public:
                                 PatternRewriter &rewriter) const override;
 };
 
+class ReduceSingleCanonicalizer : public OpRewritePattern<triton::ReduceOp> {
+public:
+  using OpRewritePattern<triton::ReduceOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(triton::ReduceOp reduceOp,
+                                PatternRewriter &rewriter) const override;
+};
+
 class DenseConstantConverter : public OpConversionPattern<arith::ConstantOp> {
 public:
   using OpConversionPattern<arith::ConstantOp>::OpConversionPattern;

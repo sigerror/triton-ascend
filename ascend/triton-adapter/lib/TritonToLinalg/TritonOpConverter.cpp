@@ -512,6 +512,41 @@ MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
   return success();
 }
 
+LogicalResult ReduceSingleCanonicalizer::matchAndRewrite(triton::ReduceOp reduceOp, PatternRewriter &rewriter) const
+{
+    auto srcs = reduceOp.getSrcs();
+    bool allSrcSingleElem = true;
+    for (auto src : srcs) {
+        auto srcType = cast<RankedTensorType>(src.getType());
+        auto srcShape = srcType.getShape();
+        int64_t numel = 1;
+        for (auto s : srcShape) {
+            numel *= s;
+        }
+        if (numel != 1) {
+            allSrcSingleElem = false;
+            break;
+        }
+    }
+
+    if (!allSrcSingleElem) {
+        return rewriter.notifyMatchFailure(reduceOp, "reduce's srcs are not all with single element");
+    }
+
+    auto results = reduceOp.getResult();
+    auto loc = reduceOp->getLoc();
+    auto zero = rewriter
+                    .create<arith::ConstantOp>(loc, rewriter.getIndexType(),
+                                               rewriter.getIntegerAttr(rewriter.getIndexType(), 0))
+                    .getResult();
+    for (int i = 0; i < srcs.size(); i++) {
+        auto extracted = rewriter.create<tensor::ExtractOp>(loc, srcs[i], zero);
+        results[i].replaceAllUsesWith(extracted);
+    }
+
+    return success();
+}
+
 LogicalResult DenseConstantConverter::matchAndRewrite(
     arith::ConstantOp op, OpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
@@ -837,8 +872,7 @@ LogicalResult ReduceConverter::convertToLinalgReduce(
   if (reductionOps.size() != 1 ||
       !isReductionOpSupported(reductionOps.front())) {
     return rewriter.notifyMatchFailure(
-        op, "Only support lowering reduction with body "
-            "containing 1 max(i/f) or addf.");
+        op, "Only support lowering reduction with single op and limited types of reducetion");
   }
 
   auto rop = reductionOps.front();
@@ -948,8 +982,7 @@ ReduceConverter::matchAndRewrite(triton::ReduceOp op,
                                  ConversionPatternRewriter &rewriter) const {
   auto sourceType =
       cast<RankedTensorType>(adaptor.getOperands().front().getType());
-  assert(sourceType.hasRank() && "Expected input is "
-                                 "ranked");
+  assert(sourceType.hasRank() && "Expected input is ranked");
 
   int64_t axis = op.getAxis();
   assert(axis >= 0 && axis < sourceType.getRank() &&

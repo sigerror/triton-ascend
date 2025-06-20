@@ -4,6 +4,17 @@ import pytest
 import functools
 import re
 
+_float_dtypes = [
+    'float32', 'float16', 'bfloat16'
+]
+_int_dtypes = [
+    'int32', 'int64', 'int16', 'int8'
+]
+_all_dtypes_no_bool = _float_dtypes + _int_dtypes
+_all_dtypes = _all_dtypes_no_bool + ['bool']
+_32bit_dtypes = ['float32', 'int32']
+_16bit_dtypes = ['float16', 'bfloat16', 'int16']
+
 def generate_tensor(shape, dtype):
     if dtype == 'float32' or dtype == 'float16' or dtype == 'bfloat16':
         return torch.randn(size=shape, dtype=eval('torch.' + dtype))
