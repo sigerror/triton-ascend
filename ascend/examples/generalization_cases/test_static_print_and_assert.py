@@ -59,8 +59,6 @@ def test_static_print_int8(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_INT[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, -128, XVALS_INT[0])
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
@@ -72,8 +70,6 @@ def test_static_print_int16(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_INT[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, -32768, XVALS_INT[2])
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
@@ -85,8 +81,6 @@ def test_static_print_int32(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_INT[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, -2147483648, XVALS_INT[4])
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
@@ -98,8 +92,6 @@ def test_static_print_int64(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_INT[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, 9223372036854775807, XVALS_INT[-1])
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
@@ -111,8 +103,6 @@ def test_static_print_float16(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_FP[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, 1.1921000009e-07, XVALS_FP[1])
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
@@ -124,8 +114,6 @@ def test_static_print_float32(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_FP[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, 7.8125000000e-03, XVALS_FP[0])
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
@@ -137,8 +125,6 @@ def test_static_print_bfloat16(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_FP[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, 9.7655999707e-04, XVALS_FP[2])
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
@@ -150,8 +136,6 @@ def test_static_print_bool(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype=dtype).npu()
     x1 = torch.ones(shape, dtype=dtype).npu()
-    for i in range(x1.numel()):
-        x1[i] = XVALS_INT[i]
     torch_ref = torch_func(x0, x1)
     triton_cal = triton_func(x0, x1, XS, True, True)
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)

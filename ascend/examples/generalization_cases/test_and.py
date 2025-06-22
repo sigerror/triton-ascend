@@ -1,5 +1,4 @@
 import logging
-
 import triton
 import triton.language as tl
 import torch
@@ -135,7 +134,7 @@ def test_and_4d_5d(shape, dtype):
         strides.append(1)
 
     grid = (1,)
-    triton_add_4d_5d[grid](output, x, y, *blocks, *blocks, *strides)
+    triton_and_4d_5d[grid](output, x, y, *blocks, *blocks, *strides)
 
     test_common.validate_cmp(dtype, ans, output)
 
