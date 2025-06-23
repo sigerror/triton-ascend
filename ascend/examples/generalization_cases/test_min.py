@@ -146,3 +146,132 @@ def test_min_3d(dtype, shape, no_reduce_dim):
     test_common.validate_cmp(dtype, triton_res, torch_res)
 
 # >>>>>>> test_min_3d
+
+
+# <<<<<<< test_min_4d
+def torch_min_4d(x0, dim):
+    x0 = x0 if x0.device == "cpu" else x0.cpu()
+    if x0.dtype in (torch.int8, torch.int16, torch.int32):
+        x0 = x0.to(torch.int64)
+    return torch.min(x0, dim=dim)[0]
+
+
+@triton.jit
+def min_4d(out_ptr, x, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, DIM: tl.constexpr):
+    if DIM == 0:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB // XB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB // XB)
+        tl.store(out_ptr + o_idx, ret)
+    elif DIM == 1:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB // YB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB // YB)
+        tl.store(out_ptr + o_idx, ret)
+    elif DIM == 2:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB // ZB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB // ZB)
+        tl.store(out_ptr + o_idx, ret)
+    else:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB // MB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB // MB)
+        tl.store(out_ptr + o_idx, ret)
+
+
+@triton.jit
+def triton_min_kernel_4d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, DIM: tl.constexpr):
+    xidx = tl.arange(0, XB)
+    yidx = tl.arange(0, YB)
+    zidx = tl.arange(0, ZB)
+    midx = tl.arange(0, MB)
+
+    idx = xidx[:, None, None, None] * YB * ZB * MB + yidx[None, :, None, None] * ZB * MB + zidx[None, None, :, None] * MB + midx[None, None, None, :]
+
+    x = tl.load(in_ptr + idx)
+
+    min_4d(out_ptr, x, XB, YB, ZB, MB, DIM)
+
+
+def triton_min_4d(in_ptr, out_ptr, XB, YB, ZB, MB, dim):
+    triton_min_kernel_4d[(1,)](in_ptr, out_ptr, XB, YB, ZB, MB, dim)
+
+
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('shape', [
+    (2, 2, 4, 8)
+])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dim', [0])
+def test_min_4d(dtype, shape, dim):
+    x0 = test_common.generate_tensor(shape, dtype).npu()
+    torch_res = torch_min_4d(x0, dim)
+    triton_res = torch.empty_like(torch_res).npu()
+    triton_min_4d(x0, triton_res, shape[0], shape[1], shape[2], shape[3], dim)
+
+    test_common.validate_cmp(dtype, triton_res, torch_res)
+# >>>>>>> test_min_4d
+
+
+# <<<<<<< test_min_5d
+def torch_min_5d(x0, dim):
+    x0 = x0 if x0.device == "cpu" else x0.cpu()
+    if x0.dtype in (torch.int8, torch.int16, torch.int32):
+        x0 = x0.to(torch.int64)
+    return torch.min(x0, dim=dim)[0]
+
+
+@triton.jit
+def min_5d(out_ptr, x, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIM: tl.constexpr):
+    if DIM == 0:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB * NB // XB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB * NB // XB)
+        tl.store(out_ptr + o_idx, ret)
+    elif DIM == 1:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB * NB // YB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB * NB // YB)
+        tl.store(out_ptr + o_idx, ret)
+    elif DIM == 2:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB * NB // ZB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB * NB // ZB)
+        tl.store(out_ptr + o_idx, ret)
+    elif DIM == 3:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB * NB // MB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB * NB // MB)
+        tl.store(out_ptr + o_idx, ret)
+    else:
+        ret = tl.reshape(tl.min(x, DIM), XB * YB * ZB * MB * NB // NB)
+        o_idx = tl.arange(0, XB * YB * ZB * MB * NB // NB)
+        tl.store(out_ptr + o_idx, ret)
+
+
+@triton.jit
+def triton_min_kernel_5d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIM: tl.constexpr):
+    xidx = tl.arange(0, XB)
+    yidx = tl.arange(0, YB)
+    zidx = tl.arange(0, ZB)
+    midx = tl.arange(0, MB)
+    nidx = tl.arange(0, NB)
+
+    idx = xidx[:, None, None, None, None] * YB * ZB * MB * NB + yidx[None, :, None, None, None] * ZB * MB * NB + zidx[None, None, :, None, None] * MB * NB + midx[None, None, None, :, None] * NB + nidx[None, None, None, None, :] 
+
+    x = tl.load(in_ptr + idx)
+
+    min_5d(out_ptr, x, XB, YB, ZB, MB, NB, DIM)
+
+
+def triton_min_5d(in_ptr, out_ptr, XB, YB, ZB, MB, NB, dim):
+    triton_min_kernel_5d[(1,)](in_ptr, out_ptr, XB, YB, ZB, MB, NB, dim)
+
+
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('shape', [
+    (2, 2, 2, 4, 8)
+])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dim', [0])
+def test_min_5d(dtype, shape, dim):
+    x0 = test_common.generate_tensor(shape, dtype).npu()
+    torch_res = torch_min_5d(x0, dim)
+    triton_res = torch.empty_like(torch_res).npu()
+    triton_min_5d(x0, triton_res, shape[0], shape[1], shape[2], shape[3], shape[4], dim)
+
+    test_common.validate_cmp(dtype, triton_res, torch_res)
+# >>>>>>> test_min_5d

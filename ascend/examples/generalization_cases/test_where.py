@@ -82,3 +82,53 @@ def test_case2(dtype, shape):
     fn_npu_[grid](output, x, y, z, XB, YB, ZB, xnumel, ynumel, znumel)
 
     test_common.validate_cmp(dtype, ans, output)
+
+
+@triton.jit
+def fn_npu_multi_d(output_ptr, x_ptr, y_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    if (YB * ZB * MB * NB) > 1:
+        offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    if (ZB * MB * NB) > 1:
+        offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    if (MB * NB) > 1:
+        offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    if NB > 1:
+        offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+
+    X = tl.load(x_ptr + offsets)
+    Y = tl.load(y_ptr + offsets)
+
+    tmp2 = X < Y
+    ret = tl.where(tmp2, X, 1)
+
+    tl.store(output_ptr + offsets, ret)
+
+
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('shape', [
+    (4, 2, 8, 4),
+    (2, 4, 2, 8, 4),
+
+    (4, 3, 8, 4),
+    (3, 4, 2, 8, 4),
+])
+@pytest.mark.parametrize('dtype',
+                         ['float32', 'float16', 'bfloat16', 'int8', 'int16', 'int32', 'int64'])
+def test_case_4d_5d(dtype, shape):
+    # 生成数据
+    x = test_common.generate_tensor(shape, dtype).npu()
+    y = test_common.generate_tensor(shape, dtype).npu()
+    new_shape = shape
+
+    output = torch.randint(1, new_shape, dtype=eval('torch.' + dtype)).npu()
+
+    ans = torch_pointwise(x, y)
+
+    triton_shape = [*shape]
+    while len(triton_shape) < 5:
+        triton_shape.append(1)
+    grid = (1, )
+    fn_npu_multi_d[grid](output, x, y, *triton_shape)
+
+    test_common.validate_cmp(dtype, ans, output)
