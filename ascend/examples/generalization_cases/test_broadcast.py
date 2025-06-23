@@ -198,3 +198,63 @@ def test_broadcast_to_dim12(shape, dtype):
     output = torch.zeros((L, M, N), dtype=eval('torch.' + dtype)).npu()
     triton_broadcast_to_dim12[1, 1, 1](x0, output, L, M, N)
     test_common.validate_cmp(dtype, output, ans)
+
+
+@triton.jit
+def fn_broadcast_4d(in_ptr, out_ptr, L: tl.constexpr, M: tl.constexpr, N: tl.constexpr, X: tl.constexpr):
+    l_idx = tl.arange(0, L)
+    m_idx = tl.arange(0, M)
+    n_idx = tl.arange(0, N)
+    x_idx = tl.arange(0, X)
+
+    in_idx = l_idx[:, None, None, None] * N + tl.arange(0, 1)[None, :, None, None] + n_idx[None, None, :, None] + tl.arange(0, 1)[None, None, None, :]
+    out_idx = l_idx[:, None, None, None] * M * N * X + m_idx[None, :, None, None] * N * X + n_idx[None, None, :, None] * X + x_idx[None, None, None, :]
+
+    in_data = tl.load(in_ptr + in_idx)
+    out_data = tl.load(out_ptr + out_idx)
+    out_data = tl.broadcast(in_data, out_data)
+    tl.store(out_ptr + out_idx, out_data)
+
+
+@triton.jit
+def fn_broadcast_5d(in_ptr, out_ptr, L: tl.constexpr, M: tl.constexpr, N: tl.constexpr, X: tl.constexpr, Y: tl.constexpr):
+    l_idx = tl.arange(0, L)
+    m_idx = tl.arange(0, M)
+    n_idx = tl.arange(0, N)
+    x_idx = tl.arange(0, X)
+    y_idx = tl.arange(0, X)
+
+    in_idx = l_idx[:, None, None, None, None] * N * Y + tl.arange(0, 1)[None, :, None, None, None] + n_idx[None, None, :, None, None] * Y + tl.arange(0, 1)[None, None, None, :, None] + y_idx[None, None, None, None, None]
+    out_idx = l_idx[:, None, None, None, None] * M * N * X * Y + m_idx[None, :, None, None, None] * N * X * Y + n_idx[None, None, :, None, None] * X * Y + x_idx[None, None, None, :, None] * Y + y_idx[None, None, None, None, None]
+
+    in_data = tl.load(in_ptr + in_idx)
+    out_data = tl.load(out_ptr + out_idx)
+    out_data = tl.broadcast(in_data, out_data)
+    tl.store(out_ptr + out_idx, out_data)
+
+
+@pytest.mark.shape_4d_5d
+def test_broadcast_4d():
+    L = 64
+    M = 4
+    N = 8
+    X = 2
+
+    in_data = torch.randn((L, 1, N, 1), dtype=torch.float32).npu()
+    out_data = torch.zeros((L, M, N, X), dtype=torch.float32).npu()
+    fn_broadcast_4d[(1,)](in_data, out_data, L, M, N, X)
+    assert(torch.equal(out_data, in_data.repeat(1, M, 1, X)))
+
+
+@pytest.mark.shape_4d_5d
+def test_broadcast_5d():
+    L = 64
+    M = 4
+    N = 8
+    X = 2
+    Y = 2
+
+    in_data = torch.randn((L, 1, N, 1, Y), dtype=torch.float32).npu()
+    out_data = torch.zeros((L, M, N, X, Y), dtype=torch.float32).npu()
+    fn_broadcast_5d[(1,)](in_data, out_data, L, M, N, X, Y)
+    assert(torch.equal(out_data, in_data.repeat(1, M, 1, X, 1)))

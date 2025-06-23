@@ -1,4 +1,3 @@
-
 import triton
 import triton.language as tl
 import torch
@@ -82,5 +81,47 @@ def test_atomic_min_3d(dtype, shape):
     n_elements = shape[0] * shape[1] * shape[2]
     triton_test_fn_atomic_min_dma[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=split_size * shape[1] * shape[2])
     test_common.validate_cmp(dtype, x1, x1_ref)
-# if __name__ == "__main__":
-#     test_atomic_min(['int32', (8, 8), 2])
+
+
+@triton.jit
+def atomic_min_multi_d(in_ptr0, out_ptr0, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    if (YB * ZB * MB * NB) > 1:
+        offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    if (ZB * MB * NB) > 1:
+        offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    if (MB * NB) > 1:
+        offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    if NB > 1:
+        offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+    
+    tmp0 = tl.load(in_ptr0 + offsets)
+    tl.atomic_min(out_ptr0 + offsets, tmp0)
+
+
+filtered_dtype = [dtype for dtype in TestUtils.full_dtype if dtype not in {'int64', 'bool'}]
+
+
+# multi_d
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('shape', [
+    (2, 4, 8, 4),
+    (8, 4, 2, 4),
+    (2, 8, 2, 2),
+    (2, 4, 8, 4, 2),
+    (8, 4, 2, 4, 4),
+    (2, 8, 2, 2, 2),
+])
+@pytest.mark.parametrize('dtype', filtered_dtype)
+def test_atomic_min_4d_5d(dtype, shape):
+    x0_value = 1
+    x0 = torch.full(shape, x0_value, dtype=eval('torch.' + dtype)).npu()
+    x1 = torch.full(shape, 2, dtype=eval('torch.' + dtype)).npu()
+
+    x1_ref = torch.minimum(x1, x0)
+
+    triton_shape = [*shape]
+    while len(triton_shape) < 5:
+        triton_shape.append(1)
+    atomic_min_multi_d[(1, )](x0, x1, *triton_shape)
+    test_common.validate_cmp(dtype, x1, x1_ref)
