@@ -33,6 +33,20 @@ def triton_add(output_ptr, x_ptr, y_ptr, z_ptr, XB: tl.constexpr, YB: tl.constex
 
 
 @triton.jit
+def triton_add_broadcast(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexpr):
+    x0_tensor = tl.load(in_ptr0)
+
+    offset = tl.program_id(0) * XBLOCK
+    base1 = tl.arange(0, XBLOCK_SUB)
+    loops1: tl.constexpr = (XBLOCK + XBLOCK_SUB - 1) // XBLOCK_SUB
+    for loop1 in range(loops1):
+        x0 = offset + (loop1 * XBLOCK_SUB) + base1
+        tmp1 = tl.load(in_ptr1 + (x0), None)
+        tmp2 = x0_tensor + tmp1
+        tl.store(out_ptr0 + (x0), tmp2, None)
+
+
+@triton.jit
 def triton_add_4d_5d(
         output_ptr, x_ptr, y_ptr,
         BLOCK_0: tl.constexpr, BLOCK_1: tl.constexpr, BLOCK_2: tl.constexpr, BLOCK_3: tl.constexpr,
@@ -141,3 +155,26 @@ def test_add_4d_5d(shape, dtype):
     triton_add_4d_5d[grid](output, x, y, *blocks, *blocks, *strides)
 
     test_common.validate_cmp(dtype, ans, output)
+
+
+@pytest.mark.parametrize('param_list',
+                         [
+                            [(2,), (2, 4), 2, 4, 2],
+                            [(2,), (2, 4, 2), 2, 8, 2],
+                            [(2,), (2, 4, 2, 2), 2, 16, 8],
+                            [(2,), (2, 4, 2, 2, 2), 2, 32, 16],
+                         ]
+                         )
+@pytest.mark.parametrize('dtype', ['float32'])
+def test_add_broadcast(param_list, dtype):
+    x0_shape, x1_shape, ncore, xblock, xblock_sub = param_list
+
+    x0 = torch.ones(x0_shape, dtype=eval('torch.' + dtype)).npu()
+    x1 = test_common.generate_tensor(x1_shape, dtype).npu()
+
+    x0_ref = torch.ones(x1_shape, dtype=eval('torch.' + dtype)).npu()
+    y_ref = torch_pointwise(x0_ref, x1)
+
+    y_cal = torch.zeros(x1_shape, dtype=eval('torch.' + dtype)).npu()
+    triton_add_broadcast[ncore, 1, 1](x0, x1, y_cal, xblock, xblock_sub)
+    test_common.validate_cmp(dtype, y_cal, y_ref)
