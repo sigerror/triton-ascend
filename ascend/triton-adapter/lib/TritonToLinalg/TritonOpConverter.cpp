@@ -754,6 +754,13 @@ BroadcastConverter::matchAndRewrite(triton::BroadcastOp op, OpAdaptor adaptor,
 }
 
 // Reduce Converter
+bool ReduceConverter::isReductionOpSupported(Operation *redOp) const {
+  return isa<arith::AddFOp, arith::AddIOp, arith::MulFOp, arith::MaximumFOp,
+          arith::MaxNumFOp, arith::MinimumFOp, arith::MinNumFOp,
+          arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp, arith::MaxUIOp,
+          arith::AndIOp, arith::OrIOp, arith::XOrIOp>(redOp);
+}
+
 LogicalResult ReduceConverter::convertToTargetOp(
     triton::ReduceOp op, typename triton::ReduceOp::Adaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
@@ -767,8 +774,7 @@ LogicalResult ReduceConverter::convertToTargetOp(
   // Reduction of arbitrary operations isn't supported because using the first
   // element across the reduction dimension requires us to iterate over a
   // subview that skips over each first element.
-  if (reductionOps.size() != 1 ||
-      !this->isReductionOpSupported(reductionOps.front())) {
+  if (!this->isReductionOpSupported(reductionOps.front())) {
     return rewriter.notifyMatchFailure(
         op, "Only support lowering reduction with single op and limited types of reducetion");
   }
@@ -869,6 +875,67 @@ LogicalResult ReduceConverter::convertToTargetOpExtended(
     rewriter.replaceOp(op, linalgOp);
   }
   return success();
+}
+
+bool ScanConverter::isReductionOpSupported(Operation *redOp) const {
+  return isa<arith::AddFOp, arith::AddIOp, arith::MulFOp, arith::MulIOp>(redOp);
+}
+
+LogicalResult ScanConverter::convertToTargetOp(
+    triton::ScanOp op, typename triton::ScanOp::Adaptor adaptor,
+    ConversionPatternRewriter &rewriter) const {
+  auto reductionOps = this->getRedOps(op);
+  // Reduction of arbitrary operations isn't supported because using the first
+  // element across the reduction dimension requires us to iterate over a
+  // subview that skips over each first element.
+  if (!this->isReductionOpSupported(reductionOps.front())) {
+    return rewriter.notifyMatchFailure(
+        op, "Only support lowering reduction with single op and limited types of reducetion");
+  }
+
+  llvm::SmallString<64> funcName;
+  auto rop = reductionOps.front();
+  if (isa<arith::AddFOp, arith::AddIOp>(rop)) {
+    funcName = "triton_cumsum";
+  } else if (isa<arith::MulFOp, arith::MulIOp>(rop)) {
+    funcName = "triton_cumprod";
+  }
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+
+  int uniqueId = 0;
+  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
+    funcName += "_" + std::to_string(uniqueId++);
+  }
+
+  auto loc = op.getLoc();
+  auto src = adaptor.getOperands().front();
+  auto resTy = op.getResult().front().getType();
+  auto libFnType = rewriter.getFunctionType(
+      {src.getType(), rewriter.getI32Type(), rewriter.getI1Type()}, {resTy});
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+
+  rewriter.setInsertionPoint(op);
+  auto scanAxis = op.getAxis();
+  auto scanReverse = op.getReverse();
+  Value axis = rewriter.create<arith::ConstantIntOp>(loc, scanAxis, 32);
+  Value reverse = rewriter.create<arith::ConstantIntOp>(loc, scanReverse, 1);
+  auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
+                                              TypeRange({resTy}),
+                                              ValueRange({src, axis, reverse}));
+
+  rewriter.replaceOp(op, callOp);
+
+  return success();
+}
+
+LogicalResult ScanConverter::convertToTargetOpExtended(
+    triton::ScanOp op, typename triton::ScanOp::Adaptor adaptor,
+    ConversionPatternRewriter &rewriter) const {
+  return op->emitError("tt.scan with multiple ops inside the body unsupported!");
 }
 
 LogicalResult ExternElementwiseClOpConverter::matchAndRewrite(

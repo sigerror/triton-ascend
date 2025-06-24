@@ -338,6 +338,7 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::ArgMinConverter>(patterns.getContext());
   patterns.add<TTOpConverters::ArgMaxConverter>(patterns.getContext());
   patterns.add<TTOpConverters::ReduceConverter>(patterns.getContext());
+  patterns.add<TTOpConverters::ScanConverter>(patterns.getContext());
   patterns.add<TTOpConverters::ReshapeConverter>(patterns.getContext());
   patterns.add<TTOpConverters::ExpandDimsConverter>(patterns.getContext());
   patterns.add<TTOpConverters::BroadcastConverter>(patterns.getContext());

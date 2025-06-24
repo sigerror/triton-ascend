@@ -84,6 +84,10 @@ public:
       return rewriter.notifyMatchFailure(
           op, "ScalarMathCanonicalizer handles op not within tt.reduce.");
     }
+    if (auto linalgOp = op->template getParentOfType<triton::ScanOp>()) {
+      return rewriter.notifyMatchFailure(
+          op, "ScalarMathCanonicalizer handles op not within tt.scan.");
+    }
     auto loc = op.getLoc();
     llvm::SmallVector<Value> inputs;
     for (auto input : op->getOperands()) {
@@ -210,13 +214,6 @@ protected:
                               [](Operation &op) { return &op; });
   }
 
-  bool isReductionOpSupported(Operation *redOp) const {
-    return isa<arith::AddFOp, arith::AddIOp, arith::MulFOp, arith::MaximumFOp,
-            arith::MaxNumFOp, arith::MinimumFOp, arith::MinNumFOp,
-            arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp, arith::MaxUIOp,
-            arith::AndIOp, arith::OrIOp, arith::XOrIOp>(redOp);
-  }
-
   arith::ConstantOp getRedBaseConstOp(ConversionPatternRewriter &rewriter,
                                       Operation *redOp,
                                       Type constantType) const {
@@ -303,6 +300,8 @@ protected:
       });
   }
 
+  virtual bool isReductionOpSupported(Operation *redOp) const = 0;
+
   virtual LogicalResult
   convertToTargetOp(OpTy op, typename OpTy::Adaptor adaptor,
                     ConversionPatternRewriter &rewriter) const = 0;
@@ -320,12 +319,34 @@ public:
   using ReductionOpBaseConverter<triton::ReduceOp>::ReductionOpBaseConverter;
 
 protected:
+  bool isReductionOpSupported(Operation *redOp) const override;
+
   LogicalResult
   convertToTargetOp(triton::ReduceOp op, typename triton::ReduceOp::Adaptor adaptor,
                     ConversionPatternRewriter &rewriter) const override;
 
   LogicalResult
   convertToTargetOpExtended(triton::ReduceOp op, typename triton::ReduceOp::Adaptor adaptor,
+                            ConversionPatternRewriter &rewriter) const override;
+
+};
+
+class ScanConverter : public ReductionOpBaseConverter<triton::ScanOp> {
+public:
+  explicit ScanConverter(MLIRContext *context)
+      : ReductionOpBaseConverter<triton::ScanOp>(context) {}
+
+  using ReductionOpBaseConverter<triton::ScanOp>::ReductionOpBaseConverter;
+
+protected:
+  bool isReductionOpSupported(Operation *redOp) const override;
+
+  LogicalResult
+  convertToTargetOp(triton::ScanOp op, typename triton::ScanOp::Adaptor adaptor,
+                    ConversionPatternRewriter &rewriter) const override;
+
+  LogicalResult
+  convertToTargetOpExtended(triton::ScanOp op, typename triton::ScanOp::Adaptor adaptor,
                             ConversionPatternRewriter &rewriter) const override;
 
 };
