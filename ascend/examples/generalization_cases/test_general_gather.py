@@ -9,7 +9,7 @@ import test_common
 import pytest
 from test_common import TestUtils, check_ub_mem_overflow, get_dtype_size
 
-# @pytest.mark.skip(reason="waiting for the compiler to support.")
+
 @pytest.mark.parametrize("src_shape, indices_shape, axis", [
     ([2, 2], [4, 2], 0),
     ([3, 3], [1, 3], 0),
@@ -19,7 +19,6 @@ from test_common import TestUtils, check_ub_mem_overflow, get_dtype_size
     ([4, 64], [4, 32], 1),
     ([128, 64], [128, 128], 1),
 ])
-
 def test_gather(src_shape, indices_shape, axis):
     @triton.jit
     def gather_kernel(src_ptr, idx_ptr, out_ptr, axis: tl.constexpr, src_dim0: tl.constexpr, src_dim1: tl.constexpr,
@@ -62,13 +61,13 @@ def test_gather(src_shape, indices_shape, axis):
     result = triton_gather(src, axis, indices)
     torch.testing.assert_close(result, ref, rtol=0, atol=0)
 
+
 @pytest.mark.parametrize('param_list',
                          [
                              ['float16', (11, 12, 256, 512), 48],
                              ['bfloat16', (11, 12, 256, 512), 48],
                              ['float32', (11, 12, 256, 512), 48],   
                          ])
-
 def test_gather_flip(param_list):
 
     def torch_func(inp, idx):
@@ -122,6 +121,71 @@ def test_gather_flip(param_list):
     p2c_ref = torch_func(p2c_att, p2c_pos)
     triton_func(p2c_out, p2c_att, p2c_pos, ncore)
     test_common.validate_cmp(dtype, p2c_out, p2c_ref)
+
+
+@triton.jit
+def gather_kernel_multi_d(src_ptr, idx_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, I_XB: tl.constexpr, I_YB: tl.constexpr, I_ZB: tl.constexpr, I_MB: tl.constexpr, I_NB: tl.constexpr, AXIS: tl.constexpr):
+    in_offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    if (YB * ZB * MB * NB) > 1:
+        in_offsets = in_offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    if (ZB * MB * NB) > 1:
+        in_offsets = in_offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    if (MB * NB) > 1:
+        in_offsets = in_offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    if NB > 1:
+        in_offsets = in_offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+
+    idx_offsets = tl.arange(0, I_XB) * (I_YB * I_ZB * I_MB * I_NB)
+    if (I_YB * I_ZB * I_MB * I_NB) > 1:
+        idx_offsets = idx_offsets[:, None] + tl.arange(0, I_YB)[None, :] * (I_ZB * I_MB * I_NB)
+    if (I_ZB * I_MB * I_NB) > 1:
+        idx_offsets = idx_offsets[:, :, None] + tl.arange(0, I_ZB)[None, None, :] * (I_MB * I_NB)
+    if (I_MB * I_NB) > 1:
+        idx_offsets = idx_offsets[:, :, :, None] + tl.arange(0, I_MB)[None, None, None, :] * I_NB
+    if I_NB > 1:
+        idx_offsets = idx_offsets[:, :, :, :, None] + tl.arange(0, I_NB)[None, None, None, None, :]
+
+    src = tl.load(src_ptr + in_offsets)
+    idx = tl.load(idx_ptr + idx_offsets)
+
+    out = tl.gather(src, idx, AXIS)
+
+    tl.store(out_ptr + idx_offsets, out)
+
+
+def triton_gather_multi_d(src: torch.Tensor, axis: int, indices: torch.Tensor):
+    output = torch.empty(indices.shape, dtype=src.dtype, device=src.device)
+
+    s_shape = [*(src.shape)]
+    while len(s_shape) < 5:
+        s_shape.append(1)
+    i_shape = [*(indices.shape)]
+    while len(i_shape) < 5:
+        i_shape.append(1)
+    gather_kernel_multi_d[(1, )](src, indices, output, *s_shape, *i_shape, axis)
+    return output
+
+
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize("src_shape, indices_shape, axis", [
+    ((2, 2, 4, 8), (2, 2, 4, 8), 0),
+    ((2, 2, 4, 8), (2, 2, 4, 8), 3),
+    ((2, 3, 4, 8), (2, 3, 4, 8), 1),
+    ((2, 3, 4, 8), (2, 3, 4, 8), 2),
+    ((2, 2, 2, 4, 8), (2, 2, 2, 4, 8), 4),
+    ((2, 2, 2, 4, 8), (2, 2, 2, 4, 8), 1),
+    ((2, 2, 3, 4, 8), (2, 2, 3, 4, 8), 2),
+    ((2, 2, 3, 4, 8), (2, 2, 3, 4, 8), 0),
+])
+def test_gather_4d_5d(src_shape, indices_shape, axis):
+    DEV = "npu"
+    src = torch.randn(src_shape, device=DEV)
+    indices = torch.randint(0, src.shape[axis], indices_shape, device=DEV)
+
+    ref = torch.gather(src, axis, indices)
+    result = triton_gather_multi_d(src, axis, indices)
+    torch.testing.assert_close(result, ref, rtol=0, atol=0)
+
 
 if __name__ == "__main__":
     param_list = ['float16', (11, 12, 256, 512), 48]
