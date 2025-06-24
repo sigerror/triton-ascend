@@ -97,6 +97,11 @@ class TestUtils:
                     (23,5,31), (7,11,32), (7,11,33), (2,3,255), (3,3,256), (3,2,257),]
     test_shape4d = [(8, 4, 8, 8), (1, 11, 16, 2)]
     test_shape5d = [(2, 3, 4, 5, 6), (1, 3, 4, 5, 6), (3, 6, 2, 4, 4)]
+    test_shape6d = [(2, 3, 5, 6, 3, 2)]
+    test_shape7d = [(1, 2, 3, 4, 3, 2, 2)]
+    test_shape8d = [(1, 2, 3, 2, 5, 3, 7, 2), (1, 3, 2, 5, 6, 7, 2, 1), (2, 3, 7, 3, 2, 3, 2, 3)]
+    full_shape_4_8d = test_shape4d + test_shape5d + test_shape6d + test_shape7d + test_shape8d
+
     full_shape = test_shape1d + test_shape2d + test_shape3d
     test_shape1_2_3d = full_shape
     full_dtype = ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32', 'bool']
