@@ -754,109 +754,7 @@ BroadcastConverter::matchAndRewrite(triton::BroadcastOp op, OpAdaptor adaptor,
 }
 
 // Reduce Converter
-llvm::SmallVector<Operation *>
-ReduceConverter::getRedOps(triton::ReduceOp redOp) const {
-  auto reduceBlock = redOp.getBody();
-  return llvm::map_to_vector(reduceBlock->without_terminator(),
-                             [](Operation &op) { return &op; });
-}
-
-bool ReduceConverter::isReductionOpSupported(Operation *redOp) const {
-  return isa<arith::AddFOp, arith::AddIOp, arith::MulFOp, arith::MaximumFOp,
-             arith::MaxNumFOp, arith::MinimumFOp, arith::MinNumFOp,
-             arith::MinSIOp, arith::MinUIOp, arith::MaxSIOp, arith::MaxUIOp,
-             arith::AndIOp, arith::OrIOp, arith::XOrIOp>(redOp);
-}
-
-arith::ConstantOp
-ReduceConverter::getRedBaseConstOp(ConversionPatternRewriter &rewriter,
-                                   Operation *redOp, Type constantType) const {
-  const int64_t bitWidth = constantType.getIntOrFloatBitWidth();
-
-  auto attr = llvm::TypeSwitch<Operation *, TypedAttr>(redOp)
-                  .Case([&](arith::AddFOp) {
-                    return rewriter.getFloatAttr(constantType, 0.f);
-                  })
-                  .Case([&](arith::AddIOp) {
-                    return rewriter.getIntegerAttr(constantType, 0);
-                  })
-                  .Case([&](arith::MulFOp) {
-                    return rewriter.getFloatAttr(constantType, 1.f);
-                  })
-                  .Case<arith::MaximumFOp, arith::MaxNumFOp>([&](auto) {
-                    return rewriter.getFloatAttr(
-                        constantType, -std::numeric_limits<float>::infinity());
-                  })
-                  .Case<arith::MinimumFOp, arith::MinNumFOp>([&](auto) {
-                    return rewriter.getFloatAttr(
-                        constantType, std::numeric_limits<float>::infinity());
-                  })
-                  .Case([&](arith::MinSIOp) {
-                    return rewriter.getIntegerAttr(constantType,
-                                                   llvm::maxIntN(bitWidth));
-                  })
-                  .Case([&](arith::MinUIOp) {
-                    return rewriter.getIntegerAttr(constantType,
-                                                   llvm::maxUIntN(bitWidth));
-                  })
-                  .Case([&](arith::MaxSIOp) {
-                    return rewriter.getIntegerAttr(constantType,
-                                                   llvm::minIntN(bitWidth));
-                  })
-                  .Case([&](arith::MaxUIOp) {
-                    return rewriter.getIntegerAttr(constantType, 0);
-                  })
-                  .Case([&](arith::OrIOp) {
-                    return rewriter.getIntegerAttr(constantType, 0);
-                  })
-                  .Case([&](arith::AndIOp) {
-                    return rewriter.getIntegerAttr(constantType, 1);
-                  })
-                  .Case([&](arith::XOrIOp) {
-                    return rewriter.getIntegerAttr(constantType, 0);
-                  })
-                  .Default([](Operation *op) {
-                    op->dump();
-                    llvm_unreachable("Reduction op not supported yet");
-                    return nullptr;
-                  });
-
-  return rewriter.create<arith::ConstantOp>(redOp->getLoc(), constantType,
-                                            attr);
-}
-
-bool ReduceConverter::requiresF32Conversion(const Type elemType,
-                                            Operation *redOp) const {
-  return isa<FloatType>(elemType) &&
-         elemType.getIntOrFloatBitWidth() <
-             Float32Type::get(elemType.getContext()).getWidth() &&
-         (isa<arith::AddFOp>(redOp) || isa<arith::MulFOp>(redOp));
-}
-
-Value ReduceConverter::getRedElement(
-    Value lhs, Value rhs, const Location loc, Operation *redOp, OpBuilder &b,
-    const bool convertLhsToF32Precision) const {
-  return llvm::TypeSwitch<Operation *, Value>(redOp)
-      .Case<arith::AddFOp, arith::MulFOp>([&](auto redOp) {
-        if (convertLhsToF32Precision) {
-          lhs = b.create<arith::ExtFOp>(loc, Float32Type::get(b.getContext()),
-                                        lhs);
-        }
-        return b.create<decltype(redOp)>(loc, lhs, rhs);
-      })
-      .Case<arith::AddIOp, arith::MaximumFOp, arith::MaxNumFOp,
-            arith::MinimumFOp, arith::MinNumFOp, arith::MinSIOp, arith::MinUIOp,
-            arith::MaxSIOp, arith::MaxUIOp, arith::AndIOp, arith::OrIOp,
-            arith::XOrIOp>(
-          [&](auto redOp) { return b.create<decltype(redOp)>(loc, lhs, rhs); })
-      .Default([](Operation *op) {
-        op->dump();
-        llvm_unreachable("Reduction op not yet supported");
-        return nullptr;
-      });
-}
-
-LogicalResult ReduceConverter::convertToLinalgReduce(
+LogicalResult ReduceConverter::convertToTargetOp(
     triton::ReduceOp op, typename triton::ReduceOp::Adaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
   auto source = adaptor.getOperands().front();
@@ -864,13 +762,13 @@ LogicalResult ReduceConverter::convertToLinalgReduce(
   auto elemType = sourceType.getElementType();
   auto resType = op.getResult().front().getType();
   auto loc = op.getLoc();
-  auto reductionOps = getRedOps(op);
+  auto reductionOps = this->getRedOps(op);
 
   // Reduction of arbitrary operations isn't supported because using the first
   // element across the reduction dimension requires us to iterate over a
   // subview that skips over each first element.
   if (reductionOps.size() != 1 ||
-      !isReductionOpSupported(reductionOps.front())) {
+      !this->isReductionOpSupported(reductionOps.front())) {
     return rewriter.notifyMatchFailure(
         op, "Only support lowering reduction with single op and limited types of reducetion");
   }
@@ -881,7 +779,7 @@ LogicalResult ReduceConverter::convertToLinalgReduce(
 
   auto constantType = elemType;
 
-  auto accBaseConstOp = getRedBaseConstOp(rewriter, rop, constantType);
+  auto accBaseConstOp = this->getRedBaseConstOp(rewriter, rop, constantType);
   Value initTensor;
 
   if (isVectorReduce) {
@@ -899,30 +797,27 @@ LogicalResult ReduceConverter::convertToLinalgReduce(
             .getResult(0);
   }
 
-  Value finalResult =
-      rewriter
-          .create<linalg::ReduceOp>(
+  Value finalResult = rewriter.create<linalg::ReduceOp>(
               loc, ValueRange{source}, ValueRange{initTensor},
               SmallVector<int64_t>{axis},
               [&](OpBuilder &opBuilder, Location loc, ValueRange inputs) {
                 assert(inputs.size() == 2);
-                Value result = getRedElement(inputs[0], inputs[1], loc, rop,
+                Value result = this->getRedElement(inputs[0], inputs[1], loc, rop,
                                              opBuilder, false);
                 opBuilder.create<linalg::YieldOp>(loc, result);
               })
           .getResult(0);
 
   if (sourceType.getRank() == 1) {
-    finalResult =
-        rewriter.create<tensor::ExtractOp>(loc, constantType, finalResult);
+    finalResult = rewriter.create<tensor::ExtractOp>(loc, constantType, finalResult);
   }
 
   rewriter.replaceOp(op, finalResult);
   return success();
 }
 
-LogicalResult ReduceConverter::convertToLinalgReduceExtended(
-    ReduceOp op, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const {
+LogicalResult ReduceConverter::convertToTargetOpExtended(
+    triton::ReduceOp op, typename triton::ReduceOp::Adaptor adaptor, ConversionPatternRewriter &rewriter) const {
   auto loc = op.getLoc();
   auto elemTypes = op.getElementTypes();
 
@@ -974,27 +869,6 @@ LogicalResult ReduceConverter::convertToLinalgReduceExtended(
     rewriter.replaceOp(op, linalgOp);
   }
   return success();
-}
-
-LogicalResult
-ReduceConverter::matchAndRewrite(triton::ReduceOp op,
-                                 typename triton::ReduceOp::Adaptor adaptor,
-                                 ConversionPatternRewriter &rewriter) const {
-  auto sourceType =
-      cast<RankedTensorType>(adaptor.getOperands().front().getType());
-  assert(sourceType.hasRank() && "Expected input is ranked");
-
-  int64_t axis = op.getAxis();
-  assert(axis >= 0 && axis < sourceType.getRank() &&
-         "Expected reduction "
-         "axis is within "
-         "operand's rank");
-
-  auto reductionOps = getRedOps(op);
-  if (reductionOps.size() == 1) {
-    return convertToLinalgReduce(op, adaptor, rewriter);
-  }
-  return convertToLinalgReduceExtended(op, adaptor, rewriter);
 }
 
 LogicalResult ExternElementwiseClOpConverter::matchAndRewrite(
