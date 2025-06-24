@@ -5,6 +5,8 @@ import pytest
 import test_common
 from test_common import TestUtils
 import math
+import numpy as np
+import scipy
 
 
 @triton.jit
@@ -141,10 +143,10 @@ def kernel_randint4x(x_ptr, n_rounds: tl.constexpr, N: tl.constexpr, XBLOCK: tl.
     block_offset = tl.program_id(0) * XBLOCK
     indices = tl.arange(0, 4)
     block_size = XBLOCK if block_offset + XBLOCK <= N else N - block_offset
-    for inner_idx in range(0, block_size, step=4):
+    for inner_idx in range(0, block_size + 4, step=4):
         global_offset = block_offset + inner_idx
         rand_vals = tl.randint4x(5, 10 + global_offset, n_rounds)  # 对每个索引生成一个随机数
-        mask = (global_offset + indices) < N
+        mask = (global_offset + indices) < (block_offset + block_size)
         tl.store(x_ptr + global_offset + indices, rand_vals, mask)  # 存储随机数
 
 
@@ -181,21 +183,105 @@ def triton_randint4x_4d_5d(
     tl.store(output_ptr + offsets, ret, mask=mask)
 
 
-@pytest.mark.parametrize('shape', TestUtils.test_shape2d)
-def test_case(shape):
+# With alpha=0.01, z=-3.0902, N=100, we have (1-0.01)+(-3.0902)*sqrt(0.01*(1-0.01)/100)=0.9593,
+# so there must be 96 cases for each shape to have pvalue larger than 0.01.
+# There is higher possibility to fail with small shapes, so we will use large shape.
+@pytest.mark.parametrize('shape', [
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+])
+def test_rand_case(shape):
     y_calf = torch.zeros(shape, dtype=eval('torch.float32')).npu()
 
     numel = y_calf.numel()
     ncore = 1 if numel < 32 else 32
     xblock = math.ceil(numel / ncore)
 
-    kernel_rand[ncore, 1, 1](y_calf, 10, numel, xblock)
-    kernel_randn[ncore, 1, 1](y_calf, 10, numel, xblock)
+    correctness = 0
+    for _ in range(100):
+        ref = np.random.random_sample(shape).flatten()
+        kernel_rand[ncore, 1, 1](y_calf, 10, numel, xblock)
+        
+        pvalue = scipy.stats.kstest(ref, y_calf.cpu().numpy().flatten()).pvalue
+        if pvalue > 0.01:
+            correctness += 1
 
+    assert correctness > 95
+
+
+@pytest.mark.parametrize('shape', [
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+])
+def test_randn_case(shape):
+    y_calf = torch.zeros(shape, dtype=eval('torch.float32')).npu()
+
+    numel = y_calf.numel()
+    ncore = 1 if numel < 32 else 32
+    xblock = math.ceil(numel / ncore)
+
+    correctness = 0
+    for _ in range(100):
+        ref = np.random.standard_normal(shape).flatten()
+        kernel_randn[ncore, 1, 1](y_calf, 10, numel, xblock)
+        
+        pvalue = scipy.stats.kstest(ref, y_calf.cpu().numpy().flatten()).pvalue
+        if pvalue > 0.01:
+            correctness += 1
+
+    assert correctness > 95
+
+
+@pytest.mark.parametrize('shape', [
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+])
+def test_randint_case(shape):
     y_cali = torch.zeros(shape, dtype=eval('torch.int32')).npu()
 
-    kernel_randint[ncore, 1, 1](y_cali, 10, numel, xblock)
-    kernel_randint4x[ncore, 1, 1](y_cali, 10, numel, xblock)
+    numel = y_cali.numel()
+    ncore = 1 if numel < 32 else 32
+    xblock = math.ceil(numel / ncore)
+
+    correctness = 0
+    ii32 = np.iinfo(np.int32)
+    for _ in range(100):
+        ref = np.random.randint(low=ii32.min, high=ii32.max, size=shape).flatten()
+        kernel_randint[ncore, 1, 1](y_cali, 10, numel, xblock)
+        
+        pvalue = scipy.stats.kstest(ref, y_cali.cpu().numpy().flatten()).pvalue
+        if pvalue > 0.01:
+            correctness += 1
+
+    assert correctness > 95
+
+
+@pytest.mark.parametrize('shape', [
+    (256, 256),
+    (512, 512),
+    (1024, 1024),
+])
+def test_randint4x_case(shape):
+    y_cali = torch.zeros(shape, dtype=eval('torch.int32')).npu()
+
+    numel = y_cali.numel()
+    ncore = 1 if numel < 32 else 32
+    xblock = math.ceil(numel / ncore)
+
+    correctness = 0
+    ii32 = np.iinfo(np.int32)
+    for _ in range(100):
+        ref = np.random.randint(low=ii32.min, high=ii32.max, size=shape).flatten()
+        kernel_randint4x[ncore, 1, 1](y_cali, 10, numel, xblock)
+        
+        pvalue = scipy.stats.kstest(ref, y_cali.cpu().numpy().flatten()).pvalue
+        if pvalue > 0.01:
+            correctness += 1
+
+    assert correctness > 95
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape4d + TestUtils.test_shape5d)
