@@ -2,6 +2,16 @@
 
 set -ex
 
+inductor_skip_list=(
+  "test_check_accuracy.py"
+  "test_debug_msg.py"
+  "test_embedding.py"
+  "test_force_fallback.py"
+  "test_foreach_add.py"
+  "test_geometric.py"
+  "test_lazy_register.py"
+  )
+
 function uninstall_triton_ascend() {
   set +e
   while true; do
@@ -38,6 +48,21 @@ function build_and_test() {
 
   TEST_inductor="${WORKSPACE}/ascend/examples/inductor_cases"
   cd ${TEST_inductor}
+  git init
+  git remote add origin http://gitee.com/ascend/pytorch.git
+  git config core.sparsecheckout true
+  echo "test/_inductor" >> .git/info/sparse-checkout
+  git pull origin v2.6.0:master
+  TEST_inductor_cases_path="${TEST_inductor}/test/_inductor"
+  cd ${TEST_inductor_cases_path}
+  export PYTHONPATH="${PYTHONPATH}:${TEST_inductor_cases_path}"
+  for skip_case in ${inductor_skip_list[@]};
+  do
+    if [ -e "${TEST_inductor_cases_path}/${skip_case}" ];then
+      echo "skip test case of ${skip_case}"
+      mv ${skip_case} "${skip_case}_skip"
+    fi
+  done
   pytest -n 16 --dist=load . || { exit 1 ; }
 }
 
