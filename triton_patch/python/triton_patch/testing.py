@@ -638,7 +638,6 @@ from .triton_patch.language.semantic import (
     logical_and,
     logical_or,
     not_,
-    mod,
     and_,
     or_,
     xor_,
@@ -674,7 +673,6 @@ language.semantic.invert = invert
 language.semantic.logical_and = logical_and
 language.semantic.logical_or = logical_or
 language.semantic.not_ = not_
-language.semantic.mod = mod
 language.semantic.and_ = and_
 language.semantic.or_ = or_
 language.semantic.xor_ = xor_

@@ -140,6 +140,15 @@ def generate_tensor(shape, dtype):
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 
 
+def generate_tensor_int_withSigns(shape, dtype):
+    if dtype == 'int32' or dtype == 'int64' or dtype == 'int16':
+        return torch.randint(low=-32768, high=32767, size=shape, dtype=eval('torch.' + dtype))
+    elif dtype == 'int8':
+        return torch.randint(low=-128, high=127, size=shape, dtype=eval('torch.' + dtype))
+    else:
+        raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
+
+
 def get_triton_sig_typename(dtype):
     if dtype == 'float32':
         tyname = "*fp32"

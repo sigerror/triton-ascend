@@ -69,9 +69,9 @@ def triton_floordiv_4d_5d(
 @pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
 def test_floordiv(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
-    x = test_common.generate_tensor(shape, dtype).npu()
-    y = test_common.generate_tensor(shape, dtype).npu()
-    z = test_common.generate_tensor(shape, dtype).npu()
+    x = test_common.generate_tensor_int_withSigns(shape, dtype).npu()
+    y = test_common.generate_tensor_int_withSigns(shape, dtype).npu()
+    z = test_common.generate_tensor_int_withSigns(shape, dtype).npu()
 
     new_shape = shape
     output = torch.randint(1, new_shape, dtype=eval('torch.' + dtype)).npu()
@@ -79,6 +79,8 @@ def test_floordiv(shape, dtype):
     logging.log(logging.DEBUG, f"output.dtype={output.dtype}")
     y[y == 0] = 1
     ans = x // y
+    ans_mask = (x.to(torch.int64) % y.to(torch.int64) != 0) & (~((x ^ y) > 0)).to(ans.dtype)
+    ans = ans + ans_mask
 
     if len(shape) == 1:
         XB = 1
@@ -130,6 +132,9 @@ def test_floordiv_4d_5d(shape, dtype):
     logging.log(logging.DEBUG, f"output.dtype={output.dtype}")
     y[y == 0] = 1
     ans = x // y
+    ans_mask = (x.to(torch.int64) % y.to(torch.int64) != 0) & (~((x ^ y) > 0)).to(ans.dtype)
+    ans = ans + ans_mask
+
 
     blocks = list(x.size())
     strides = list(x.stride())
