@@ -143,7 +143,7 @@ def fn_npu_4_8d(
     tl.store(output_ptr1 + oidx, yy)
 
 
-@pytest.mark.parametrize('shape', TestUtils.full_shape)
+@pytest.mark.parametrize('shape', TestUtils.full_shape_4_8d)
 @pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 def test_split_4_8d(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
