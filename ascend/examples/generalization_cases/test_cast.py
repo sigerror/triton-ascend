@@ -241,7 +241,6 @@ def structParam(x0):
     return dim, stride0, stride1, stride2, shape0, shape1, shape2
 
 
-
 @pytest.mark.parametrize('shape', TestUtils.full_shape)
 @pytest.mark.parametrize('srcDtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dstDtype', TestUtils.full_dtype)
@@ -291,65 +290,84 @@ def cast_to_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: t
     tl.store(output_ptr + offsets, ret)
 
 
-def cast_npu_multi_d(para_type, data_type, to_para, to_dtype, XB, YB, ZB, MB, NB):
-    print(f"TESTING: cast from {para_type} to {to_para} in shape ({XB}, {YB}, {ZB}, {MB}, {NB})")
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('shape', [
+    (6, 2, 4, 2),
+    (4, 2, 8, 4),
+    (4, 3, 8, 4),
+])
+@pytest.mark.parametrize('srcDtype', 
+    ['int8', 'float16', 'float32']
+)
+@pytest.mark.parametrize('dstDtype', 
+    ['int8', 'float16', 'float32']
+)
+def test_cast_4d(srcDtype, dstDtype, shape):
+    if srcDtype == dstDtype:
+        return
+    srcBytes = get_dtype_size(srcDtype)
+    dstBytes = get_dtype_size(dstDtype)
+    dtype_size = max(srcBytes, dstBytes)
+    if dstDtype == 'int8':
+        if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 100):
+            print(f"srcDtype:{srcDtype}, dstDtype:{dstDtype}, shape:{shape} mem overflow")
+            return
+    elif dtype_size * math.prod(shape) >= (TestUtils.ub_size / 12):
+        print(f"srcDtype:{srcDtype}, dstDtype:{dstDtype}, shape:{shape} mem overflow")
+        return
+    
+    x0 = test_common.generate_tensor(shape, srcDtype)
+    torch_res = x0.to(eval("torch." + dstDtype))
+    x0 = x0.npu()
 
-    if para_type == '*i1':
-        x = torch.randint(low=0, high=2, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
-    elif para_type == '*i8' or para_type == '*i16' or para_type == '*i32' or para_type == '*64':
-        x = torch.randint(low=-128, high=128, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
-    elif para_type == '*i16':
-        x = torch.randint(low=-32768, high=32768, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
-    elif para_type == '*i32':
-        x = torch.randint(low=-65536, high=65536, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
-    elif para_type == '*i64':
-        x = torch.randint(low=-65536, high=65536, size=(XB, YB, ZB, MB, NB), dtype=data_type).npu()
-    else:  # float
-        x = torch.randn((XB, YB, ZB, MB, NB), dtype=data_type).npu()
+    triton_res = torch.empty(shape, dtype=eval("torch." + dstDtype)).npu()
 
-    if to_para == '*i1':
-        cmp_type = "bool"
-    elif to_para == '*i8':
-        cmp_type = "int8"
-    elif to_para == '*i16':
-        cmp_type = "int16"
-    elif to_para == '*i32':
-        cmp_type = "int32"
-    elif to_para == '*i64':
-        cmp_type = "int64"
-    elif to_para == '*fp16':
-        cmp_type = "float16"
-    elif to_para == '*fp32':
-        cmp_type = "float32"
-    elif to_para == '*bf16':
-        cmp_type = "bfloat16"
-
-    output = torch.randint(1, (XB, YB, ZB, MB, NB), dtype=to_dtype).npu()
-
-    a = x.to(to_dtype)
-
-    cast_to_multi_d[(1, )](output, x, XB, YB, ZB, MB, NB)
-
-    test_common.validate_cmp(cmp_type, a, output)
+    triton_shape = [*shape]
+    while len(triton_shape) < 5:
+        triton_shape.append(1)
+    grid = (1, )
+    cast_to_multi_d[grid](triton_res, x0, *triton_shape)
+    test_common.validate_cmp(dstDtype, triton_res, torch_res)
 
 
 @pytest.mark.shape_4d_5d
-def test_cast_high_priority_dtype_4d_5d():
-    typelist = [
-        (torch.int8, '*i8'),
-        (torch.float32, '*fp32'),
-        (torch.float16, '*fp16'),
-    ]
+@pytest.mark.parametrize('shape', [
+    (2, 6, 2, 4, 2),
+    (2, 4, 2, 8, 4),
+    (3, 4, 2, 8, 4),
+])
+@pytest.mark.parametrize('srcDtype', 
+    ['int8', 'float16', 'float32']
+)
+@pytest.mark.parametrize('dstDtype', 
+    ['int8', 'float16', 'float32']
+)
+def test_cast_5d(srcDtype, dstDtype, shape):
+    if srcDtype == dstDtype:
+        return
+    srcBytes = get_dtype_size(srcDtype)
+    dstBytes = get_dtype_size(dstDtype)
+    dtype_size = max(srcBytes, dstBytes)
+    if dstDtype == 'int8':
+        if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 100):
+            print(f"srcDtype:{srcDtype}, dstDtype:{dstDtype}, shape:{shape} mem overflow")
+            return
+    elif dtype_size * math.prod(shape) >= (TestUtils.ub_size / 12):
+        print(f"srcDtype:{srcDtype}, dstDtype:{dstDtype}, shape:{shape} mem overflow")
+        return
+    
+    x0 = test_common.generate_tensor(shape, srcDtype)
+    torch_res = x0.to(eval("torch." + dstDtype))
+    x0 = x0.npu()
 
-    shapes = [(4, 6, 2, 4, 2)]
-    ContinueList = []
-    for src in typelist:
-        for dst in typelist:
-            if src != dst and (src[1], dst[1]) not in ContinueList:
-                for shape in shapes:
-                    cast_npu_multi_d(src[1], src[0], dst[1], dst[0], shape[0], shape[1], shape[2], shape[3], shape[4])
+    triton_res = torch.empty(shape, dtype=eval("torch." + dstDtype)).npu()
 
-    print("test_cast_full_multi_d passed")
+    triton_shape = [*shape]
+    while len(triton_shape) < 5:
+        triton_shape.append(1)
+    grid = (1, )
+    cast_to_multi_d[grid](triton_res, x0, *triton_shape)
+    test_common.validate_cmp(dstDtype, triton_res, torch_res)
 
 
 if __name__ == "__main__":

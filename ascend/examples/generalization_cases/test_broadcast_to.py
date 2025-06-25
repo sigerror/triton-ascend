@@ -196,46 +196,86 @@ def test_broadcast_to_dim12(shape, dtype):
     test_common.validate_cmp(dtype, output, ans)
 
 
-NBLOCKS = 1
-XS: tl.constexpr = 64
-YS: tl.constexpr = 4
-ZS: tl.constexpr = 8
-MS: tl.constexpr = 2
-NS: tl.constexpr = 2
-NUMEL_3D: tl.constexpr = XS * ZS
-NUMEL_4D: tl.constexpr = XS * ZS
-NUMEL_5D: tl.constexpr = XS * ZS * NS
-
-
 @triton.jit
-def fn_broadcast_4d(output_ptr, x_ptr):
-    col_offsets = tl.arange(0, NUMEL_4D)
-    input = tl.load(x_ptr + col_offsets)
-    result = input.reshape((XS, 1, ZS, 1)).broadcast_to((XS, YS, ZS, MS)).reshape((XS * YS * ZS * MS))
-    brc_col_offsets = tl.arange(0, NUMEL_4D * YS * MS)
-    tl.store(output_ptr + brc_col_offsets, result)
+def fn_broadcast_to_multi_d(to_ptr, from_ptr, F_L: tl.constexpr, F_M: tl.constexpr, F_N: tl.constexpr, F_X: tl.constexpr, F_Y: tl.constexpr, T_L: tl.constexpr, T_M: tl.constexpr, T_N: tl.constexpr, T_X: tl.constexpr, T_Y: tl.constexpr):
+    from_offsets = tl.arange(0, F_L)
+    if F_M is not None:
+        from_offsets = from_offsets[:, None] * F_M + tl.arange(0, F_M)[None, :]
+    if F_N is not None:
+        from_offsets = from_offsets[:, :, None] * F_N + tl.arange(0, F_N)[None, None, :]
+    if F_X is not None:
+        from_offsets = from_offsets[:, :, :, None] * F_X + tl.arange(0, F_X)[None, None, None, :]
+    if F_Y is not None:
+        from_offsets = from_offsets[:, :, :, :, None] * F_Y + tl.arange(0, F_Y)[None, None, None, None, :]
 
+    to_offsets = tl.arange(0, T_L)
+    if T_M is not None:
+        to_offsets = to_offsets[:, None] * T_M + tl.arange(0, T_M)[None, :]
+    if T_N is not None:
+        to_offsets = to_offsets[:, :, None] * T_N + tl.arange(0, T_N)[None, None, :]
+    if T_X is not None:
+        to_offsets = to_offsets[:, :, :, None] * T_X + tl.arange(0, T_X)[None, None, None, :]
+    if T_Y is not None:
+        to_offsets = to_offsets[:, :, :, :, None] * T_Y + tl.arange(0, T_Y)[None, None, None, None, :]
 
-@triton.jit
-def fn_broadcast_5d(output_ptr, x_ptr):
-    col_offsets = tl.arange(0, NUMEL_5D)
-    input = tl.load(x_ptr + col_offsets)
-    result = input.reshape((XS, 1, ZS, 1, NS)).broadcast_to((XS, YS, ZS, MS, NS)).reshape((XS * YS * ZS * MS * NS))
-    brc_col_offsets = tl.arange(0, NUMEL_5D * YS * MS)
-    tl.store(output_ptr + brc_col_offsets, result)
+    from_data = tl.load(from_ptr + from_offsets)
+    if F_Y is not None:
+        ret_data = from_data.broadcast_to((T_L, T_M, T_N, T_X, T_Y))
+    elif F_X is not None:
+        ret_data = from_data.broadcast_to((T_L, T_M, T_N, T_X))
+    elif F_N is not None:
+        ret_data = from_data.broadcast_to((T_L, T_M, T_N))
+    elif F_M is not None:
+        ret_data = from_data.broadcast_to((T_L, T_M))
+    else:
+        ret_data = from_data.broadcast_to((T_L))
+
+    tl.store(to_ptr + to_offsets, ret_data)
 
 
 @pytest.mark.shape_4d_5d
-def test_broadcast_4d():
-    x = torch.randn((XS, 1, ZS, 1), dtype=torch.float32).npu()
-    output = torch.randn((XS, YS, ZS, MS), dtype=torch.float32).npu()
-    fn_broadcast_4d[(1,)](output, x)
-    assert(torch.equal(output, x.repeat(1, YS, 1, MS)))
+@pytest.mark.parametrize('shapes', [
+    [(1, 64, 16, 1), (2, 64, 16, 2)],
+    [(8, 1, 1, 2), (8, 8, 4, 2)],
+])
+@pytest.mark.parametrize('dtype', ["int32", "int64", "float16", "float32", "bfloat16"])
+def test_broadcast_to_4d(shapes, dtype):
+    from_shape, to_shape = shapes
+    dtype = eval(f"torch.{dtype}")
+
+    x = torch.randint(0, 8, from_shape, dtype=dtype).npu()
+    y = torch.randint(0, 8, to_shape, dtype=dtype).npu()
+    expected = x.expand(to_shape)
+
+    grid = (1, )
+    triton_from_shape = [*from_shape]
+    triton_to_shape = [*to_shape]
+    while len(triton_from_shape) < 5:
+        triton_from_shape.append(None)
+        triton_to_shape.append(None)
+    fn_broadcast_to_multi_d[grid](y, x, *triton_from_shape, *triton_to_shape)
+    assert(torch.equal(y, expected))
 
 
 @pytest.mark.shape_4d_5d
-def test_broadcast_5d():
-    x = torch.randn((XS, 1, ZS, 1, NS), dtype=torch.float32).npu()
-    output = torch.zeros((XS, YS, ZS, MS, NS), dtype=torch.float32).npu()
-    fn_broadcast_5d[(1,)](output, x)
-    assert(torch.equal(output, x.repeat(1, YS, 1, MS, 1)))
+@pytest.mark.parametrize('dtype', ["int32", "int64", "float16", "float32", "bfloat16"])
+@pytest.mark.parametrize('shapes', [
+    [(1, 4, 2, 1, 4), (2, 4, 2, 8, 4)],
+    [(3, 1, 2, 1, 4), (3, 4, 2, 8, 4)],
+])
+def test_broadcast_to_5d(shapes, dtype):
+    from_shape, to_shape = shapes
+    dtype = eval(f"torch.{dtype}")
+
+    x = torch.randint(0, 8, from_shape, dtype=dtype).npu()
+    y = torch.randint(0, 8, to_shape, dtype=dtype).npu()
+    expected = x.expand(to_shape)
+
+    grid = (1, )
+    triton_from_shape = [*from_shape]
+    triton_to_shape = [*to_shape]
+    while len(triton_from_shape) < 5:
+        triton_from_shape.append(None)
+        triton_to_shape.append(None)
+    fn_broadcast_to_multi_d[grid](y, x, *triton_from_shape, *triton_to_shape)
+    assert(torch.equal(y, expected))

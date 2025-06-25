@@ -217,44 +217,77 @@ def fn_broadcast_4d(in_ptr, out_ptr, L: tl.constexpr, M: tl.constexpr, N: tl.con
 
 
 @triton.jit
-def fn_broadcast_5d(in_ptr, out_ptr, L: tl.constexpr, M: tl.constexpr, N: tl.constexpr, X: tl.constexpr, Y: tl.constexpr):
-    l_idx = tl.arange(0, L)
-    m_idx = tl.arange(0, M)
-    n_idx = tl.arange(0, N)
-    x_idx = tl.arange(0, X)
-    y_idx = tl.arange(0, X)
+def fn_broadcast_multi_d(to_ptr, from_ptr, F_L: tl.constexpr, F_M: tl.constexpr, F_N: tl.constexpr, F_X: tl.constexpr, F_Y: tl.constexpr, T_L: tl.constexpr, T_M: tl.constexpr, T_N: tl.constexpr, T_X: tl.constexpr, T_Y: tl.constexpr):
+    from_offsets = tl.arange(0, F_L)
+    if F_M is not None:
+        from_offsets = from_offsets[:, None] * F_M + tl.arange(0, F_M)[None, :]
+    if F_N is not None:
+        from_offsets = from_offsets[:, :, None] * F_N + tl.arange(0, F_N)[None, None, :]
+    if F_X is not None:
+        from_offsets = from_offsets[:, :, :, None] * F_X + tl.arange(0, F_X)[None, None, None, :]
+    if F_Y is not None:
+        from_offsets = from_offsets[:, :, :, :, None] * F_Y + tl.arange(0, F_Y)[None, None, None, None, :]
 
-    in_idx = l_idx[:, None, None, None, None] * N * Y + tl.arange(0, 1)[None, :, None, None, None] + n_idx[None, None, :, None, None] * Y + tl.arange(0, 1)[None, None, None, :, None] + y_idx[None, None, None, None, None]
-    out_idx = l_idx[:, None, None, None, None] * M * N * X * Y + m_idx[None, :, None, None, None] * N * X * Y + n_idx[None, None, :, None, None] * X * Y + x_idx[None, None, None, :, None] * Y + y_idx[None, None, None, None, None]
+    to_offsets = tl.arange(0, T_L)
+    if T_M is not None:
+        to_offsets = to_offsets[:, None] * T_M + tl.arange(0, T_M)[None, :]
+    if T_N is not None:
+        to_offsets = to_offsets[:, :, None] * T_N + tl.arange(0, T_N)[None, None, :]
+    if T_X is not None:
+        to_offsets = to_offsets[:, :, :, None] * T_X + tl.arange(0, T_X)[None, None, None, :]
+    if T_Y is not None:
+        to_offsets = to_offsets[:, :, :, :, None] * T_Y + tl.arange(0, T_Y)[None, None, None, None, :]
 
-    in_data = tl.load(in_ptr + in_idx)
-    out_data = tl.load(out_ptr + out_idx)
-    out_data = tl.broadcast(in_data, out_data)
-    tl.store(out_ptr + out_idx, out_data)
+    from_data = tl.load(from_ptr + from_offsets)
+    to_data = tl.load(to_ptr + to_offsets)
+    ret_data = tl.broadcast(from_data, to_data)
+
+    tl.store(to_ptr + to_offsets, ret_data)
 
 
 @pytest.mark.shape_4d_5d
-def test_broadcast_4d():
-    L = 64
-    M = 4
-    N = 8
-    X = 2
+@pytest.mark.parametrize('shapes', [
+    [(1, 64, 16, 1), (2, 64, 16, 2)],
+    [(8, 1, 1, 2), (8, 8, 4, 2)],
+])
+@pytest.mark.parametrize('dtype', ["int32", "int64", "float16", "float32", "bfloat16"])
+def test_broadcast_to_4d(shapes, dtype):
+    from_shape, to_shape = shapes
+    dtype = eval(f"torch.{dtype}")
 
-    in_data = torch.randn((L, 1, N, 1), dtype=torch.float32).npu()
-    out_data = torch.zeros((L, M, N, X), dtype=torch.float32).npu()
-    fn_broadcast_4d[(1,)](in_data, out_data, L, M, N, X)
-    assert(torch.equal(out_data, in_data.repeat(1, M, 1, X)))
+    x = torch.randint(0, 8, from_shape, dtype=dtype).npu()
+    y = torch.randint(0, 8, to_shape, dtype=dtype).npu()
+    expected = x.expand(to_shape)
+
+    grid = (1, )
+    triton_from_shape = [*from_shape]
+    triton_to_shape = [*to_shape]
+    while len(triton_from_shape) < 5:
+        triton_from_shape.append(None)
+        triton_to_shape.append(None)
+    fn_broadcast_multi_d[grid](y, x, *triton_from_shape, *triton_to_shape)
+    assert(torch.equal(y, expected))
 
 
 @pytest.mark.shape_4d_5d
-def test_broadcast_5d():
-    L = 64
-    M = 4
-    N = 8
-    X = 2
-    Y = 2
+@pytest.mark.parametrize('dtype', ["int32", "int64", "float16", "float32", "bfloat16"])
+@pytest.mark.parametrize('shapes', [
+    [(1, 4, 2, 1, 4), (2, 4, 2, 8, 4)],
+    [(3, 1, 2, 1, 4), (3, 4, 2, 8, 4)],
+])
+def test_broadcast_to_5d(shapes, dtype):
+    from_shape, to_shape = shapes
+    dtype = eval(f"torch.{dtype}")
 
-    in_data = torch.randn((L, 1, N, 1, Y), dtype=torch.float32).npu()
-    out_data = torch.zeros((L, M, N, X, Y), dtype=torch.float32).npu()
-    fn_broadcast_5d[(1,)](in_data, out_data, L, M, N, X, Y)
-    assert(torch.equal(out_data, in_data.repeat(1, M, 1, X, 1)))
+    x = torch.randint(0, 8, from_shape, dtype=dtype).npu()
+    y = torch.randint(0, 8, to_shape, dtype=dtype).npu()
+    expected = x.expand(to_shape)
+
+    grid = (1, )
+    triton_from_shape = [*from_shape]
+    triton_to_shape = [*to_shape]
+    while len(triton_from_shape) < 5:
+        triton_from_shape.append(None)
+        triton_to_shape.append(None)
+    fn_broadcast_multi_d[grid](y, x, *triton_from_shape, *triton_to_shape)
+    assert(torch.equal(y, expected))
