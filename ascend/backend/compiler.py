@@ -313,29 +313,34 @@ class CPUOptions:
 @register_descriptor
 class AscendAttrsDescriptor(AttrsDescriptor):
 
+    # For now we collect shapes of tensor at runtime.
+    # We comment out the following func but keep it for future reference.
     def _add_backend_properties(self, params=None, values=None):
-        if params is None or values is None:
-            return
+        pass
+        # if params is None or values is None:
+        #     return
 
-        for i in range(len(values)):
-            if params[i].is_constexpr:
-                continue
-            val = values[i]
+        # for i in range(len(values)):
+        #     if params[i].is_constexpr:
+        #         continue
+        #     val = values[i]
 
-            if hasattr(val, "shape"):
-                self.arg_properties[f"tt.shape_{i}"] = list(val.shape)
-                self.property_values[f"tt.shape_{i}"] = 0
-            else:
-                # Scalar
-                pass
+        #     if hasattr(val, "shape"):
+        #         self.arg_properties[f"tt.shape_{i}"] = list(val.shape)
+        #         self.property_values[f"tt.shape_{i}"] = 0
+        #     else:
+        #         # Scalar
+        #         pass
 
-    def get_shapes(self):
-        shapes = {}
-        for name, val in self.arg_properties.items():
-            if name.startswith("tt.shape"):
-                idx = int(name.split("_")[-1])
-                shapes[idx] = val
-        return shapes
+    # For now we collect shapes of tensor at runtime.
+    # We comment out the following func but keep it for future reference.
+    # def get_shapes(self):
+    #     shapes = {}
+    #     for name, val in self.arg_properties.items():
+    #         if name.startswith("tt.shape"):
+    #             idx = int(name.split("_")[-1])
+    #             shapes[idx] = val
+    #     return shapes
 
 
 class AscendBackend(BaseBackend):

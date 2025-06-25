@@ -99,8 +99,21 @@ def test_or(x0, x1):
 
     profiler_wrapper(wrapper_func, x0, x1)
 
+def test_inductor_add(x0, x1):
+    # torch_npu._inductor requires torch_npu 2.6.0+ experimental version
+    import torch_npu._inductor
+
+    def torch_func(x0, x1):
+        res = x0 + x1
+        return res
+
+    compiled_func = torch.compile(torch_func, backend="inductor")
+    profiler_wrapper(compiled_func, x0, x1)
+    print("[INFO] Check ./result_profiling directory to find the kernel_details.csv file. "
+          "       Check the columns: Input Shapes,Input Data Types,Input Formats")
 
 if __name__ == "__main__":
+    test_case_is_inductor = False
     N = 1024
     low = 1
     high = 100
@@ -151,6 +164,9 @@ if __name__ == "__main__":
     for dtype_name, x0, x1 in test_cases:
         print(f"Running test for {dtype_name}...")
         if dtype_name != 'i1':
-            test_add(x0, x1)
+            if (test_case_is_inductor):
+                test_inductor_add(x0, x1)
+            else:
+                test_add(x0, x1)
         else:
             test_or(x0, x1)

@@ -62,6 +62,7 @@ class NPUUtils(object):
 
 class NPULauncher(object):
     def __init__(self, src, metadata):
+        self.enable_msprof_register_tensor = os.getenv("TRITON_REGISTER_TENSOR_MSPROF", 'false').lower() in ('true', '1')
         debug_mode = metadata.debug
         workspace_size = int(metadata.workspace_size) \
                               if hasattr(metadata, 'workspace_size') else -1
@@ -69,9 +70,8 @@ class NPULauncher(object):
         cst_key = lambda i: src.fn.arg_names.index(i) if isinstance(i, str) else i
         constants = {cst_key(key): value for key, value in constants.items()}
         signature = {cst_key(key): value for key, value in src.signature.items()}
-        shapes = src.attrs.get_shapes()
         mix_mode = metadata.mix_mode
-        wrapper_src = generate_npu_wrapper_src(constants, signature, shapes, \
+        wrapper_src = generate_npu_wrapper_src(constants, signature, \
                                                workspace_size, mix_mode)
         so_launcher_path = make_npu_launcher_stub(wrapper_src, debug_mode)
         # initialize launcher
@@ -82,6 +82,15 @@ class NPULauncher(object):
         self.launch = getattr(mod, "launch")
 
     def __call__(self, *args, **kwargs):
+        if (self.enable_msprof_register_tensor):
+            import torch
+            tensor_params = [arg for arg in args if isinstance(arg, torch.Tensor)]
+            tensor_params_shape = []
+            for t in tensor_params:
+                tensor_params_shape.append([s for s in t.shape])
+            # args[5] must be the packed metadata.
+            # Check the launch wrapper in which PyArg_ParseTuple specifies the ordering of args
+            args[5]['tensor_params_shape'] = tensor_params_shape
         profiler_registered = self.launch(*args, **kwargs)
         import triton
         triton.backends.ascend.utils.TRITON_PROFILER_REGISTERED = True if profiler_registered == 1 else False
@@ -198,7 +207,7 @@ def make_npu_launcher_stub(src, debug=False):
 
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
-def generate_npu_wrapper_src(constants, signature, shapes, workspace_size, mix_mode):
+def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode):
     import os
     def _ty_to_cpp(ty):
         if ty[0] == '*':
@@ -264,13 +273,6 @@ def generate_npu_wrapper_src(constants, signature, shapes, workspace_size, mix_m
     enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
     task_type = "MSPROF_GE_TASK_TYPE_AIV" if mix_mode == "aiv" else "MSPROF_GE_TASK_TYPE_AI_CORE"
     LINE_CHANGE_CHAR = chr(10) # it is \n
-    # tensorData <=5, cause MSPROF_GE_TENSOR_DATA_LEN = 5
-    max_tensors_num = min(len(shapes), 5)
-    # Take only the first 8 tensors of signature.items(). MSPROF_GE_TENSOR_DATA_SHAPE_LEN = 8
-    limited_tensors = [
-                          (i, ty) for i, ty in signature.items()
-                          if i not in constants and i in shapes and ty.startswith("*")
-                      ][:8]
 
     cpp_device_pointer = """
 typedef struct _DevicePtrInfo {
@@ -395,6 +397,7 @@ extern "C" {
       MsprofReportCompactInfo(0, static_cast<void *>(&nodeBasicInfo), sizeof(MsprofCompactInfo));
     }}
     {{
+      int max_tensors_num = tensorShapes.size() < MSPROF_GE_TENSOR_DATA_NUM ? tensorShapes.size() : MSPROF_GE_TENSOR_DATA_NUM;
       MsprofAdditionalInfo tensorInfo;
       tensorInfo.level = MSPROF_REPORT_NODE_LEVEL;
       tensorInfo.type = MSPROF_REPORT_NODE_TENSOR_INFO_TYPE;
@@ -402,31 +405,27 @@ extern "C" {
       tensorInfo.timeStamp = endTime;
       auto profTensorData = reinterpret_cast<MsprofTensorInfo *>(tensorInfo.data);
       profTensorData->opName = opNameHashID;
-      profTensorData->tensorNum = {max_tensors_num};
-      for (int i = 0; i < {max_tensors_num}; i++) {{
+      profTensorData->tensorNum = max_tensors_num;
+      for (int i = 0; i < max_tensors_num; i++) {{
         profTensorData->tensorData[i].tensorType = MSPROF_GE_TENSOR_TYPE_INPUT; // FIXME
         profTensorData->tensorData[i].format = 2; // GeDataFormat: ND = 2
+        int nDim = tensorShapes[i].size();
+        nDim = nDim < MSPROF_GE_TENSOR_DATA_SHAPE_LEN ? nDim : MSPROF_GE_TENSOR_DATA_SHAPE_LEN;
+        for (int j = 0; j < nDim; j++) {{
+          profTensorData->tensorData[i].shape[j] = tensorShapes[i][j];
+        }}
+        for (int j = nDim; j < MSPROF_GE_TENSOR_DATA_SHAPE_LEN; j++) {{
+          profTensorData->tensorData[i].shape[j] = 0;
+        }}
       }}
-      // What if the index is non-contiguous?
-      // Scalars don't have a '*' and are returned without cropping
-      {LINE_CHANGE_CHAR.join(
-        f'profTensorData->tensorData[{i}].dataType = {convert_sigtype_to_int(ty[1:])};'
-        for i, ty in signature.items()
-        if i not in constants and i in shapes and ty.startswith("*")
-      )}
-      // The scalar is not in the shapes array, and the shape assignment operation is not performed
-      {LINE_CHANGE_CHAR.join(
-        f'profTensorData->tensorData[{i}].shape[{j}] = {shapes[i][j]};'
-        for i, ty in limited_tensors
-        for j in range(min(len(shapes[i]), 8))
-      )}
-
-      // Set to 0 except for the true dimension of the tensor. The total is MSPROF_GE_TENSOR_DATA_SHAPE_LEN = 8
-      {LINE_CHANGE_CHAR.join(
-        f'profTensorData->tensorData[{i}].shape[{j}] = 0;'
-        for i, ty in limited_tensors
-        for j in range(min(len(shapes[i]), 8), 8)
-      )}
+      if (max_tensors_num > 0) {{
+        // Scalars don't have a '*' and are returned without cropping
+        {LINE_CHANGE_CHAR.join(
+          f'profTensorData->tensorData[{i}].dataType = {convert_sigtype_to_int(ty[1:])};'
+          for i, ty in signature.items()
+          if ty.startswith("*")
+        )}
+      }}
       MsprofReportAdditionalInfo(false, static_cast<void *>(&tensorInfo), sizeof(MsprofAdditionalInfo));
     }}
 """
@@ -449,7 +448,7 @@ extern "C" {
 
 {cpp_device_pointer}
 
-static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, {arg_decls}) {{
+static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, std::vector<std::vector<int64_t>> &tensorShapes, {arg_decls}) {{
   {'pybind11::scoped_ostream_redirect output;' if enable_device_print else ''}
   // only 1D parallelization is supported for NPU
   // Pointer type becomes flattend 1-D Memref tuple: base_ptr, data_ptr, offset, shape, stride
@@ -529,9 +528,28 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   const char *kernelName = PyUnicode_AsUTF8(kernelNameObj);
   PyObject *profilerRegisteredObj = PyDict_GetItemString(packedMetadata, "profiler_registered");
   int profilerRegistered = PyObject_IsTrue(profilerRegisteredObj);
+  //
+  std::vector<std::vector<int64_t>> tensorShapes;
+  PyObject *shapeList = PyDict_GetItemString(packedMetadata, "tensor_params_shape");
+  if (shapeList) {{
+    PyObject *dimList = NULL;
+    int nDims = 0;
+    int nShapes = PyObject_Size(shapeList);
+    for (int i = 0; i < nShapes; i++) {{
+      dimList = PySequence_GetItem(shapeList, i);
+      nDims = PyObject_Size(dimList);
+      tensorShapes.push_back(std::vector<int64_t>());
+      PyObject *dimItem = NULL;
+      for (int j = 0; j < nDims; j++) {{
+        dimItem = PySequence_GetItem(dimList, j);
+        tensorShapes[i].push_back(PyLong_AsLong(dimItem));
+      }}
+    }}
+  }}
+
   // raise exception asap
   {"; ".join([f"DevicePtrInfo ptr_info{i} = getPointer(_arg{i}, {i}); if (!ptr_info{i}.valid) return NULL;" if ty[0]=="*" else "" for i, ty in signature.items()])};
-  _launch(kernelName, function, stream, gridX, gridY, gridZ, &profilerRegistered, {', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}" for i, ty in signature.items())});
+  _launch(kernelName, function, stream, gridX, gridY, gridZ, &profilerRegistered, tensorShapes, {', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}" for i, ty in signature.items())});
   if (PyErr_Occurred()) {{
     return NULL;
   }}
