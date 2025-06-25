@@ -71,22 +71,25 @@ def test_atomic_add_broadcast_combined(dtype, x_shape, y_shape, BLOCK_SIZE):
     torch.testing.assert_close(y, expected)
 
 
-@pytest.mark.parametrize('shape', TestUtils.test_shape2d)
+@pytest.mark.parametrize('shape', TestUtils.test_shape2d + TestUtils.test_shape1d)
 @pytest.mark.parametrize('dtype', filtered_dtype)
 def test_atomic_add(dtype, shape):
-    ncore = 1
-    block_size = shape[0] * shape[1] / ncore
-    split_size = shape[0] // ncore
     x0_value = 3
     x0 = torch.full(shape, x0_value, dtype=eval('torch.' + dtype)).npu()
-    x1 = torch.full((split_size, shape[1]), 2, dtype=eval('torch.' + dtype)).npu()
-    y = torch.full((split_size, shape[1]), -10, dtype=eval('torch.' + dtype)).npu()
+    x1 = torch.full(shape, 2, dtype=eval('torch.' + dtype)).npu()
+    y = torch.full(shape, -10, dtype=eval('torch.' + dtype)).npu()
 
     y_ref = x1 + 0
-    x1_ref = x1 + ncore * x0_value
-
-    n_elements = shape[0] * shape[1]
-    atomic_add[shape[0], 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=shape[1])
+    x1_ref = x1 + x0_value
+    
+    if len(shape) == 2:
+        n_elements = shape[0] * shape[1]
+        atomic_add[shape[0], 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=shape[1])
+    elif len(shape) == 1:
+        n_elements = shape[0]
+        BLOCK_SIZE = min(1024, shape[0]) # 1024:限制最大线程块大小
+        grid_size = (n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE # 向上取整
+        atomic_add[grid_size, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=BLOCK_SIZE)
     test_common.validate_cmp(dtype, x1, x1_ref)
 
 

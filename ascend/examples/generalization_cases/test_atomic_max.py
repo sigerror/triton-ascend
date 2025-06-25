@@ -16,16 +16,11 @@ def triton_test_fn_atomic_max_dma(in_ptr0, out_ptr0, out_ptr1, n_elements : tl.c
     tmp0 = tl.load(in_ptr0 + (x0), xmask)
     tmp1 = tl.atomic_max(out_ptr0 + (x1), tmp0, xmask)
 
+
 # torch.max do not support int
-@pytest.mark.parametrize('shape', TestUtils.test_shape2d)
+@pytest.mark.parametrize('shape', TestUtils.test_shape2d + TestUtils.test_shape1d)
 @pytest.mark.parametrize('dtype', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
 def test_atomic_max(dtype, shape):
-    ncore = 1
-    block_size = shape[0] * shape[1] / ncore
-    split_size = shape[0] // ncore
-    # old size: (32768, 256)
-    # tensor of (1024, 256) is too big, and it will lead to failure in the backend
-    # so here we make it smaller
     x0 = test_common.generate_tensor(shape, dtype)
     x1 = test_common.generate_tensor(shape, dtype)
     y = test_common.generate_tensor(shape, dtype)
@@ -35,8 +30,15 @@ def test_atomic_max(dtype, shape):
     x1 = x1.npu()
     y = y.npu()
 
-    n_elements = shape[0] * shape[1]
-    triton_test_fn_atomic_max_dma[shape[0], 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=shape[1])
+    if len(shape) == 2:
+        n_elements = shape[0] * shape[1]
+        triton_test_fn_atomic_max_dma[shape[0], 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=shape[1])
+    elif len(shape) == 1:
+        n_elements = shape[0]
+        BLOCK_SIZE = min(1024, shape[0]) # 1024:限制最大线程块大小
+        grid_size = (n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE # 向上取整
+        triton_test_fn_atomic_max_dma[grid_size, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=BLOCK_SIZE)
+
     test_common.validate_cmp(dtype, x1, x1_ref)
 
 # 3d
