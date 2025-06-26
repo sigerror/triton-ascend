@@ -126,3 +126,23 @@ def flip(arg0, arg1=None, _builder=None):
             (core.dtype("uint32"), core.dtype("int32")): ("__hmf_flipui32", core.dtype("uint32")),
             (core.dtype("int64"), core.dtype("int32")): ("__hmf_flipi64", core.dtype("int64")),
         }, is_pure=True, _builder=_builder)
+
+@core.extern
+def atan2(arg0, _builder=None):
+    core.static_print("tl.atan2 is unsupported for now. Use libdevice.atan2 instead.")
+    core.static_assert(False)
+
+@core.extern
+def div_rz(arg0, arg1, _builder=None):
+    core.static_print("tl.div_rz is unsupported for now. Use libdevice.div_rz instead.")
+    core.static_assert(False)
+
+@core.extern
+def fmod(arg0, arg1, _builder=None):
+    core.static_print("tl.fmod is unsupported for now. Use libdevice.fmod instead.")
+    core.static_assert(False)
+
+@core.extern
+def trunc(arg0, _builder=None):
+    core.static_print("tl.trunc is unsupported for now. Use libdevice.trunc instead.")
+    core.static_assert(False)
