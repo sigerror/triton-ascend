@@ -540,8 +540,26 @@ LogicalResult ReduceSingleCanonicalizer::matchAndRewrite(triton::ReduceOp reduce
                                                rewriter.getIntegerAttr(rewriter.getIndexType(), 0))
                     .getResult();
     for (int i = 0; i < srcs.size(); i++) {
-        auto extracted = rewriter.create<tensor::ExtractOp>(loc, srcs[i], zero);
-        results[i].replaceAllUsesWith(extracted);
+        auto src = srcs[i];
+        auto srcType = cast<RankedTensorType>(src.getType());
+        auto srcRank = srcType.getRank();
+        auto res = results[i];
+        Value extracted;
+        if (srcRank == 1) {
+            // vector reduce generates a scalar result
+            extracted = rewriter.create<tensor::ExtractOp>(loc, src, zero).getResult();
+        } else {
+            auto srcShape = srcType.getShape();
+            auto resType = cast<RankedTensorType>(res.getType());
+            auto resShape = resType.getShape();
+            auto collapseReassociationIndicesOptional = getReassociationIndicesForCollapse(srcShape, resShape);
+            if (!collapseReassociationIndicesOptional.has_value()) {
+                return rewriter.notifyMatchFailure(reduceOp, "Failure with getReassociationIndicesForCollapse call");
+            }
+            auto collapseReassociationIndices = collapseReassociationIndicesOptional.value();
+            extracted = rewriter.create<tensor::CollapseShapeOp>(loc, src, collapseReassociationIndices).getResult();
+        }
+        res.replaceAllUsesWith(extracted);
     }
 
     return success();
