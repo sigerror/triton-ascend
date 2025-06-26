@@ -201,22 +201,6 @@ def test_broadcast_to_dim12(shape, dtype):
 
 
 @triton.jit
-def fn_broadcast_4d(in_ptr, out_ptr, L: tl.constexpr, M: tl.constexpr, N: tl.constexpr, X: tl.constexpr):
-    l_idx = tl.arange(0, L)
-    m_idx = tl.arange(0, M)
-    n_idx = tl.arange(0, N)
-    x_idx = tl.arange(0, X)
-
-    in_idx = l_idx[:, None, None, None] * N + tl.arange(0, 1)[None, :, None, None] + n_idx[None, None, :, None] + tl.arange(0, 1)[None, None, None, :]
-    out_idx = l_idx[:, None, None, None] * M * N * X + m_idx[None, :, None, None] * N * X + n_idx[None, None, :, None] * X + x_idx[None, None, None, :]
-
-    in_data = tl.load(in_ptr + in_idx)
-    out_data = tl.load(out_ptr + out_idx)
-    out_data = tl.broadcast(in_data, out_data)
-    tl.store(out_ptr + out_idx, out_data)
-
-
-@triton.jit
 def fn_broadcast_multi_d(to_ptr, from_ptr, F_L: tl.constexpr, F_M: tl.constexpr, F_N: tl.constexpr, F_X: tl.constexpr, F_Y: tl.constexpr, T_L: tl.constexpr, T_M: tl.constexpr, T_N: tl.constexpr, T_X: tl.constexpr, T_Y: tl.constexpr):
     from_offsets = tl.arange(0, F_L)
     if F_M is not None:

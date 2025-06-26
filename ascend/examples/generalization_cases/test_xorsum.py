@@ -186,10 +186,13 @@ def triton_xorsum_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, Z
 
     x = tl.load(in_ptr + offsets)
 
-    ret = tl.xor_sum(x, DIM).reshape(REDUCE_NUMEL)
-
-    o_offsets = tl.arange(0, REDUCE_NUMEL)
-    tl.store(out_ptr + o_offsets, ret)
+    if DIM is not None:
+        ret = tl.reshape(tl.xor_sum(x, DIM), REDUCE_NUMEL)
+        o_offsets = tl.arange(0, REDUCE_NUMEL)
+        tl.store(out_ptr + o_offsets, ret)
+    else:
+        ret = tl.xor_sum(x, DIM)
+        tl.store(out_ptr, ret)
 
 
 @pytest.mark.shape_4d_5d
@@ -213,8 +216,9 @@ def test_xorsum_4d(dtype, shape, dim):
     triton_shape = [*shape]
     while len(triton_shape) < 5:
         triton_shape.append(1)
+    reduce_numel = math.prod(triton_shape) // triton_shape[dim] if dim is not None else None
     grid = (1,)
-    triton_xorsum_multi_d[grid](x0, triton_res, *triton_shape, dim, math.prod(triton_shape) // triton_shape[dim])
+    triton_xorsum_multi_d[grid](x0, triton_res, *triton_shape, dim, reduce_numel)
     test_common.validate_cmp(dtype, triton_res, torch_res)
 
 
@@ -243,8 +247,9 @@ def test_xorsum_5d(dtype, shape, dim):
     triton_shape = [*shape]
     while len(triton_shape) < 5:
         triton_shape.append(1)
+    reduce_numel = math.prod(triton_shape) // triton_shape[dim] if dim is not None else None
     grid = (1,)
-    triton_xorsum_multi_d[grid](x0, triton_res, *triton_shape, dim, math.prod(triton_shape) // triton_shape[dim])
+    triton_xorsum_multi_d[grid](x0, triton_res, *triton_shape, dim, reduce_numel)
     test_common.validate_cmp(dtype, triton_res, torch_res)
 
 

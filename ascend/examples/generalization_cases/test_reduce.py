@@ -189,7 +189,7 @@ def test_reduce(dtype, shape, dims):
 
 
 @triton.jit
-def tt_reduce_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
+def triton_reduce_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
                       NB: tl.constexpr, DIM: tl.constexpr, REDUCE_NUMEL: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
     if (YB * ZB * MB * NB) > 1:
@@ -203,10 +203,13 @@ def tt_reduce_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: t
 
     x = tl.load(in_ptr + offsets)
 
-    ret = tl.reduce(x, DIM, _reduce_combine).reshape(REDUCE_NUMEL)
-
-    o_offsets = tl.arange(0, REDUCE_NUMEL)
-    tl.store(out_ptr + o_offsets, ret)
+    if DIM is not None:
+        ret = tl.reshape(tl.reduce(x, DIM, _reduce_combine), REDUCE_NUMEL)
+        o_offsets = tl.arange(0, REDUCE_NUMEL)
+        tl.store(out_ptr + o_offsets, ret)
+    else:
+        ret = tl.reduce(x, DIM, _reduce_combine)
+        tl.store(out_ptr, ret)
 
 
 @pytest.mark.shape_4d_5d
@@ -222,14 +225,15 @@ def test_reduce_4d(dtype, shape, dims):
     dim = dims[0]
     x = test_common.generate_tensor(shape, dtype).npu()
 
-    y_ref = torch_reduce(x, dims)
+    y_ref = torch_reduce(x, dim if dim is None else dims)
     y_cal = torch.empty(y_ref.shape, dtype=eval('torch.' + dtype), device="npu")
 
     triton_shape = [*shape]
     while len(triton_shape) < 5:
         triton_shape.append(1)
+    reduce_numel = math.prod(triton_shape) // triton_shape[dim] if dim is not None else None
     grid = (1,)
-    tt_reduce_multi_d[grid](x, y_cal, *triton_shape, dim, math.prod(shape) // shape[dim])
+    triton_reduce_multi_d[grid](x, y_cal, *triton_shape, dim, reduce_numel)
     test_common.validate_cmp(dtype, y_cal, y_ref)
 
 
@@ -246,12 +250,13 @@ def test_reduce_5d(dtype, shape, dims):
     dim = dims[0]
     x = test_common.generate_tensor(shape, dtype).npu()
 
-    y_ref = torch_reduce(x, dims)
+    y_ref = torch_reduce(x, dim if dim is None else dims)
     y_cal = torch.empty(y_ref.shape, dtype=eval('torch.' + dtype), device="npu")
 
     triton_shape = [*shape]
     while len(triton_shape) < 5:
         triton_shape.append(1)
+    reduce_numel = math.prod(triton_shape) // triton_shape[dim] if dim is not None else None
     grid = (1,)
-    tt_reduce_multi_d[grid](x, y_cal, *triton_shape, dim, math.prod(shape) // shape[dim])
+    triton_reduce_multi_d[grid](x, y_cal, *triton_shape, dim, reduce_numel)
     test_common.validate_cmp(dtype, y_cal, y_ref)
