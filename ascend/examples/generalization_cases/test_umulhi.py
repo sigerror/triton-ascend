@@ -1,10 +1,12 @@
+import logging
 import triton
-import triton.language as tl
 import torch
 import pytest
 import test_common
-from test_common import TestUtils
+
 import numpy as np
+import triton.language as tl
+from test_common import TestUtils
 
 # inp the two 32 bit signed integers.
 @triton.jit

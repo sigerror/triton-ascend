@@ -173,7 +173,7 @@ def test_add_broadcast(param_list, dtype):
     x1 = test_common.generate_tensor(x1_shape, dtype).npu()
 
     x0_ref = torch.ones(x1_shape, dtype=eval('torch.' + dtype)).npu()
-    y_ref = torch_pointwise(x0_ref, x1)
+    y_ref = x0_ref + x1
 
     y_cal = torch.zeros(x1_shape, dtype=eval('torch.' + dtype)).npu()
     triton_add_broadcast[ncore, 1, 1](x0, x1, y_cal, xblock, xblock_sub)
