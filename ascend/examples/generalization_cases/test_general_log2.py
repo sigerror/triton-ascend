@@ -80,33 +80,17 @@ def test_log2(dtype, shape):
     ans = torch.log2(x).to(eval('torch.' + dtype))
 
     if len(shape) == 1:
-        XB = 1;
-        xnumel = 1
-        YB = 1;
-        ynumel = 1
-        ZB = shape[0];
-        znumel = shape[0]
+        fn_npu_[1, 1, 1](output, x, y, z, 1, 1, shape[0], 1, 1, shape[0])
     elif len(shape) == 2:
-        XB = 1;
-        xnumel = 1
-        YB = shape[0];
-        ynumel = shape[0]
-        ZB = shape[1];
-        znumel = shape[1]
+        fn_npu_[1, shape[0], 1](output, x, y, z, 1, 1, shape[1], 1, shape[0], shape[1])
     else:
-        XB = shape[0];
-        xnumel = shape[0]
-        YB = shape[1];
-        ynumel = shape[1]
-        ZB = shape[2];
-        znumel = shape[2]
-
-    grid = (1, 1, 1)
-    if x.numel() * x.element_size() >= 8192:
-        grid = (1, 1, ZB)
-        ZB = 1
-
-    fn_npu_[grid](output, x, y, z, XB, YB, ZB, xnumel, ynumel, znumel)
+        mx = max(shape[0], shape[1], shape[2])
+        if mx == shape[0]:
+            fn_npu_[shape[0], 1, 1](output, x, y, z, 1, shape[1], shape[2], shape[0], shape[1], shape[2])
+        elif mx == shape[1]:
+            fn_npu_[1, shape[1], 1](output, x, y, z, shape[0], 1, shape[2], shape[0], shape[1], shape[2])
+        else:
+            fn_npu_[1, 1, shape[2]](output, x, y, z, shape[0], shape[1], 1, shape[0], shape[1], shape[2])
 
     test_common.validate_cmp(dtype, ans, output)
 

@@ -115,9 +115,11 @@ def test_softmax(dtype, shape):
         tt_softmax_2d[grid](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB)
 
     elif len(shape) == 3:
-        xnumel, ynumel, znumel = shape
-        XB, YB, ZB = xnumel, ynumel, znumel
-        tt_softmax_3d[grid](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB)
+        mx = max(shape[1], shape[2])
+        if mx == shape[1]:
+            tt_softmax_3d[1, shape[1], 1](x, y_cal, shape[0], shape[1], shape[2], shape[0], 1, shape[2])
+        else:
+            tt_softmax_3d[1, 1, shape[2]](x, y_cal, shape[0], shape[1], shape[2], shape[0], shape[1], 1)
 
     test_common.validate_cmp(dtype, y_cal, y_ref)
 
