@@ -910,7 +910,8 @@ class CodeGenerator(ast.NodeVisitor):
             return
         num_stages = None
         loop_unroll_factor = None
-        if IteratorClass is language.range:
+        bind_sub_block = None
+        if IteratorClass in [language.range, language.parallel]:
             iterator = IteratorClass(*iter_args, **iter_kwargs)
             # visit iterator arguments
             # note: only `range` iterator is supported now
@@ -920,6 +921,8 @@ class CodeGenerator(ast.NodeVisitor):
             step = iterator.step
             num_stages = iterator.num_stages
             loop_unroll_factor = iterator.loop_unroll_factor
+            if (IteratorClass is language.parallel):
+                bind_sub_block = iterator.bind_sub_block
         elif IteratorClass is range:
             # visit iterator arguments
             # note: only `range` iterator is supported now
@@ -992,6 +995,8 @@ class CodeGenerator(ast.NodeVisitor):
                 for_op.set_attr("tt.num_stages", self.builder.get_int32_attr(num_stages))
             if loop_unroll_factor is not None:
                 for_op.set_attr("tt.loop_unroll_factor", self.builder.get_int32_attr(loop_unroll_factor))
+            if (bind_sub_block is not None) and bind_sub_block:
+                for_op.set_attr("bind_sub_block", self.builder.get_bool_attr(bind_sub_block))
 
             self.scf_stack.append(node)
             self.builder.set_insertion_point_to_start(for_op.get_body(0))

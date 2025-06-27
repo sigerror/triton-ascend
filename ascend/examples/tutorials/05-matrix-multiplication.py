@@ -9,12 +9,12 @@ import torch
 import torch_npu
 
 DEV = "npu"
-activation = "leaky_relu"
+activation = "leaky_relu_custom"
 
 
 def get_autotune_config():
     return [
-        # triton.Config({'BLOCK_SIZE_M': 128, 'BLOCK_SIZE_N': 128, 'BLOCK_SIZE_K': 128}),
+        triton.Config({"BLOCK_SIZE_M": 128, "BLOCK_SIZE_N": 128, "BLOCK_SIZE_K": 128}),
         triton.Config({"BLOCK_SIZE_M": 64, "BLOCK_SIZE_N": 64, "BLOCK_SIZE_K": 64}),
     ]
 
@@ -76,8 +76,8 @@ def matmul_kernel(
     offs_am = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
     offs_bn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
     offs_k = tl.arange(0, BLOCK_SIZE_K)
-    a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
-    b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
+    a_ptrs_base = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
+    b_ptrs_base = b_ptr + (offs_k[:, None] * stride_bk + offs_bn[None, :] * stride_bn)
     msk_m = offs_am < M
     msk_n = offs_bn < N
     # -----------------------------------------------------------
@@ -89,6 +89,8 @@ def matmul_kernel(
     for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
         # Load the next block of A and B, generate a mask by checking the K dimension.
         # If it is out of bounds, set it to 0.
+        a_ptrs = a_ptrs_base + k * BLOCK_SIZE_K * stride_ak
+        b_ptrs = b_ptrs_base + k * BLOCK_SIZE_K * stride_bk
         a = tl.load(
             a_ptrs,
             mask=msk_m[:, None] and (offs_k[None, :] < K - k * BLOCK_SIZE_K),
@@ -101,46 +103,47 @@ def matmul_kernel(
         )
         # We accumulate along the K dimension.
         accumulator = tl.dot(a, b, accumulator)
-        # Advance the ptrs to the next K block.
-        a_ptrs += BLOCK_SIZE_K * stride_ak
-        b_ptrs += BLOCK_SIZE_K * stride_bk
     # You can fuse arbitrary activation functions here
     # while the accumulator is still in FP32!
-    if ACTIVATION == "leaky_relu":
-        SUB_BLK_M: tl.constexpr = BLOCK_SIZE_M // 2
-        for s in range(0, 2):
-            vec_sub_blk = tl.subview(
-                accumulator, (s * SUB_BLK_M, 0), (SUB_BLK_M, BLOCK_SIZE_N), (1, 1)
-            )
-            vec_sub_blk = leaky_relu(vec_sub_blk)
-            accumulator = tl.insert(
-                accumulator,
-                vec_sub_blk,
-                (s * SUB_BLK_M, 0),
-                (SUB_BLK_M, BLOCK_SIZE_N),
-                (1, 1),
-            )
-    c = accumulator.to(tl.float16)
+    # Original vector operations
+    # if ACTIVATION == "leaky_relu_custom":
+    #     accumulator = leaky_relu_custom(accumulator)
+    # c = accumulator.to(tl.float16)
+    # # -----------------------------------------------------------
+    # # Write back the block of the output matrix C with masks.
+    # offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+    # offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+    # c_ptrs = c_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
+    # c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
+    # tl.store(c_ptrs, c, mask=c_mask)
+    # Comment out the following lines to enable split the workload to two vector cores
+    SUB_BLK_M: tl.constexpr = BLOCK_SIZE_M // 2
+    for s in tl.parallel(0, 2, bind_sub_block=True):
+        vec_sub_blk = tl.extract_slice(
+            accumulator, (s * SUB_BLK_M, 0), (SUB_BLK_M, BLOCK_SIZE_N), (1, 1)
+        )
+        if ACTIVATION == "leaky_relu_custom":
+            vec_sub_blk = leaky_relu_custom(vec_sub_blk)
+        c_sub_blk = vec_sub_blk.to(tl.float16)
+        # -----------------------------------------------------------
+        # Write back the block of the output matrix C with masks.
+        offs_cm = pid_m * BLOCK_SIZE_M + s * SUB_BLK_M + tl.arange(0, SUB_BLK_M)
+        offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+        c_ptrs = c_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
+        c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
+        tl.store(c_ptrs, c_sub_blk, mask=c_mask)
 
-    # -----------------------------------------------------------
-    # Write back the block of the output matrix C with masks.
-    offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
-    offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
-    c_ptrs = c_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
-    c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
-    tl.store(c_ptrs, c, mask=c_mask)
 
-
-# We can fuse `leaky_relu` by providing it as an `ACTIVATION` meta-parameter in `matmul_kernel`.
+# We can fuse `leaky_relu_custom` by providing it as an `ACTIVATION` meta-parameter in `matmul_kernel`.
 @triton.jit
-def leaky_relu(x):
-    return tl.where(x >= 0, x, 0.01 * x)
+def leaky_relu_custom(x):
+    return tl.where(x >= 0, x, 0.01 * x) + 1.0
 
 
 def torch_matmul(a, b, activation=""):
     c = torch.matmul(a, b)
-    if activation == "leaky_relu":
-        c = torch.where(c >= 0, c, 0.01 * c)
+    if activation == "leaky_relu_custom":
+        c = torch.where(c >= 0, c, 0.01 * c) + 1.0
     return c
 
 

@@ -9,9 +9,13 @@ from triton.language.core import (
     _unwrap_iterable,
     builtin,
     constexpr,
+    dtype as real_dtype,
+    float32,
+    tensor,
+    check_bit_width,
+    _unwrap_if_constexpr,
+    range,
 )
-from triton.language.core import dtype as real_dtype
-from triton.language.core import float32, tensor, check_bit_width, _unwrap_if_constexpr
 
 # from triton.language.core import _unwrap_if_constexpr, _unwrap_shape
 from . import semantic
@@ -311,3 +315,17 @@ def __rshift__(self, other, _builder=None):
     else:
         return semantic.lshr(self, other, _builder)
 
+
+class parallel(range):
+    """
+    Iterator that counts upward forever, with parallel execution semantics.
+
+    This is a special iterator used to implement similar semantics to Python's :code:`range` in the context of
+    :code:`triton.jit` functions. In addition, it allows user to pass extra attributes to the compiler.
+    :param bind_sub_block: Tells the compiler if multiple vector cores participate in the loop.
+        This is used in the mixed cube-vector kernel on 910B. The number of vector cores is determined by the number of
+        iteration in this loop. Currently on 910B, max 2 vector cores could be used.
+    """
+    def __init__(self, arg1, arg2=None, step=None, num_stages=None, loop_unroll_factor=None, bind_sub_block: bool = False):
+        super().__init__(arg1, arg2, step, num_stages, loop_unroll_factor)
+        self.bind_sub_block = bind_sub_block
