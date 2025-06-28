@@ -86,13 +86,13 @@ function validate_pr_all_commits_title() {
 #   exit 1
 # fi
 
-source /usr/local/Ascend/ascend-toolkit/set_env.sh
+source /usr/local/CANN_8.2.RC1.alpha002/ascend-toolkit/set_env.sh
 export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
 # FIXME: 20250508 the bishengir-compile in the CANN 8.0.T115 fails lots of cases
 #        So we need to use another version of compiler.
-COMPILER_ROOT=/home/shared/bisheng_toolkit_20250610
-export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/ccec_compiler/bin:$PATH
+COMPILER_ROOT=/home/shared/bisheng_toolkit_20250628
+export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/8.2.RC1.alpha002/compiler/bishengir/bin:$PATH
 
 # build in torch 2.6.0
 source /opt/miniconda3/bin/activate torch_260
