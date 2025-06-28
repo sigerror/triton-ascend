@@ -596,6 +596,16 @@ class JITFunction(KernelInterface[T]):
             for k in excess_kwargs:
                 if k not in options.__dict__:
                     raise KeyError("Keyword argument %s was specified but unrecognised" % k)
+            ignor_params = ["debug", "sanitize_overflow", "llvm_version", "kernel_name", \
+                "allowed_dot_input_precisions", "multibuffer", "stream"]
+            not_work_params = []
+            for k in kwargs:
+                if k in ignor_params:
+                    continue
+                elif k in excess_kwargs:
+                    not_work_params.append(k)
+            if len(not_work_params) != 0:
+                print("[WARNING] Please DO NOT tune args {}!".format(not_work_params))
 
             bound_vals = tuple(bound_args.values())
 
@@ -649,7 +659,9 @@ class JITFunction(KernelInterface[T]):
             grid_0 = grid[0]
             grid_1 = grid[1] if grid_size > 1 else 1
             grid_2 = grid[2] if grid_size > 2 else 1
-
+            grid_all_size = grid_0 * grid_1 * grid_2
+            if grid_all_size > 65535:
+                raise RuntimeError("grid should be less than 65536!")
             if ('stream' in kwargs.keys()):
                 stream = kwargs["stream"]
             # launch kernel

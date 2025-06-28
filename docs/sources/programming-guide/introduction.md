@@ -344,3 +344,5 @@ launcher_cxx11abi1.cxx  # 用于封装和调用前面步骤中生成的内核代
 rm -rf ~/.triton/cache
 rm -rf ~/.triton/dump
 ```
+## 4. FAQ
+1. 目前triton-ascend中含有很多kernel运行时的参数和ascend npu性能无关，为了避免用户微调这些参数以期望达到性能提升的目的，在运行时增加了[WARNING]的提示，用户可以在观察运行时打印输出的log:"[WARNING] Please DO NOT tune arg xxx"，来避免对无效参数比如num_waprs等的微调。
