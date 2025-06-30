@@ -5,7 +5,6 @@
 PYTHON ?= python
 BUILD_DIR := $(shell python3 -c "import sysconfig, sys; plat_name=sysconfig.get_platform(); python_version=sysconfig.get_python_version(); print(f'build/cmake.{plat_name}-{sys.implementation.name}-{python_version}')")
 PYTEST := $(PYTHON) -m pytest
-LLVM_BUILD_PATH ?= ".llvm-project/build"
 NUM_PROCS ?= 8
 
 # Incremental builds

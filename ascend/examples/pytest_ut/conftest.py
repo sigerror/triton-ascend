@@ -1,6 +1,7 @@
 import pytest
 import torch
 
+
 @pytest.fixture(scope="session", autouse=True)
 def assign_npu(worker_id):
     npu_count = torch.npu.device_count()
