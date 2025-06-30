@@ -11,6 +11,7 @@ import test_common
 from test_common import TestUtils
 import logging
 
+
 @triton.jit
 def fn_npu_1d(output_ptr, x_ptr, YB: tl.constexpr, ZB: tl.constexpr):
     yidx = tl.arange(0, YB)
@@ -102,15 +103,15 @@ def test_expand_dims_3d(dtype, shape):
 
 
 @triton.jit
-def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIM: tl.constexpr):
+def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIMS: tl.constexpr, DIM: tl.constexpr):
     in_offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
-    if (YB * ZB * MB * NB) > 1:
+    if DIMS > 1:
         in_offsets = in_offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
-    if (ZB * MB * NB) > 1:
+    if DIMS > 2:
         in_offsets = in_offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
-    if (MB * NB) > 1:
+    if DIMS > 3:
         in_offsets = in_offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
-    if NB > 1:
+    if DIMS > 4:
         in_offsets = in_offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
 
     X = tl.load(x_ptr + in_offsets)
@@ -126,6 +127,7 @@ def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl
 @pytest.mark.parametrize('shape', [
     (2, 64, 16, 2),
     (8, 8, 4, 2),
+    (8, 8, 4, 1),
 ])
 @pytest.mark.parametrize('dim', [-1, 0, 1, 2, 3])
 def test_npu_4d(shape, dtype, dim):
@@ -138,7 +140,7 @@ def test_npu_4d(shape, dtype, dim):
     while len(triton_shape) < 5:
         triton_shape.append(1)
     grid = (1, )
-    fn_npu_multi_d[grid](output, x, *triton_shape, dim)
+    fn_npu_multi_d[grid](output, x, *triton_shape, len(shape), dim)
 
     torch.testing.assert_close(output, expected)
 
@@ -148,6 +150,7 @@ def test_npu_4d(shape, dtype, dim):
 @pytest.mark.parametrize('shape', [
     (2, 32, 3, 16, 2),
     (8, 8, 3, 4, 2),
+    (8, 8, 3, 4, 1),
 ])
 @pytest.mark.parametrize('dim', [-1, 0, 1, 2, 3, 4])
 def test_npu_5d(shape, dtype, dim):
@@ -160,6 +163,6 @@ def test_npu_5d(shape, dtype, dim):
     while len(triton_shape) < 5:
         triton_shape.append(1)
     grid = (1, )
-    fn_npu_multi_d[grid](output, x, *triton_shape, dim)
+    fn_npu_multi_d[grid](output, x, *triton_shape, len(shape), dim)
 
     torch.testing.assert_close(output, expected)
