@@ -269,95 +269,97 @@ python3 01-vector-add.py
 
 # 当前支持的triton op列表
 
-|        Triton Op Type    |        Triton Op       |
-|:------------------------:|:----------------------:|
-|       Creation Ops       | arange                 |
-|                          | cat                    |
-|                          | full                   |
-|                          | zeros                  |
-|                          | zeros_like             |
-|                          | cast                   |
-|  Shape Manipulation Ops  | broadcast              |
-|                          | broadcast_to           |
-|                          | expand_dims            |
-|                          | interleave             |
-|                          | join                   |
-|                          | permute                |
-|                          | ravel                  |
-|                          | reshape                |
-|                          | split                  |
-|                          | trans                  |
-|                          | view                   |
-|    Linear Algebra Ops    | dot                    |
-|    Memory/Pointer Ops    | load                   |
-|                          | store                  |
-|                          | make_block_ptr         |
-|                          | advance                |
-|       Indexing Ops       | flip                   |
-|                          | where                  |
-|                          | swizzle2d              |
-|         Math Ops         | add                    |
-|                          | sub                    |
-|                          | mul                    |
-|                          | div                    |
-|                          | floordiv(//)           |
-|                          | mod                    |
-|                          | neg                    |
-|                          | invert(!)              |
-|                          | and(&)                 |
-|                          | or(\|)                 |
-|                          | xor(^)                 |
-|                          | not(~)                 |
-|                          | lshift(<<)             |
-|                          | rshift(>>)             |
-|                          | gt                     |
-|                          | ge                     |
-|                          | lt                     |
-|                          | le                     |
-|                          | eq                     |
-|                          | ne                     |
-|                          | logical and            |
-|                          | logical or             |
-|                          | abs                    |
-|                          | cdiv                   |
-|                          | ceil                   |
-|                          | clamp                  |
-|                          | cos                    |
-|                          | div_rn                 |
-|                          | erf                    |
-|                          | exp                    |
-|                          | exp2                   |
-|                          | fdiv                   |
-|                          | floor                  |
-|                          | fma                    |
-|                          | log                    |
-|                          | log2                   |
-|                          | maximum                |
-|                          | minimum                |
-|                          | rsqrt                  |
-|                          | sigmoid                |
-|                          | sin                    |
-|                          | softmax                |
-|                          | sqrt                   |
-|                          | sqrt_rn                |
-|                          | umulhi                 |
-|       Reduction Ops      | argmax                 |
-|                          | argmin                 |
-|                          | max                    |
-|                          | min                    |
-|                          | reduce                 |
-|                          | sum                    |
-|                          | xor_sum                |
-|      Scan/Sort Ops       | gather                 |
-|        Atomic Ops        | atomic_add             |
-|                          | atomic_max             |
-|                          | atomic_min             |
-|         Iterators        | range                  |
-|                          | static_range           |
-|     Compiler Hint Ops    | debug_barrier          |
-|         Debug Ops        | static_print           |
-|                          | static_assert          |
-|                          | device_print           |
+|     Triton Op Type     |   Triton Op    |
+|:----------------------:|:--------------:|
+|      Creation Ops      |     arange     |
+|                        |      cat       |
+|                        |      full      |
+|                        |     zeros      |
+|                        |   zeros_like   |
+|                        |      cast      |
+| Shape Manipulation Ops |   broadcast    |
+|                        |  broadcast_to  |
+|                        |  expand_dims   |
+|                        |   interleave   |
+|                        |      join      |
+|                        |    permute     |
+|                        |     ravel      |
+|                        |    reshape     |
+|                        |     split      |
+|                        |     trans      |
+|                        |      view      |
+|   Linear Algebra Ops   |      dot       |
+|   Memory/Pointer Ops   |      load      |
+|                        |     store      |
+|                        | make_block_ptr |
+|                        |    advance     |
+|      Indexing Ops      |      flip      |
+|                        |     where      |
+|                        |   swizzle2d    |
+|        Math Ops        |      add       |
+|                        |      sub       |
+|                        |      mul       |
+|                        |      div       |
+|                        |  floordiv(//)  |
+|                        |      mod       |
+|                        |      neg       |
+|                        |   invert(!)    |
+|                        |     and(&)     |
+|                        |     or(\|)     |
+|                        |     xor(^)     |
+|                        |     not(~)     |
+|                        |   lshift(<<)   |
+|                        |   rshift(>>)   |
+|                        |       gt       |
+|                        |       ge       |
+|                        |       lt       |
+|                        |       le       |
+|                        |       eq       |
+|                        |       ne       |
+|                        |  logical and   |
+|                        |   logical or   |
+|                        |      abs       |
+|                        |      cdiv      |
+|                        |      ceil      |
+|                        |     clamp      |
+|                        |      cos       |
+|                        |     div_rn     |
+|                        |      erf       |
+|                        |      exp       |
+|                        |      exp2      |
+|                        |      fdiv      |
+|                        |     floor      |
+|                        |      fma       |
+|                        |      log       |
+|                        |      log2      |
+|                        |    maximum     |
+|                        |    minimum     |
+|                        |     rsqrt      |
+|                        |    sigmoid     |
+|                        |      sin       |
+|                        |    softmax     |
+|                        |      sqrt      |
+|                        |    sqrt_rn     |
+|                        |     umulhi     |
+|     Reduction Ops      |     argmax     |
+|                        |     argmin     |
+|                        |      max       |
+|                        |      min       |
+|                        |     reduce     |
+|                        |      sum       |
+|                        |    xor_sum     |
+|     Scan/Sort Ops      |     gather     |
+|                        |     cumsum     |
+|                        |    cumprod     |
+|       Atomic Ops       |   atomic_add   |
+|                        |   atomic_max   |
+|                        |   atomic_min   |
+|       Iterators        |     range      |
+|                        |  static_range  |
+|   Compiler Hint Ops    | debug_barrier  |
+|       Debug Ops        |  static_print  |
+|                        | static_assert  |
+|                        |  device_print  |
 
 各op详细支持度及使用约束参见[Python_API.md](./docs/Python_API.md)
 
