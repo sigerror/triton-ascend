@@ -420,10 +420,11 @@ extern "C" {
       }}
       if (max_tensors_num > 0) {{
         // Scalars don't have a '*' and are returned without cropping
+        // MSPROF_GE_TENSOR_DATA_NUM is 5 which means max 5 tensors can be registered
         {LINE_CHANGE_CHAR.join(
           f'profTensorData->tensorData[{i}].dataType = {convert_sigtype_to_int(ty[1:])};'
           for i, ty in signature.items()
-          if ty.startswith("*")
+          if ty.startswith("*") and i < 5
         )}
       }}
       MsprofReportAdditionalInfo(false, static_cast<void *>(&tensorInfo), sizeof(MsprofAdditionalInfo));
@@ -437,7 +438,7 @@ extern "C" {
 #include <sys/syscall.h>
 {'#include <pybind11/pybind11.h>' if enable_device_print else ''}
 {'#include <pybind11/iostream.h>' if enable_device_print else ''}
-
+#include <vector>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 {'#include <torch_npu/csrc/framework/OpCommand.h>' if enable_taskqueue else ''}
