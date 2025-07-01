@@ -103,15 +103,15 @@ def test_flip(shape, dtype):
 
 
 @triton.jit
-def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, AXIS: tl.constexpr):
+def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIMS: tl.constexpr, AXIS: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
-    if (YB * ZB * MB * NB) > 1:
+    if DIMS > 1:
         offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
-    if (ZB * MB * NB) > 1:
+    if DIMS > 2:
         offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
-    if (MB * NB) > 1:
+    if DIMS > 3:
         offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
-    if NB > 1:
+    if DIMS > 4:
         offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
 
     X = tl.load(x_ptr + offsets)
@@ -124,8 +124,8 @@ def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl
     (4, 2, 8, 4),
     (2, 4, 2, 8, 4),
 
-    (4, 3, 8, 4),
-    (3, 4, 2, 8, 4),
+    (4, 3, 8, 1),
+    (3, 4, 2, 8, 1),
 ])
 @pytest.mark.parametrize('dtype', typelist)
 def test_flip_4d_5d(shape, dtype):
@@ -144,7 +144,7 @@ def test_flip_4d_5d(shape, dtype):
     while len(triton_shape) < 5:
         triton_shape.append(1)
     grid = (1, )
-    fn_npu_multi_d[grid](triton_res, x, *triton_shape, len(triton_shape) - 1)
+    fn_npu_multi_d[grid](triton_res, x, *triton_shape, len(shape), len(shape) - 1)
 
     triton_res = triton_res if triton_res.dtype != torch.uint32 else triton_res.to(torch.float32)
     cmp_dtype = dtype if dtype != 'uint32' else 'float32'
