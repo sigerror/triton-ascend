@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from triton._C.libtriton import ir, passes
 from triton.backends.ascend.utils import (
     _check_bishengir_api_change,
+    _check_bishengir_is_regbased,
     _get_kernel_target,
     _get_llvm_path,
     _get_mlir_path,
@@ -217,6 +218,10 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
             bin_file_with_ext = "kernel.o"
         else:
             bin_file_with_ext = "kernel_reloc.o"
+        if _check_bishengir_is_regbased():
+            bishengir_hivm_opt = "--reg-based=true"
+        else:
+            bishengir_hivm_opt = "--enable-hivm-compile=true"
         bin_path = os.path.join(tmpdir, bin_file_with_ext)
         callback_path = os.path.join(tmpdir, "libkernel.so")
         multibuffer = metadata["multibuffer"]
@@ -230,7 +235,7 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         if npu_compiler_path.endswith("bishengir-compile"):
             _compile_option_list += [
                 "--enable-hfusion-compile=true",
-                "--enable-hivm-compile=true",
+                bishengir_hivm_opt,
                 "--enable-triton-kernel-compile=true",
             ]
         cmd_list = (

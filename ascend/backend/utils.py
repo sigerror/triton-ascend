@@ -139,6 +139,27 @@ def _check_bishengir_api_change() -> bool:
         return False
 
 
+def _check_bishengir_is_regbased() -> bool:
+    bishengir_path = _get_npucompiler_path()
+    try:
+        result = subprocess.run(
+            f"{bishengir_path} --help | grep 'reg-based'",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if result.returncode == 0:
+            # bishengir-compile is regbased version
+            return True
+        else:
+            # bishengir-compile is membased version
+            return False
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return False
+
+
 @functools.lru_cache(None)
 def _get_ascend_path() -> str:
     path = os.getenv("ASCEND_HOME_PATH", "")
