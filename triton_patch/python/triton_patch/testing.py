@@ -182,7 +182,7 @@ def collect_files(base_dir):
 def collect_single(base_dir: str, key: str = None) -> float:
     if not os.path.exists(base_dir):
         return float('inf')
-    
+
     import pandas as pd
     for root, _, files in os.walk(base_dir):
         for file in files:
@@ -198,7 +198,7 @@ def collect_single(base_dir: str, key: str = None) -> float:
             else:
                 # default: read the first row except header
                 return df.loc[0, 'Avg Time(us)']
-    
+
     return float('inf')
 
 def do_bench_npu(fn, warmup=5, active=30):
@@ -606,7 +606,7 @@ def get_max_simd_tflops(dtype, clock_rate, device=None):
 # Patch the triton language API here because triton's __init__.py
 # import testing in the last stages.
 
-from .triton_patch.language.core import dot, gather, insert, subview, trans, __lshift__, __rshift__
+from .triton_patch.language.core import dot, gather, insert_slice, extract_slice, trans, __lshift__, __rshift__
 from .triton_patch.language.standard import flip, sigmoid, softmax
 from .triton_patch.language.math import (
     umulhi,
@@ -649,8 +649,8 @@ language.flip = flip
 language.sigmoid = sigmoid
 language.softmax = softmax
 language.gather = gather
-language.insert = insert
-language.subview = subview
+language.insert_slice = insert_slice
+language.extract_slice = extract_slice
 language.tensor.__lshift__ = __lshift__
 language.tensor.__rshift__ = __rshift__
 

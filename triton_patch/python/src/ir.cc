@@ -1330,7 +1330,7 @@ void init_triton_ir(py::module &&m) {
              auto op = self.create<SplitOp>(a);
              return std::vector<Value>(op->result_begin(), op->result_end());
            })
-      .def("create_slice",
+      .def("create_extract_slice",
            [](TritonOpBuilder &self, Value &ful, std::vector<Value> &offs_vec,
               std::vector<int> &sizs_vec, std::vector<int> &strd_vec) -> Value {
              llvm::SmallVector<Value> offsets;
@@ -1363,7 +1363,7 @@ void init_triton_ir(py::module &&m) {
                                                             sizes, strides);
              return ret;
            })
-      .def("create_insert",
+      .def("create_insert_slice",
            [](TritonOpBuilder &self, Value &ful, Value &sub,
               std::vector<Value> &offs_vec, std::vector<int> &sizs_vec,
               std::vector<int> &strd_vec) -> Value {

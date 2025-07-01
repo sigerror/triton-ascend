@@ -242,7 +242,7 @@ def gather(src, index, axis, _builder=None):
 
 @_tensor_member_fn
 @builtin
-def insert(ful, sub, offsets, sizes, strides, _builder=None, _generator=None) -> tensor:
+def insert_slice(ful, sub, offsets, sizes, strides, _builder=None, _generator=None) -> tensor:
     """
     Insert a tensor to another tensor as specified by the operation’s offsets, sizes and strides arguments.
 
@@ -263,13 +263,13 @@ def insert(ful, sub, offsets, sizes, strides, _builder=None, _generator=None) ->
         real_semantic.to_tensor(o, _builder) if isinstance(o, constexpr) else o
         for o in offsets
     ]
-    out = semantic.insert(ful, sub, new_offsets, sizes, strides, _builder)
+    out = semantic.insert_slice(ful, sub, new_offsets, sizes, strides, _builder)
     return out
 
 
 @_tensor_member_fn
 @builtin
-def subview(ful, offsets, sizes, strides, _builder=None, _generator=None) -> tensor:
+def extract_slice(ful, offsets, sizes, strides, _builder=None, _generator=None) -> tensor:
     """
     Extract a tensor from another tensor as specified by the operation’s offsets, sizes and strides arguments.
 
@@ -287,7 +287,7 @@ def subview(ful, offsets, sizes, strides, _builder=None, _generator=None) -> ten
         real_semantic.to_tensor(o, _builder) if isinstance(o, constexpr) else o
         for o in offsets
     ]
-    sub = semantic.subview(ful, new_offsets, sizes, strides, _builder)
+    sub = semantic.extract_slice(ful, new_offsets, sizes, strides, _builder)
     return sub
 
 

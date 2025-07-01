@@ -263,7 +263,7 @@ def gather(src: tl.tensor, index: tl.tensor, axis: int, builder: ir.builder) -> 
     gather = builder.create_gather(src.handle, index.handle, axis)
     return wrap_tensor(gather, src.type.scalar, index.type.shape)
 
-def insert(ful: tl.tensor, sub: tl.tensor, offsets: List[tl.tensor], sizes: List[int], strides: List[int], builder: ir.builder) -> tl.tensor:
+def insert_slice(ful: tl.tensor, sub: tl.tensor, offsets: List[tl.tensor], sizes: List[int], strides: List[int], builder: ir.builder) -> tl.tensor:
     assert(len(ful.shape) == len(offsets))
     assert(len(ful.shape) == len(sizes))
     assert(len(ful.shape) == len(strides))
@@ -271,7 +271,7 @@ def insert(ful: tl.tensor, sub: tl.tensor, offsets: List[tl.tensor], sizes: List
     assert(all([s>=0 for s in strides]))
     new_offsets = [o.handle for o in offsets]
     ret_type = tl.block_type(ful.type.scalar, ful.shape)
-    out = builder.create_insert(ful.handle, sub.handle, new_offsets, sizes, strides)
+    out = builder.create_insert_slice(ful.handle, sub.handle, new_offsets, sizes, strides)
     return tl.tensor(out, ret_type)
 
 
@@ -385,7 +385,7 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
     # Do not cast back to int1 when is_bool=true. We directly use the int8 tensor given by tl.load
     if is_bool:
         ret.was_bool_to_int8 = True
-    
+
     return ret
 
 def minimum(x: tl.tensor, y: tl.tensor, propagate_nan: tl.PropagateNan, builder: ir.builder):
@@ -426,7 +426,7 @@ def maximum(x: tl.tensor, y: tl.tensor, propagate_nan: tl.PropagateNan, builder:
     else:
         raise TypeError(f"Unexpected dtype {dtype}")
 
-def subview(ful: tl.tensor, offsets: List[tl.tensor], sizes: List[int], strides: List[int], builder: ir.builder) -> tl.tensor:
+def extract_slice(ful: tl.tensor, offsets: List[tl.tensor], sizes: List[int], strides: List[int], builder: ir.builder) -> tl.tensor:
     assert(len(ful.shape) == len(offsets))
     assert(len(ful.shape) == len(sizes))
     assert(len(ful.shape) == len(strides))
@@ -434,7 +434,7 @@ def subview(ful: tl.tensor, offsets: List[tl.tensor], sizes: List[int], strides:
     assert(all([s>=0 for s in strides]))
     new_offsets = [o.handle for o in offsets]
     ret_type = tl.block_type(ful.type.scalar, sizes)
-    out = builder.create_slice(ful.handle, new_offsets, sizes, strides)
+    out = builder.create_extract_slice(ful.handle, new_offsets, sizes, strides)
     return tl.tensor(out, ret_type)
 
 def atom_red_typechecking_impl(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, op: str,
