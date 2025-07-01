@@ -1,17 +1,19 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 
-import triton
-import triton.language as tl
+import logging
+import pytest
 import torch
 import torch_npu
-import pytest
+import triton
+import triton.language as tl
+
 import test_common
 from test_common import TestUtils, check_ub_mem_overflow
-import logging
+
 
 @triton.jit
-def fn_npu_1d(output_ptr, x_ptr,YB: tl.constexpr):
+def fn_npu_0d(output_ptr, x_ptr, YB: tl.constexpr):
     yidx = tl.arange(0, YB)
 
     idx = yidx
@@ -24,8 +26,24 @@ def fn_npu_1d(output_ptr, x_ptr,YB: tl.constexpr):
 
     tl.store(output_ptr + oidx, ret)
 
+
 @triton.jit
-def fn_npu_2d(output_ptr, x_ptr,YB: tl.constexpr, ZB: tl.constexpr):
+def fn_npu_1d(output_ptr, x_ptr, YB: tl.constexpr):
+    yidx = tl.arange(0, YB)
+
+    idx = yidx
+
+    X = tl.load(x_ptr + idx)
+
+    ret = tl.zeros_like(X)
+
+    oidx = yidx
+
+    tl.store(output_ptr + oidx, ret)
+
+
+@triton.jit
+def fn_npu_2d(output_ptr, x_ptr, YB: tl.constexpr, ZB: tl.constexpr):
     pid = tl.program_id(0)
     yidx = tl.arange(0, YB)[:, None] + pid * YB
     zidx = tl.arange(0, ZB)[None, :]
@@ -39,6 +57,7 @@ def fn_npu_2d(output_ptr, x_ptr,YB: tl.constexpr, ZB: tl.constexpr):
     oidx = yidx * ZB + zidx
 
     tl.store(output_ptr + oidx, ret)
+
 
 @triton.jit
 def fn_npu_3d(output_ptr, x_ptr, YB: tl.constexpr, ZB: tl.constexpr, KB: tl.constexpr):
@@ -56,7 +75,12 @@ def fn_npu_3d(output_ptr, x_ptr, YB: tl.constexpr, ZB: tl.constexpr, KB: tl.cons
 
     tl.store(output_ptr + oidx, ret)
 
-@pytest.mark.parametrize('shape', TestUtils.test_shape1_2_3d)
+
+test_shape0d = [()]
+testlist = test_shape0d + TestUtils.test_shape1_2_3d
+
+
+@pytest.mark.parametrize('shape', testlist)
 @pytest.mark.parametrize('dtype', TestUtils.dtype_list)
 def test_npu(shape, dtype):
     logging.debug(f'dtype:{dtype} shape:{shape}')
@@ -65,7 +89,10 @@ def test_npu(shape, dtype):
     x = torch.full(shape, 0, dtype=eval('torch.' + dtype)).npu()
     triton_res = torch.empty(shape, dtype=eval('torch.' + dtype)).npu()
     torch_res = x
-    if len(shape) == 1:
+
+    if len(shape) == 0:
+        fn_npu_0d[1, 1, 1](triton_res, x, 1)
+    elif len(shape) == 1:
         fn_npu_1d[1, 1, 1](triton_res, x, shape[0])
     elif len(shape) == 2:
         fn_npu_2d[shape[0], 1, 1](triton_res, x, 1, shape[1])
@@ -76,7 +103,8 @@ def test_npu(shape, dtype):
 
 
 @triton.jit
-def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
+                   NB: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
     if (YB * ZB * MB * NB) > 1:
         offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
@@ -96,14 +124,14 @@ def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl
 @pytest.mark.shape_4d_5d
 @pytest.mark.parametrize('param_list',
                          [
-                            ('float32', (4, 2, 16, 16)),
-                            ('float32', (2, 4, 2, 16, 16)),
+                             ('float32', (4, 2, 16, 16)),
+                             ('float32', (2, 4, 2, 16, 16)),
 
-                            ('float32', (4, 2, 16, 16)),
-                            ('float32', (2, 4, 2, 16, 16)),
+                             ('float32', (4, 2, 16, 16)),
+                             ('float32', (2, 4, 2, 16, 16)),
 
-                            ('float32', (4, 2, 16, 16)),
-                            ('float32', (2, 4, 2, 16, 16)),
+                             ('float32', (4, 2, 16, 16)),
+                             ('float32', (2, 4, 2, 16, 16)),
                          ]
                          )
 def test_case_4d_5d(param_list):
