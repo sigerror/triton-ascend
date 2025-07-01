@@ -8,11 +8,6 @@ import test_common
 from test_common import TestUtils
 
 
-def torch_pointwise(x0, x1):
-    res = x0 - x1
-    return res
-
-
 def torch_invert(x0, ddtype):
     if 'float' in str(ddtype):
         x0 = x0.to(torch.int32)
@@ -24,18 +19,25 @@ def torch_invert(x0, ddtype):
 
 
 @triton.jit
-def triton_sub(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexpr):
-    offset = tl.program_id(0) * XBLOCK
-    base1 = tl.arange(0, XBLOCK_SUB)
-    loops1: tl.constexpr = (XBLOCK + XBLOCK_SUB - 1) // XBLOCK_SUB
-    for loop1 in range(loops1):
-        x0_prime = offset + (loop1 * XBLOCK_SUB) + base1
-        x0 = offset + (loop1 * XBLOCK_SUB) + base1
-        tmp0 = tl.load(in_ptr0 + (x0), None)
-        tmp1 = tl.load(in_ptr1 + (x0), None)
-        tmp2 = tmp0 - tmp1
-        tl.debug_barrier()
-        tl.store(out_ptr0 + (x0), tmp2, None)
+def triton_sub(output_ptr, x_ptr, y_ptr, z_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr,
+               XNUMEL: tl.constexpr,
+               YNUMEL: tl.constexpr, ZNUMEL: tl.constexpr):
+    xoffs = tl.program_id(0) * XB
+    yoffs = tl.program_id(1) * YB
+    zoffs = tl.program_id(2) * ZB
+
+    xidx = tl.arange(0, XB) + xoffs
+    yidx = tl.arange(0, YB) + yoffs
+    zidx = tl.arange(0, ZB) + zoffs
+
+    idx = xidx[:, None, None] * YNUMEL * ZNUMEL + yidx[None, :, None] * ZNUMEL + zidx[None, None, :]
+
+    X = tl.load(x_ptr + idx)
+    Y = tl.load(y_ptr + idx)
+
+    ret = X - Y
+    tl.debug_barrier()
+    tl.store(output_ptr + idx, ret)
 
 
 @triton.jit
@@ -71,28 +73,64 @@ def triton_invert_4d_5d(
     tl.store(output_ptr + offsets, ret, mask=masks)
 
 
-@pytest.mark.parametrize('param_list',
-                         [
-                             ['float32', (2, 4096, 8), 2, 32768, 1024],
-                             ['int8', (2, 4096, 8), 2, 32768, 1024],
-                             ['int16', (2, 4096, 8), 2, 32768, 1024],
-                             ['int32', (2, 4096, 8), 2, 32768, 1024],
-                             ['int64', (2, 4096, 8), 2, 32768, 1024],
-                             ['float16', (2, 4096, 8), 2, 32768, 1024],
-                             ['bfloat16', (2, 4096, 8), 2, 32768, 1024],
-                         ]
-                         )
-def test_case(param_list):
-    dtype, shape, ncore, xblock, xblock_sub = param_list
-    x0 = test_common.generate_tensor(shape, dtype).npu()
-    x1 = test_common.generate_tensor(shape, dtype).npu()
-    y_ref = torch_pointwise(x0, x1)
-    y_cal = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
-    triton_sub[ncore, 1, 1](x0, x1, y_cal, xblock, xblock_sub)
-    test_common.validate_cmp(dtype, y_cal, y_ref)
+test_shape_1d_2d_3d = [(1,), (2,), (1, 1), (3, 13), (1, 1, 1), (4, 3, 8)]
+test_shape_4_5d = [(1, 1, 1, 1), (2, 2, 2, 2), (1, 1, 1, 1, 1), (2, 2, 2, 2, 1)]
 
 
-@pytest.mark.parametrize('shape', TestUtils.test_shape4d + TestUtils.test_shape5d)
+@pytest.mark.parametrize('shape', test_shape_1d_2d_3d)
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16'])
+def test_sub(shape, dtype):
+    logging.log(logging.DEBUG, f"shape = {shape}")
+    x = test_common.generate_tensor(shape, dtype).npu()
+    y = test_common.generate_tensor(shape, dtype).npu()
+    z = test_common.generate_tensor(shape, dtype).npu()
+
+    new_shape = shape
+
+    output = torch.randint(1, new_shape, dtype=eval('torch.' + dtype)).npu()
+
+    logging.log(logging.DEBUG, f"output.dtype={output.dtype}")
+
+    ans = x - y
+
+    if len(shape) == 1:
+        XB = 1
+        xnumel = 1
+        YB = 1
+        ynumel = 1
+        ZB = shape[0]
+        znumel = shape[0]
+    elif len(shape) == 2:
+        XB = 1
+        xnumel = 1
+        YB = shape[0]
+        ynumel = shape[0]
+        ZB = shape[1]
+        znumel = shape[1]
+    else:
+        XB = shape[0]
+        xnumel = shape[0]
+        YB = shape[1]
+        ynumel = shape[1]
+        ZB = shape[2]
+        znumel = shape[2]
+
+    grid = (1, 1, 1)
+    if dtype == 'int8':
+        if x.numel() * x.element_size() >= 512:
+            grid = (1, 1, ZB)
+            ZB = 1
+    else:
+        if x.numel() * x.element_size() >= 8192:
+            grid = (1, 1, ZB)
+            ZB = 1
+
+    triton_sub[grid](output, x, y, z, XB, YB, ZB, xnumel, ynumel, znumel)
+
+    test_common.validate_cmp(dtype, ans, output)
+
+
+@pytest.mark.parametrize('shape', test_shape_1d_2d_3d + test_shape_4_5d)
 @pytest.mark.parametrize('dtype', ['bool'])
 def test_invert_4d_5d(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
