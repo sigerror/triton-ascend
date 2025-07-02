@@ -189,16 +189,15 @@ def test_reduce(dtype, shape, dims):
 
 
 @triton.jit
-def triton_reduce_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
-                      NB: tl.constexpr, DIM: tl.constexpr, REDUCE_NUMEL: tl.constexpr):
+def triton_reduce_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIMS: tl.constexpr, DIM: tl.constexpr, REDUCE_NUMEL: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
-    if (YB * ZB * MB * NB) > 1:
+    if DIMS > 1:
         offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
-    if (ZB * MB * NB) > 1:
+    if DIMS > 2:
         offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
-    if (MB * NB) > 1:
+    if DIMS > 3:
         offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
-    if NB > 1:
+    if DIMS > 4:
         offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
 
     x = tl.load(in_ptr + offsets)
@@ -215,7 +214,7 @@ def triton_reduce_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, Z
 @pytest.mark.shape_4d_5d
 @pytest.mark.parametrize('shape', [
     (4, 2, 8, 4),
-    (4, 3, 8, 4),
+    (4, 3, 8, 1),
 ])
 @pytest.mark.parametrize('dtype', ["int8", "int16", "int32", "int64", "float16", "float32", "bfloat16"])  # no bool
 @pytest.mark.parametrize('dims', [(0,), (1,), (2,), (3,)])
@@ -233,14 +232,14 @@ def test_reduce_4d(dtype, shape, dims):
         triton_shape.append(1)
     reduce_numel = math.prod(triton_shape) // triton_shape[dim] if dim is not None else None
     grid = (1,)
-    triton_reduce_multi_d[grid](x, y_cal, *triton_shape, dim, reduce_numel)
+    triton_reduce_multi_d[grid](x, y_cal, *triton_shape, len(shape), dim, reduce_numel)
     test_common.validate_cmp(dtype, y_cal, y_ref)
 
 
 @pytest.mark.shape_4d_5d
 @pytest.mark.parametrize('shape', [
     (2, 4, 2, 8, 4),
-    (3, 4, 2, 8, 4),
+    (3, 4, 2, 8, 1),
 ])
 @pytest.mark.parametrize('dtype', ["int8", "int16", "int32", "int64", "float16", "float32", "bfloat16"])  # no bool
 @pytest.mark.parametrize('dims', [(0,), (1,), (2,), (3,), (4,)])
@@ -258,5 +257,5 @@ def test_reduce_5d(dtype, shape, dims):
         triton_shape.append(1)
     reduce_numel = math.prod(triton_shape) // triton_shape[dim] if dim is not None else None
     grid = (1,)
-    triton_reduce_multi_d[grid](x, y_cal, *triton_shape, dim, reduce_numel)
+    triton_reduce_multi_d[grid](x, y_cal, *triton_shape, len(shape), dim, reduce_numel)
     test_common.validate_cmp(dtype, y_cal, y_ref)

@@ -85,15 +85,15 @@ def test_case2(dtype, shape):
 
 
 @triton.jit
-def fn_npu_multi_d(output_ptr, x_ptr, y_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+def fn_npu_multi_d(output_ptr, x_ptr, y_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIMS: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
-    if (YB * ZB * MB * NB) > 1:
+    if DIMS > 1:
         offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
-    if (ZB * MB * NB) > 1:
+    if DIMS > 2:
         offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
-    if (MB * NB) > 1:
+    if DIMS > 3:
         offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
-    if NB > 1:
+    if DIMS > 4:
         offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
 
     X = tl.load(x_ptr + offsets)
@@ -108,9 +108,9 @@ def fn_npu_multi_d(output_ptr, x_ptr, y_ptr, XB: tl.constexpr, YB: tl.constexpr,
 @pytest.mark.shape_4d_5d
 @pytest.mark.parametrize('shape', [
     (4, 2, 8, 4),
-    (2, 4, 2, 8, 4),
+    (2, 4, 2, 8, 1),
 
-    (4, 3, 8, 4),
+    (4, 3, 8, 1),
     (3, 4, 2, 8, 4),
 ])
 @pytest.mark.parametrize('dtype',
@@ -129,6 +129,6 @@ def test_case_4d_5d(dtype, shape):
     while len(triton_shape) < 5:
         triton_shape.append(1)
     grid = (1, )
-    fn_npu_multi_d[grid](output, x, y, *triton_shape)
+    fn_npu_multi_d[grid](output, x, y, *triton_shape, len(shape))
 
     test_common.validate_cmp(dtype, ans, output)

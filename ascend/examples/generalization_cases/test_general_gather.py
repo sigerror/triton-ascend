@@ -124,25 +124,25 @@ def test_gather_flip(param_list):
 
 
 @triton.jit
-def gather_kernel_multi_d(src_ptr, idx_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, I_XB: tl.constexpr, I_YB: tl.constexpr, I_ZB: tl.constexpr, I_MB: tl.constexpr, I_NB: tl.constexpr, AXIS: tl.constexpr):
+def gather_kernel_multi_d(src_ptr, idx_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, I_XB: tl.constexpr, I_YB: tl.constexpr, I_ZB: tl.constexpr, I_MB: tl.constexpr, I_NB: tl.constexpr, DIMS: tl.constexpr, AXIS: tl.constexpr):
     in_offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
-    if (YB * ZB * MB * NB) > 1:
+    if DIMS > 1:
         in_offsets = in_offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
-    if (ZB * MB * NB) > 1:
+    if DIMS > 2:
         in_offsets = in_offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
-    if (MB * NB) > 1:
+    if DIMS > 3:
         in_offsets = in_offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
-    if NB > 1:
+    if DIMS > 4:
         in_offsets = in_offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
 
     idx_offsets = tl.arange(0, I_XB) * (I_YB * I_ZB * I_MB * I_NB)
-    if (I_YB * I_ZB * I_MB * I_NB) > 1:
+    if DIMS > 1:
         idx_offsets = idx_offsets[:, None] + tl.arange(0, I_YB)[None, :] * (I_ZB * I_MB * I_NB)
-    if (I_ZB * I_MB * I_NB) > 1:
+    if DIMS > 2:
         idx_offsets = idx_offsets[:, :, None] + tl.arange(0, I_ZB)[None, None, :] * (I_MB * I_NB)
-    if (I_MB * I_NB) > 1:
+    if DIMS > 3:
         idx_offsets = idx_offsets[:, :, :, None] + tl.arange(0, I_MB)[None, None, None, :] * I_NB
-    if I_NB > 1:
+    if DIMS > 4:
         idx_offsets = idx_offsets[:, :, :, :, None] + tl.arange(0, I_NB)[None, None, None, None, :]
 
     src = tl.load(src_ptr + in_offsets)
@@ -162,17 +162,17 @@ def triton_gather_multi_d(src: torch.Tensor, axis: int, indices: torch.Tensor):
     i_shape = [*(indices.shape)]
     while len(i_shape) < 5:
         i_shape.append(1)
-    gather_kernel_multi_d[(1, )](src, indices, output, *s_shape, *i_shape, axis)
+    gather_kernel_multi_d[(1, )](src, indices, output, *s_shape, *i_shape, len(src.shape), axis)
     return output
 
 
 @pytest.mark.shape_4d_5d
 @pytest.mark.parametrize("src_shape, indices_shape, axis", [
     ((2, 2, 4, 8), (2, 2, 4, 8), 0),
-    ((2, 2, 4, 8), (2, 2, 4, 8), 3),
+    ((2, 2, 4, 1), (2, 2, 4, 1), 3),
     ((2, 3, 4, 8), (2, 3, 4, 8), 1),
     ((2, 3, 4, 8), (2, 3, 4, 8), 2),
-    ((2, 2, 2, 4, 8), (2, 2, 2, 4, 8), 4),
+    ((2, 2, 2, 4, 1), (2, 2, 2, 4, 1), 4),
     ((2, 2, 2, 4, 8), (2, 2, 2, 4, 8), 1),
     ((2, 2, 3, 4, 8), (2, 2, 3, 4, 8), 2),
     ((2, 2, 3, 4, 8), (2, 2, 3, 4, 8), 0),
