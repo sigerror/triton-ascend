@@ -23,7 +23,7 @@ def atomic_add(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr
 
 
 @triton.jit
-def atomic_add_broadcast(x_ptr, y_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
+def atomic_add_broadcast(x_ptr, y_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     pid = tl.program_id(0)
 
     x = tl.load(x_ptr)  # x is scalar or 1D, no mask needed
@@ -33,12 +33,16 @@ def atomic_add_broadcast(x_ptr, y_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
     y_indices = y_offset + tl.arange(0, BLOCK_SIZE)
     y_mask = y_indices < n_elements
     
+    y_value = tl.load(y_ptr + y_indices, y_mask)
     # Atomic add: y += x (broadcasted)
-    tl.atomic_add(y_ptr + y_indices, x, mask=y_mask)
+    tl.atomic_add(out_ptr + y_indices, y_value, mask=y_mask)
+    tl.atomic_add(out_ptr + y_indices, x, mask=y_mask)
 
 
 # 定义不同测试场景的参数组合 (x_shape, y_shape, BLOCK_SIZE)
 test_cases = [
+    ((1, 1, 1, 1), (1, 1, 1, 4), 4),
+    ((1, 1, 1, 3), (1, 5, 1, 3), 5),
     ((3,), (2, 3, 3, 3, 3), 81),
     ((3,), (2, 3, 3, 3), 27),
     ((3,), (2, 3, 3), 9),
@@ -46,13 +50,54 @@ test_cases = [
 ]
 
 
-@pytest.mark.parametrize('dtype', filtered_dtype)
+def promote_dtype(x_dtype, y_dtype):
+    """
+    如果 y 的精度低于 x, 则提升 y 的精度以匹配 x。
+    """
+    # 如果两个数据类型一致，直接返回
+    if x_dtype == y_dtype:
+        return y_dtype
+    
+    # 构建类型的优先级列表（从低到高）
+    priority = [
+        torch.int8, torch.int16, torch.int32,
+        torch.float16, torch.bfloat16, torch.float32
+    ]
+
+    # 查找两种类型在优先级列表中的位置
+    x_priority = priority.index(x_dtype)
+    y_priority = priority.index(y_dtype)
+
+    # 如果y的优先级比x小，则提升到x的类型
+    if y_priority < x_priority:
+        return x_dtype
+    else:
+        return y_dtype
+
+
+@pytest.mark.parametrize('x_dtype_str', filtered_dtype)
+@pytest.mark.parametrize('y_dtype_str', filtered_dtype)
 @pytest.mark.parametrize('x_shape, y_shape, BLOCK_SIZE', test_cases)
-def test_atomic_add_broadcast_combined(dtype, x_shape, y_shape, BLOCK_SIZE):
-    # 初始化输入张量
-    x0 = torch.full(x_shape, 3, dtype=eval('torch.' + dtype)).npu()
-    y = torch.full(y_shape, 2, dtype=eval('torch.' + dtype)).npu()
-    y_temp = y.clone()  # 保存原始值用于验证
+def test_atomic_add_broadcast_combined(x_dtype_str, y_dtype_str, x_shape, y_shape, BLOCK_SIZE):
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    # 先构造 x0
+    x0 = torch.full(x_shape, 83.0000, dtype=x_dtype).npu()
+
+    y_raw_dtype = eval('torch.' + y_dtype_str)
+
+    out_dtype = promote_dtype(x_dtype, y_raw_dtype)
+    if out_dtype == torch.bfloat16:
+        out_dtype = torch.float32
+
+    # 构造y和out
+    y = torch.full(y_shape, -105, dtype=y_raw_dtype).npu()
+    out = torch.full(y_shape, 0, dtype=out_dtype).npu()
+
+    # 保存副本用于验证
+    x_temp = x0.clone()
+    y_temp = y.clone()
+    out_temp = out.clone()
     
     # 计算网格大小和元素总数
     n_elements = y.numel()
@@ -62,13 +107,14 @@ def test_atomic_add_broadcast_combined(dtype, x_shape, y_shape, BLOCK_SIZE):
     atomic_add_broadcast[grid](
         x_ptr=x0,
         y_ptr=y,
+        out_ptr=out,
         n_elements=n_elements,
         BLOCK_SIZE=BLOCK_SIZE
     )
     
     # 验证结果：y += x (广播加法)
-    expected = y_temp + 3
-    torch.testing.assert_close(y, expected)
+    expected = out_temp + y_temp + x_temp
+    torch.testing.assert_close(out, expected)
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape2d + TestUtils.test_shape1d)
@@ -80,7 +126,7 @@ def test_atomic_add(dtype, shape):
     y = torch.full(shape, -10, dtype=eval('torch.' + dtype)).npu()
 
     y_ref = x1 + 0
-    x1_ref = x1 + x0_value
+    x1_ref = x1 + x0
     
     if len(shape) == 2:
         n_elements = shape[0] * shape[1]
