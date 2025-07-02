@@ -179,11 +179,119 @@ void TritonToLinalgPass::convertTTFunc(triton::FuncOp func,
 
   for (Block &block : funcFuncBody.getBlocks()) {
     auto term = block.getTerminator();
-    builder.setInsertionPoint(term);
-    builder.create<func::ReturnOp>(func.getLoc(), term->getOperands());
-    term->erase();
+    if (auto condBranch = dyn_cast<cf::CondBranchOp>(term)) {
+        SmallVector<Operation*> trueOps;
+        SmallVector<Operation*> falseOps;
+        bool trueHasReturn = false;
+        bool falseHasReturn = false;
+        for (Operation &op : condBranch.getTrueDest()->without_terminator()) {
+            if (dyn_cast<cf::CondBranchOp>(&op)) {
+                transformNestedIfElse(op, builder);
+            }
+            trueOps.push_back(&op);
+            if (isa<func::ReturnOp>(op)) {
+                trueHasReturn = true;
+            }
+        }
+        for (Operation &op : condBranch.getFalseDest()->without_terminator()) {
+            if (dyn_cast<cf::CondBranchOp>(&op)) {
+                transformNestedIfElse(op, builder);
+            }
+            falseOps.push_back(&op);
+            if (isa<func::ReturnOp>(op)) {
+                falseHasReturn = true;
+            }
+        }
+        builder.setInsertionPoint(condBranch);
+        auto ifOp = builder.create<scf::IfOp> (
+            condBranch.getLoc(),
+            condBranch.getCondition(),
+            [&](OpBuilder &thenBuilder, Location loc) {
+                for (Operation *op : trueOps) {
+                    op->moveBefore(thenBuilder.getInsertionBlock(), thenBuilder.getInsertionPoint());
+                }
+                if (!trueHasReturn) {
+                    thenBuilder.create<scf::YieldOp>(loc);
+                }
+            },
+            [&](OpBuilder &elseBuilder, Location loc) {
+                for (Operation *op : falseOps) {
+                    op->moveBefore(elseBuilder.getInsertionBlock(), elseBuilder.getInsertionPoint());
+                }
+                if (!falseHasReturn) {
+                    elseBuilder.create<scf::YieldOp>(loc);
+                }
+            }
+        );
+        if (!trueHasReturn && !falseHasReturn) {
+            Block *afterBlock = condBranch->getBlock();
+            if (!afterBlock->empty()) {
+                builder.setInsertionPointToEnd(afterBlock);
+                builder.create<func::ReturnOp>(condBranch.getLoc());
+            }
+        }
+        condBranch.erase();
+        condBranch.getTrueDest()->erase();
+        condBranch.getFalseDest()->erase();
+      } else {
+        builder.setInsertionPoint(term);
+        builder.create<func::ReturnOp>(func.getLoc(), term->getOperands());
+        term->erase();
+      }
   }
   func.erase();
+}
+
+// 处理嵌套的if/else
+void TritonToLinalgPass::transformNestedIfElse(Operation &op, OpBuilder &builder) {
+    auto nestedBranch = dyn_cast<cf::CondBranchOp>(&op);
+    SmallVector<Operation*> nestedTrueOps;
+    SmallVector<Operation*> nestedFalseOps;
+    bool nestedTrueHasReturn = false;
+    bool nestedFalseHasReturn = false;
+
+    for (Operation &op : nestedBranch.getTrueDest()->without_terminator()) {
+        if (dyn_cast<cf::CondBranchOp>(&op)) {
+            transformNestedIfElse(op, builder);
+        }
+        nestedTrueOps.push_back(&op);
+        if (isa<func::ReturnOp>(op)) {
+            nestedTrueHasReturn = true;
+        }
+    }
+    for (Operation &op : nestedBranch.getFalseDest()->without_terminator()) {
+        if (dyn_cast<cf::CondBranchOp>(&op)) {
+            transformNestedIfElse(op, builder);
+        }
+        nestedFalseOps.push_back(&op);
+        if (isa<func::ReturnOp>(op)) {
+            nestedFalseHasReturn = true;
+        }
+    }
+    builder.setInsertionPoint(nestedBranch);
+    auto nestedIfOp = builder.create<scf::IfOp>(
+        nestedBranch.getLoc(),
+        nestedBranch.getCondition(),
+        [&](OpBuilder &thenBuilder, Location loc) {
+            for (Operation *op : nestedTrueOps) {
+                op->moveBefore(thenBuilder.getInsertionBlock(), thenBuilder.getInsertionPoint());
+            }
+            if (!nestedTrueHasReturn) {
+                thenBuilder.create<scf::YieldOp>(loc);
+            }
+        },
+        [&](OpBuilder &elseBuilder, Location loc) {
+            for (Operation *op : nestedFalseOps) {
+                op->moveBefore(elseBuilder.getInsertionBlock(), elseBuilder.getInsertionPoint());
+            }
+            if (!nestedTrueHasReturn) {
+                elseBuilder.create<scf::YieldOp>(loc);
+            }
+        }
+    );
+    nestedBranch.erase();
+    nestedBranch.getTrueDest()->erase();
+    nestedBranch.getFalseDest()->erase();
 }
 
 void TritonToLinalgPass::addDynamicLegal(

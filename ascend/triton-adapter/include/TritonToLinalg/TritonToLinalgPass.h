@@ -50,6 +50,8 @@ private:
   void addProgramInfo(triton::FuncOp func, bool globalKernel);
 
   void convertTTFunc(triton::FuncOp func, const bool existDot);
+  // 处理嵌套的if/else
+  void transformNestedIfElse(Operation &nestedBranch, OpBuilder &builder);
 
   void addDynamicLegal(ConversionTarget &target,
                        TritonTypeConverter &tritonTypeConverter);
