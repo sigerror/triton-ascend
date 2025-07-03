@@ -212,7 +212,7 @@ def validate_cmp(dtype, y_cal, y_ref):
     elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' or dtype == 'uint32':
         assert torch.equal(y_cal, y_ref)
     elif dtype == 'bool':
-        assert torch.equal(y_cal, y_ref)
+        assert torch.equal(y_cal.cpu(), y_ref.cpu())
     else:
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 

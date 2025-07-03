@@ -32,14 +32,15 @@ def fn_npu_2d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.cons
     tl.store(output_ptr + oidx, ret)
 
 @triton.jit
-def fn_npu_3d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr):
+def fn_npu_3d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, XNUMEL: tl.constexpr,
+            YNUMEL: tl.constexpr, ZNUMEL: tl.constexpr):
     xidx = tl.arange(0, XB) + tl.program_id(0) * XB
     yidx = tl.arange(0, YB) + tl.program_id(1) * YB
     zidx = tl.arange(0, ZB) + tl.program_id(2) * ZB
-    idx = xidx[:, None, None] * YB * ZB + yidx[None, :, None] * ZB + zidx[None, None, :]
+    idx = xidx[:, None, None] * YNUMEL * ZNUMEL + yidx[None, :, None] * ZNUMEL + zidx[None, None, :]
     X = tl.load(x_ptr + idx)
     ret = libdevice.flip(X, 2)
-    oidx = xidx[:, None, None] * YB * ZB + yidx[None, :, None] * ZB + zidx[None, None, :]
+    oidx = xidx[:, None, None] * YNUMEL * ZNUMEL + yidx[None, :, None] * ZNUMEL + zidx[None, None, :]
     tl.store(output_ptr + oidx, ret)
 
 typelist = ['int8','int16','int32','int64','float16','bfloat16','float32', 'bool']
@@ -72,30 +73,15 @@ def test_flip(shape, dtype):
     torch_res = torch.flip(torch_input, dims=(-1,))
     triton_res = torch.empty(shape, dtype=data_dtype).npu()
     
-    grid = [1, 1, 1]
-    shape0 = shape[0]
-    shape1 = 1
-    shape2 = 1
-    if len(shape) == 2:
-        shape1 = shape[1]
-    if len(shape) == 3:
-        shape1 = shape[1]
-        shape2 = shape[2]
-    values = [shape0, shape1, shape2]
-    if dtype == 'bool':
-        if x.numel() * x.element_size() >= 512 and len(shape) > 1:
-            grid = [shape0, 1, 1]
-            values[0] = 1    
-    else:
-        if x.numel() * x.element_size() >= 8192 and len(shape) > 1:
-            grid = [shape0, 1, 1]
-            values[0] = 1   
     if len(shape) == 1:
-        fn_npu_1d[grid](triton_res, x, values[0], values[1], values[2])
+        fn_npu_1d[1, 1, 1](triton_res, x, shape[0], 1, 1)
     elif len(shape) == 2:
-        fn_npu_2d[grid](triton_res, x, values[0], values[1], values[2])
+        fn_npu_2d[shape[0], 1, 1](triton_res, x, 1, shape[1], 1)
     elif len(shape) == 3:
-        fn_npu_3d[grid](triton_res, x, values[0], values[1], values[2])
+        if shape[0] > shape[1]:
+            fn_npu_3d[shape[0], 1, 1](triton_res, x, 1, shape[1], shape[2], shape[0], shape[1], shape[2])
+        else:
+            fn_npu_3d[1, shape[1], 1](triton_res, x, shape[0], 1, shape[2], shape[0], shape[1], shape[2])
 
     triton_res = triton_res if triton_res.dtype != torch.uint32 else triton_res.to(torch.float32)
     cmp_dtype = dtype if dtype != 'uint32' else 'float32'
