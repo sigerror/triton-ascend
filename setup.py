@@ -635,8 +635,14 @@ def get_git_commit_hash(length=8):
 # temporary design
 # Using version.txt containing version and commitid will be better and
 # the version.txt will be converted to versin.py when compilation.
+def get_default_version():
+    version_file = Path(__file__).parent / "version.txt"
+    if version_file.exists():
+        return version_file.read_text().strip()
+    return "3.2.0"
+
 def get_version():
-    version = os.environ.get("TRITON_VERSION", "3.2.0") + os.environ.get(
+    version = os.environ.get("TRITON_VERSION", get_default_version()) + os.environ.get(
         "TRITON_WHEEL_VERSION_SUFFIX", ""
     )
     if not is_manylinux:

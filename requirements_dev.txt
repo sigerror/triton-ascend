@@ -1,8 +1,11 @@
+auditwheel
 cmake
-ninja
-pybind11
-wheel
-pytest
-pytest-xdist
 einops
 expecttest
+ninja
+patchelf
+pybind11
+pytest
+pytest-xdist
+twine
+wheel
