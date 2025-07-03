@@ -293,7 +293,8 @@ def compile(src, target=None, options=None):
                 stage_name = "ConvertLinalgRToBinary"
             else:
                 stage_name = "MLIRCompile"
-            raise MLIRCompilationError(stage_name, e.stderr.decode('utf-8'))
+            error_detail = e.stderr.decode('utf-8') if hasattr(e, 'stderr') and e.stderr else str(e)
+            raise MLIRCompilationError(stage_name, error_detail)
         ir_filename = f"{file_name}.{ext}"
         if (fn_override_manager is not None and (full_name := fn_override_manager.get_file(ir_filename)) is not None):
             print(f"\nOverriding kernel with file {full_name}")
