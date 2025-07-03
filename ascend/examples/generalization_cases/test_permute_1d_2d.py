@@ -11,6 +11,30 @@ import math
 import logging
 
 @triton.jit
+def fn_npu_1d(output_ptr, x_ptr, xnumel:tl.constexpr):
+    idx = tl.arange(0, xnumel)
+
+    X = tl.load(x_ptr + idx)
+
+    ret = tl.permute(X, (0,))
+
+    tl.store(output_ptr + idx, ret)
+
+@pytest.mark.parametrize('shape', TestUtils.test_shape1d)
+@pytest.mark.parametrize('dtype', TestUtils.dtype_list)
+def test_permute_1d(shape, dtype):
+    logging.debug(f'dtype:{dtype} shape:{shape}')
+
+    data_type = eval('torch.' + dtype)
+    x = torch.randint(low=0, high=2, size=shape, dtype=data_type).npu()
+
+    triton_res = torch.randint(1, shape, dtype=data_type).npu()
+    torch_res = torch.permute(x, (0,))
+    fn_npu_1d[1, 1, 1](triton_res, x, shape[0])
+    test_common.validate_cmp(dtype, triton_res, torch_res)
+
+
+@triton.jit
 def fn_npu_021(output_ptr, x_ptr, YB: tl.constexpr, ZB: tl.constexpr, ynumel: tl.constexpr, znumel:tl.constexpr):
     pid = tl.program_id(0)
     yidx = tl.arange(0, YB) + pid * YB
