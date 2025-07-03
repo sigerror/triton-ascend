@@ -80,54 +80,32 @@ def triton_add_4d_5d(
 
 
 @pytest.mark.parametrize('shape', TestUtils.full_shape)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16'])
+@pytest.mark.parametrize('dtype', ['bool', 'int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16'])
 def test_add(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
     x = test_common.generate_tensor(shape, dtype).npu()
     y = test_common.generate_tensor(shape, dtype).npu()
     z = test_common.generate_tensor(shape, dtype).npu()
 
-    new_shape = shape
-
-    output = torch.randint(1, new_shape, dtype=eval('torch.' + dtype)).npu()
-
-    logging.log(logging.DEBUG, f"output.dtype={output.dtype}")
-
     ans = x + y
+    output = torch.zeros_like(ans)
 
     if len(shape) == 1:
-        XB = 1
-        xnumel = 1
-        YB = 1
-        ynumel = 1
-        ZB = shape[0]
-        znumel = shape[0]
+        triton_add[1, 1, shape[0]](output, x, y, z, 1, 1, 1, 1, 1, shape[0])
     elif len(shape) == 2:
-        XB = 1
-        xnumel = 1
-        YB = shape[0]
-        ynumel = shape[0]
-        ZB = shape[1]
-        znumel = shape[1]
+        if shape[0] > shape[1]:
+            triton_add[1, shape[0], 1](output, x, y, z, 1, 1, shape[1], 1, shape[0], shape[1])
+        else:
+            triton_add[1, 1, shape[1]](output, x, y, z, 1, shape[0], 1, 1, shape[0], shape[1])
+    elif len(shape) == 3:
+        if max(shape[0], shape[1], shape[2]) == shape[0]:
+            triton_add[shape[0], 1, 1](output, x, y, z, 1, shape[1], shape[2], shape[0], shape[1], shape[2])
+        elif max(shape[0], shape[1], shape[2]) == shape[1]:
+            triton_add[1, shape[1], 1](output, x, y, z, shape[0], 1, shape[2], shape[0], shape[1], shape[2])
+        else:
+            triton_add[1, 1, shape[2]](output, x, y, z, shape[0], shape[1], 1, shape[0], shape[1], shape[2])
     else:
-        XB = shape[0]
-        xnumel = shape[0]
-        YB = shape[1]
-        ynumel = shape[1]
-        ZB = shape[2]
-        znumel = shape[2]
-
-    grid = (1, 1, 1)
-    if dtype == 'int8':
-        if x.numel() * x.element_size() >= 512:
-            grid = (1, 1, ZB)
-            ZB = 1
-    else:
-        if x.numel() * x.element_size() >= 8192:
-            grid = (1, 1, ZB)
-            ZB = 1
-
-    triton_add[grid](output, x, y, z, XB, YB, ZB, xnumel, ynumel, znumel)
+        triton_add[1, 1, 1](output, x, y, z, 1, 1, 1, 1, 1, 1)
 
     test_common.validate_cmp(dtype, ans, output)
 
