@@ -42,8 +42,11 @@ def triton_add_broadcast(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOC
     for loop1 in range(loops1):
         x0 = offset + (loop1 * XBLOCK_SUB) + base1
         tmp1 = tl.load(in_ptr1 + (x0), None)
-        tmp2 = x0_tensor + tmp1
-        tl.store(out_ptr0 + (x0), tmp2, None)
+        out = tl.load(out_ptr0 + (x0), None)
+
+        out = out + tmp1
+        out = out + x0_tensor
+        tl.store(out_ptr0 + (x0), out, None)
 
 
 @triton.jit
@@ -157,24 +160,66 @@ def test_add_4d_5d(shape, dtype):
     test_common.validate_cmp(dtype, ans, output)
 
 
+def promote_dtype(x_dtype, y_dtype):
+    """
+    如果 y 的精度低于 x, 则提升 y 的精度以匹配 x。
+    """
+    # 如果两个数据类型一致，直接返回
+    if x_dtype == y_dtype:
+        return y_dtype
+    
+    # 构建类型的优先级列表（从低到高）
+    priority = [
+        torch.bool, torch.int8, torch.int16, torch.int32, torch.int64,
+        torch.float16, torch.bfloat16, torch.float32
+    ]
+
+    # 查找两种类型在优先级列表中的位置
+    x_priority = priority.index(x_dtype)
+    y_priority = priority.index(y_dtype)
+
+    # 如果y的优先级比x小，则提升到x的类型
+    if y_priority < x_priority:
+        return x_dtype
+    else:
+        return y_dtype
+
+
 @pytest.mark.parametrize('param_list',
                          [
-                            [(2,), (2, 4), 2, 4, 2],
-                            [(2,), (2, 4, 2), 2, 8, 2],
-                            [(2,), (2, 4, 2, 2), 2, 16, 8],
-                            [(2,), (2, 4, 2, 2, 2), 2, 32, 16],
+                            [(5, 1, 1, 1, 1), (5, 1, 1, 2, 1), 5, 2, 1],
+                            [(2, 1), (2, 4), 2, 4, 2],
+                            [(2, 1, 1), (2, 4, 2), 2, 8, 2],
+                            [(2, 1, 1, 1), (2, 4, 2, 2), 2, 16, 8],
+                            [(2, 1, 1, 1, 1), (2, 4, 2, 2, 2), 2, 32, 16],
                          ]
                          )
-@pytest.mark.parametrize('dtype', ['float32'])
-def test_add_broadcast(param_list, dtype):
+@pytest.mark.parametrize('x_dtype_str', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16', 'bool'])
+@pytest.mark.parametrize('y_dtype_str', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16', 'bool'])
+def test_add_broadcast(param_list, x_dtype_str, y_dtype_str):
     x0_shape, x1_shape, ncore, xblock, xblock_sub = param_list
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    y_dtype = eval('torch.' + y_dtype_str)
 
-    x0 = torch.ones(x0_shape, dtype=eval('torch.' + dtype)).npu()
-    x1 = test_common.generate_tensor(x1_shape, dtype).npu()
+    x0 = torch.ones(x0_shape, dtype=eval('torch.' + x_dtype_str))
+    x0_temp = x0
+    x0 = x0.npu()
 
-    x0_ref = torch.ones(x1_shape, dtype=eval('torch.' + dtype)).npu()
-    y_ref = x0_ref + x1
+    x1 = test_common.generate_tensor(x1_shape, y_dtype_str)
+    x1_temp = x1
+    x1 = x1.npu()
 
-    y_cal = torch.zeros(x1_shape, dtype=eval('torch.' + dtype)).npu()
-    triton_add_broadcast[ncore, 1, 1](x0, x1, y_cal, xblock, xblock_sub)
-    test_common.validate_cmp(dtype, y_cal, y_ref)
+    out_dtype = promote_dtype(x_dtype, y_dtype)
+    if out_dtype == torch.bfloat16:
+        out_dtype = torch.float32
+    out = torch.zeros(x1_shape, dtype=out_dtype)
+    out_temp = out
+    out = out.npu()
+
+    out_temp = out_temp + x0_temp + x1_temp
+
+    triton_add_broadcast[ncore, 1, 1](x0, x1, out, xblock, xblock_sub)
+
+    out = out.cpu()
+    torch.testing.assert_close(out, out_temp)
