@@ -104,26 +104,36 @@ testlist = [
 
 
 @pytest.mark.parametrize('shape', testlist)
-@pytest.mark.parametrize('dtype', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
-def test_atomic_min_3d(dtype, shape):
-    ncore = 1
-    # block_size = shape[0] * shape[1] / ncore
-    split_size = shape[0] // ncore
-    # old size: (32768, 256)
-    # tensor of (1024, 256) is too big, and it will lead to failure in the backend
-    # so here we make it smaller
-    x0 = test_common.generate_tensor(shape, dtype)
-    x1 = test_common.generate_tensor(shape, dtype)
-    y = test_common.generate_tensor(shape, dtype)
+@pytest.mark.parametrize('x_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
+@pytest.mark.parametrize('y_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
+def test_atomic_min_3d(x_dtype_str, y_dtype_str, shape):
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    y_dtype = eval('torch.' + y_dtype_str)
 
-    x1_ref = torch.minimum(x0, x1)
+    ncore = 1
+    split_size = shape[0] // ncore
+    x0 = test_common.generate_tensor(shape, x_dtype_str)
+    x1 = test_common.generate_tensor(shape, y_dtype_str)
+    out_dtype = promote_dtype(x_dtype, y_dtype)
+    if out_dtype == torch.bfloat16:
+        out_dtype = torch.float32
+    if out_dtype == torch.int8 or out_dtype == torch.int16 or out_dtype == torch.int32:
+        y = torch.full(shape, torch.iinfo(out_dtype).max, dtype=out_dtype).npu()
+    else:
+        y = torch.full(shape, float('inf'), dtype=out_dtype).npu()
+
+    y_tmp = y
+    x1_ref = torch.minimum(y_tmp, x0)
+    x1_ref = torch.minimum(x1_ref, x1)
     x0 = x0.npu()
     x1 = x1.npu()
     y = y.npu()
 
     n_elements = shape[0] * shape[1] * shape[2]
     triton_test_fn_atomic_min_dma[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=split_size * shape[1] * shape[2])
-    test_common.validate_cmp(dtype, x1, x1_ref)
+    y = y.cpu()
+    torch.testing.assert_close(y, x1_ref)
 
 
 @triton.jit
@@ -168,3 +178,67 @@ def test_atomic_min_4d_5d(dtype, shape):
         triton_shape.append(1)
     atomic_min_multi_d[(1, )](x0, x1, *triton_shape)
     test_common.validate_cmp(dtype, x1, x1_ref)
+
+
+@triton.jit
+def atomic_min_multi_d_2(in_ptr0, out_ptr0, out_ptr1, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    if (YB * ZB * MB * NB) > 1:
+        offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    if (ZB * MB * NB) > 1:
+        offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    if (MB * NB) > 1:
+        offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    if NB > 1:
+        offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+    
+    tmp0 = tl.load(in_ptr0 + offsets)
+    tmp1 = tl.load(out_ptr0 + offsets)
+    tl.atomic_min(out_ptr1 + offsets, tmp0)
+    tl.atomic_min(out_ptr1 + offsets, tmp1)
+
+
+# multi_d
+@pytest.mark.shape_4d_5d
+@pytest.mark.parametrize('shape', [
+    (2, 4, 8, 4),
+    (8, 4, 2, 4),
+    (2, 8, 2, 2),
+    (2, 4, 8, 4, 2),
+    (8, 4, 2, 4, 4),
+    (2, 8, 2, 2, 2),
+])
+@pytest.mark.parametrize('x_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
+@pytest.mark.parametrize('y_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
+def test_atomic_min_4d_5d_2(x_dtype_str, y_dtype_str, shape):
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    y_dtype = eval('torch.' + y_dtype_str)
+    
+    if x_dtype == torch.int8 or x_dtype == torch.int16 or x_dtype == torch.int32:
+        x0 = torch.randint(low=0, high=100, size=shape, dtype=x_dtype).npu()
+    else:
+        x0 = torch.randn(shape, dtype=eval('torch.' + x_dtype_str)).npu()
+
+    if y_dtype == torch.int8 or y_dtype == torch.int16 or y_dtype == torch.int32:
+        x1 = torch.randint(low=0, high=100, size=shape, dtype=y_dtype).npu()
+    else:
+        x1 = torch.randn(shape, dtype=eval('torch.' + y_dtype_str)).npu()
+
+    out_dtype = promote_dtype(x_dtype, y_dtype)
+    if out_dtype == torch.bfloat16:
+        out_dtype = torch.float32
+    if out_dtype == torch.int8 or out_dtype == torch.int16 or out_dtype == torch.int32:
+        y = torch.full(shape, torch.iinfo(out_dtype).max, dtype=out_dtype).npu()
+    else:
+        y = torch.full(shape, float('inf'), dtype=out_dtype).npu()
+
+    y_tmp = y
+    x1_ref = torch.minimum(y_tmp, x0)
+    x1_ref = torch.minimum(x1_ref, x1)
+
+    triton_shape = [*shape]
+    while len(triton_shape) < 5:
+        triton_shape.append(1)
+    atomic_min_multi_d_2[(1, )](x0, x1, y, *triton_shape)
+    torch.testing.assert_close(y, x1_ref)
