@@ -136,6 +136,8 @@ def fn_npu_multi_d(output_ptr, x_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl
                          )
 def test_case_4d_5d(param_list):
     dtype, shape = param_list
+    if check_ub_mem_overflow(dtype, shape):
+        return
     x0 = test_common.generate_tensor(shape, dtype)
     y_ref = torch.zeros_like(x0, dtype=eval('torch.' + dtype)).npu()
     print(f"y_ref = {torch.flatten(y_ref)[0:4]}")

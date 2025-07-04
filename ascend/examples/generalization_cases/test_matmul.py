@@ -61,7 +61,7 @@ def test_matmul(shape, dtype):
     # bisheng not support yet
     if M % 16 != 0 or N % 16 != 0 or get_dtype_size(dtype) * K % 32 != 0:
         return
-    kalign = 32 / get_dtype_size(dtype)  # 32byte/Dtype_bytes
+    kalign = 32 // get_dtype_size(dtype)  # 32byte/Dtype_bytes
     BLOCK_M, BLOCK_N, BLOCK_K = min(max(M, 16), 32), min(max(N, 16), 32), min(max(K, kalign), 32)
     a = test_common.generate_tensor((M, K), dtype)
     b = test_common.generate_tensor((K, N), dtype)

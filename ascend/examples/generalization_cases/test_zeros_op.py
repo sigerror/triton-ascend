@@ -519,7 +519,8 @@ def fn_npu_multi_d(output_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.conste
                          )
 def test_case_4d_5d(param_list):
     dtype, shape = param_list
-
+    if check_ub_mem_overflow(sigtype, shape):
+        pytest.skip(f"dtype:{sigtype} shape:{shape} mem overflow")
     y_ref = torch.full(shape, 0, dtype=eval('torch.' + dtype)).npu()
     print(f"y_ref = {torch.flatten(y_ref)[0:4]}")
 
