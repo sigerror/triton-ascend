@@ -12,14 +12,15 @@ filtered_dtype = [dtype for dtype in TestUtils.full_dtype if dtype not in {'int6
 
 @triton.jit
 def atomic_add(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
-    xoffset = tl.program_id(0) * BLOCK_SIZE
-    xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
-    yindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
-    xmask = xindex < n_elements
-    x0 = xindex
-    x1 = yindex
-    tmp0 = tl.load(in_ptr0 + (x0), xmask)
-    tmp1 = tl.atomic_add(out_ptr0 + (x1), tmp0, xmask)
+    offset = tl.program_id(0) * BLOCK_SIZE
+    index = offset + tl.arange(0, BLOCK_SIZE)[:]
+    xmask = index < n_elements
+
+    tmp0 = tl.load(in_ptr0 + (index), xmask)
+    tmp1 = tl.load(out_ptr0 + (index), xmask)
+    tl.atomic_add(out_ptr1 + (index), tmp0, xmask)
+    tl.atomic_add(out_ptr1 + (index), tmp1, xmask)
+
 
 
 @triton.jit
@@ -118,15 +119,24 @@ def test_atomic_add_broadcast_combined(x_dtype_str, y_dtype_str, x_shape, y_shap
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape2d + TestUtils.test_shape1d)
-@pytest.mark.parametrize('dtype', filtered_dtype)
-def test_atomic_add(dtype, shape):
-    x0_value = 3
-    x0 = torch.full(shape, x0_value, dtype=eval('torch.' + dtype)).npu()
-    x1 = torch.full(shape, 2, dtype=eval('torch.' + dtype)).npu()
-    y = torch.full(shape, -10, dtype=eval('torch.' + dtype)).npu()
+@pytest.mark.parametrize('x_dtype_str', filtered_dtype)
+@pytest.mark.parametrize('y_dtype_str', filtered_dtype)
+def test_atomic_add(x_dtype_str, y_dtype_str, shape):
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    y_dtype = eval('torch.' + y_dtype_str)
 
-    y_ref = x1 + 0
-    x1_ref = x1 + x0
+    x0 = test_common.generate_tensor(shape, x_dtype_str).npu()
+    x1 = test_common.generate_tensor(shape, y_dtype_str).npu()
+    out_dtype = promote_dtype(x_dtype, y_dtype)
+    if out_dtype == torch.bfloat16:
+        out_dtype = torch.float32
+    y = torch.full(x1.shape, 0, dtype=out_dtype).npu()
+
+    # 保存副本用于验证
+    x0_temp = x0.clone()
+    x1_temp = x1.clone()
+    y_temp = y.clone()
     
     if len(shape) == 2:
         n_elements = shape[0] * shape[1]
@@ -136,25 +146,37 @@ def test_atomic_add(dtype, shape):
         BLOCK_SIZE = min(1024, shape[0]) # 1024:限制最大线程块大小
         grid_size = (n_elements + BLOCK_SIZE - 1) // BLOCK_SIZE # 向上取整
         atomic_add[grid_size, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=BLOCK_SIZE)
-    test_common.validate_cmp(dtype, x1, x1_ref)
+    
+    expected = y_temp + x1_temp + x0_temp
+    torch.testing.assert_close(y, expected)
 
 
 # 3d
 @pytest.mark.parametrize('shape', TestUtils.test_shape3d)
-@pytest.mark.parametrize('dtype', filtered_dtype)
-def test_atomic_add_3d(dtype, shape):
-    ncore = 1
-    split_size = shape[0] // ncore
-    x0_value = 3
-    x0 = torch.full(shape, x0_value, dtype=eval('torch.' + dtype)).npu()
-    x1 = torch.full((split_size, shape[1], shape[2]), 2, dtype=eval('torch.' + dtype)).npu()
-    y = torch.full((split_size, shape[1], shape[2]), -10, dtype=eval('torch.' + dtype)).npu()
+@pytest.mark.parametrize('x_dtype_str', filtered_dtype)
+@pytest.mark.parametrize('y_dtype_str', filtered_dtype)
+def test_atomic_add_3d(x_dtype_str, y_dtype_str, shape):
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    y_dtype = eval('torch.' + y_dtype_str)
 
-    x1_ref = x1 + ncore * x0_value
+    x0 = test_common.generate_tensor(shape, x_dtype_str).npu()
+    x1 = test_common.generate_tensor(shape, y_dtype_str).npu()
+    out_dtype = promote_dtype(x_dtype, y_dtype)
+    if out_dtype == torch.bfloat16:
+        out_dtype = torch.float32
+    y = torch.full(x1.shape, 0, dtype=out_dtype).npu()
+
+    # 保存副本用于验证
+    x0_temp = x0.clone()
+    x1_temp = x1.clone()
+    y_temp = y.clone()
 
     n_elements = shape[0] * shape[1] * shape[2]
-    atomic_add[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=shape[0] * shape[1] * shape[2])
-    test_common.validate_cmp(dtype, x1, x1_ref)
+    atomic_add[1, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=shape[0] * shape[1] * shape[2])
+
+    expected = y_temp + x1_temp + x0_temp
+    torch.testing.assert_close(y, expected)
 
 
 @triton.jit
@@ -226,7 +248,7 @@ def atomic_add_broadcast_5d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.cons
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
 @pytest.mark.parametrize('y_dtype_str', filtered_dtype)
-def test_atomic_add_broadcast_5d(x_dtype_str, y_dtype_str, param_list):
+def test_atomic_add_5d(x_dtype_str, y_dtype_str, param_list):
     x0_shape, y_shape = param_list
 
     # 获取原始类型
@@ -300,7 +322,7 @@ def atomic_add_broadcast_4d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.cons
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
 @pytest.mark.parametrize('y_dtype_str', filtered_dtype)
-def test_atomic_add_broadcast_4d(x_dtype_str, y_dtype_str, param_list):
+def test_atomic_add_4d(x_dtype_str, y_dtype_str, param_list):
     x0_shape, y_shape = param_list
 
     # 获取原始类型
@@ -371,7 +393,7 @@ def atomic_add_broadcast_3d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.cons
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
 @pytest.mark.parametrize('y_dtype_str', filtered_dtype)
-def test_atomic_add_broadcast_3d(x_dtype_str, y_dtype_str, param_list):
+def test_atomic_add_3d_2(x_dtype_str, y_dtype_str, param_list):
     x0_shape, y_shape = param_list
 
     # 获取原始类型
@@ -441,7 +463,7 @@ def atomic_add_broadcast_2d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.cons
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
 @pytest.mark.parametrize('y_dtype_str', filtered_dtype)
-def test_atomic_add_broadcast_2d(x_dtype_str, y_dtype_str, param_list):
+def test_atomic_add_2d(x_dtype_str, y_dtype_str, param_list):
     x0_shape, y_shape = param_list
 
     # 获取原始类型
