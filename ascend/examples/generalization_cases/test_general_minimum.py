@@ -8,6 +8,10 @@ from test_common import TestUtils
 import math
 
 
+def torch_minimum(x, y):
+    return torch.minimum(x, y)
+
+
 @triton.jit
 def fn_npu_(output_ptr, x_ptr, y_ptr, z_ptr,
             XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr,
@@ -64,7 +68,7 @@ def triton_minimum_4d_5d(
 
 
 @pytest.mark.parametrize('shape', TestUtils.full_shape)
-@pytest.mark.parametrize('dtype', ['float32', 'float16', 'bfloat16', 'int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['float32', 'float16', 'bfloat16', 'int8', 'int16', 'int32', 'int64', 'bool'])
 def test_minimum(dtype, shape):
     # 生成数据
     x = test_common.generate_tensor(shape, dtype).npu()
@@ -76,7 +80,7 @@ def test_minimum(dtype, shape):
     output1 = output
     logging.log(logging.DEBUG, f"output.dtype={output.dtype}")
 
-    ans = torch.minimum(x, y)
+    ans = torch_minimum(x, y)
 
     if len(shape) == 1:
         XB = 1;
@@ -111,7 +115,7 @@ def test_minimum(dtype, shape):
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape4d + TestUtils.test_shape5d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16', 'bool'])
 def test_minimum_4d_5d(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
     x = test_common.generate_tensor(shape, dtype).npu()
@@ -120,7 +124,7 @@ def test_minimum_4d_5d(shape, dtype):
     output = torch.randint(1, shape, dtype=eval('torch.' + dtype)).npu()
     logging.log(logging.DEBUG, f"output.dtype={output.dtype}")
 
-    ans = torch.minimum(x, y)
+    ans = torch_minimum(x, y)
 
     blocks = list(x.size())
     strides = list(x.stride())

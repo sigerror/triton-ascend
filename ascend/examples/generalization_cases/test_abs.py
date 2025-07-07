@@ -73,7 +73,7 @@ def triton_abs_4d_5d(
 
 @pytest.mark.parametrize('shape', TestUtils.full_shape)
 @pytest.mark.parametrize('dtype',
-                         ['float32', 'float16', 'bfloat16', 'int8', 'int16', 'int32', 'int64'])
+                         ['float32', 'float16', 'bfloat16', 'int8', 'int16', 'int32', 'int64', 'bool'])
 def test_case2(dtype, shape):
     # 生成数据
     x = test_common.generate_tensor(shape, dtype).npu()
@@ -120,7 +120,7 @@ def test_case2(dtype, shape):
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape4d + TestUtils.test_shape5d)
-@pytest.mark.parametrize('dtype', ['float32', 'float16', 'bfloat16', 'int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['float32', 'float16', 'bfloat16', 'int8', 'int16', 'int32', 'int64', 'bool'])
 def test_abs_4d_5d(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
     x = test_common.generate_tensor(shape, dtype).npu()
