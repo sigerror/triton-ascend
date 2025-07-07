@@ -201,3 +201,168 @@ def test_add_broadcast(param_list, x_dtype_str, y_dtype_str):
 
     out = out.cpu()
     torch.testing.assert_close(out, out_temp)
+
+
+@triton.jit
+def add_5d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr,
+                            XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr, MB1: tl.constexpr, NB1: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
+    offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
+    offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
+    offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
+    offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
+
+    offsets1 = tl.arange(0, XB1) * (YB1 * ZB1 * MB1 * NB1)
+    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :] * (ZB1 * MB1 * NB1)
+    offsets1 = offsets1[:, :, None] + tl.arange(0, ZB1)[None, None, :] * (MB1 * NB1)
+    offsets1 = offsets1[:, :, :, None] + tl.arange(0, MB1)[None, None, None, :] * NB1
+    offsets1 = offsets1[:, :, :, :, None] + tl.arange(0, NB1)[None, None, None, None, :]
+    
+    tmp0 = tl.load(x_ptr + offsets)
+    tmp1 = tl.load(y_ptr + offsets1)
+    tmp2 = tl.load(out_ptr + offsets1)
+    out = tmp2 + tmp1 + tmp0
+    tl.store(out_ptr + offsets1, out)
+
+
+@triton.jit
+def add_4d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
+                            XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr, MB1: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB * ZB * MB)
+    offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB)
+    offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB)
+    offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] 
+
+    offsets1 = tl.arange(0, XB1) * (YB1 * ZB1 * MB1)
+    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :] * (ZB1 * MB1)
+    offsets1 = offsets1[:, :, None] + tl.arange(0, ZB1)[None, None, :] * (MB1)
+    offsets1 = offsets1[:, :, :, None] + tl.arange(0, MB1)[None, None, None, :]
+    
+    tmp0 = tl.load(x_ptr + offsets)
+    tmp1 = tl.load(y_ptr + offsets1)
+    tmp2 = tl.load(out_ptr + offsets1)
+    out = tmp2 + tmp1 + tmp0
+    tl.store(out_ptr + offsets1, out)
+
+
+@triton.jit
+def add_3d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr,
+                            XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB * ZB)
+    offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB)
+    offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :]
+
+    offsets1 = tl.arange(0, XB1) * (YB1 * ZB1)
+    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :] * (ZB1)
+    offsets1 = offsets1[:, :, None] + tl.arange(0, ZB1)[None, None, :]
+    
+    tmp0 = tl.load(x_ptr + offsets)
+    tmp1 = tl.load(y_ptr + offsets1)
+    tmp2 = tl.load(out_ptr + offsets1)
+    out = tmp2 + tmp1 + tmp0
+    tl.store(out_ptr + offsets1, out)
+
+
+@triton.jit
+def add_2d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr,
+                            XB1: tl.constexpr, YB1: tl.constexpr):
+    offsets = tl.arange(0, XB) * (YB)
+    offsets = offsets[:, None] + tl.arange(0, YB)[None, :]
+
+    offsets1 = tl.arange(0, XB1) * (YB1)
+    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :]
+    
+    tmp0 = tl.load(x_ptr + offsets)
+    tmp1 = tl.load(y_ptr + offsets1)
+    tmp2 = tl.load(out_ptr + offsets1)
+    out = tmp2 + tmp1 + tmp0
+    tl.store(out_ptr + offsets1, out)
+
+
+@pytest.mark.parametrize('param_list',
+    [
+        [(5, 1, 1, 1, 1), (5, 1, 1, 2, 1)],
+    ]
+    )
+@pytest.mark.parametrize('x_dtype_str', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16', 'bool'])
+@pytest.mark.parametrize('y_dtype_str', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16', 'bool'])
+def test_add_2d_to_5d(x_dtype_str, y_dtype_str, param_list):
+    x0_shape, y_shape = param_list
+    ndim = max(len(x0_shape), len(y_shape))
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    y_dtype = eval('torch.' + y_dtype_str)
+
+    x0 = test_common.generate_tensor(x0_shape, x_dtype_str).npu()
+    y = test_common.generate_tensor(y_shape, y_dtype_str).npu()
+
+    out_dtype = promote_dtype(x_dtype, y_dtype)
+    if out_dtype == torch.bfloat16:
+        out_dtype = torch.float32
+    out = torch.full(y_shape, 0, dtype=out_dtype).npu()
+
+    x0_temp = x0.clone()
+    y_temp = y.clone()
+    out_temp = out.clone()
+
+    triton_shape = [*x0_shape]
+    while len(triton_shape) < ndim:
+        triton_shape.append(1)
+
+    triton_shape1 = [*y_shape]
+    while len(triton_shape1) < ndim:
+        triton_shape1.append(1)
+
+    # 按维度分支
+    if ndim == 2:
+        XB, YB = triton_shape
+        XB1, YB1 = triton_shape1
+
+        add_2d[(1, )](
+            x_ptr=x0,
+            y_ptr=y,
+            out_ptr=out,
+            XB=XB, YB=YB,
+            XB1=XB1, YB1=YB1,
+        )
+
+    elif ndim == 3:
+        XB, YB, ZB = triton_shape
+        XB1, YB1, ZB1 = triton_shape1
+
+        add_3d[(1, )](
+            x_ptr=x0,
+            y_ptr=y,
+            out_ptr=out,
+            XB=XB, YB=YB, ZB=ZB,
+            XB1=XB1, YB1=YB1, ZB1=ZB1,
+        )
+
+    elif ndim == 4:
+        XB, YB, ZB, MB = triton_shape
+        XB1, YB1, ZB1, MB1 = triton_shape1
+
+        add_4d[(1, )](
+            x_ptr=x0,
+            y_ptr=y,
+            out_ptr=out,
+            XB=XB, YB=YB, ZB=ZB, MB=MB,
+            XB1=XB1, YB1=YB1, ZB1=ZB1, MB1=MB1,
+        )
+
+    elif ndim == 5:
+        XB, YB, ZB, MB, NB = triton_shape
+        XB1, YB1, ZB1, MB1, NB1 = triton_shape1
+
+        add_5d[(1, )](
+            x_ptr=x0,
+            y_ptr=y,
+            out_ptr=out,
+            XB=XB, YB=YB, ZB=ZB, MB=MB, NB=NB,
+            XB1=XB1, YB1=YB1, ZB1=ZB1, MB1=MB1, NB1=NB1,
+        )
+
+    else:
+        raise ValueError(f"Unsupported tensor dim: {ndim}")
+    expected = out_temp + y_temp + x0_temp
+    torch.testing.assert_close(out, expected)
