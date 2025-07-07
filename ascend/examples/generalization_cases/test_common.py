@@ -145,6 +145,8 @@ def generate_tensor_int_withSigns(shape, dtype):
         return torch.randint(low=-32768, high=32767, size=shape, dtype=eval('torch.' + dtype))
     elif dtype == 'int8':
         return torch.randint(low=-128, high=127, size=shape, dtype=eval('torch.' + dtype))
+    elif dtype == 'bool':
+        return torch.randint(low=0, high=2, size=shape).bool()
     else:
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 

@@ -81,7 +81,7 @@ def triton_gt_4d_5d(
     tl.store(output_ptr + offsets, ret, mask=masks)
 
 
-typelist = ['int8','int16','int32','int64','float16','bfloat16','float32']
+typelist = ['bool', 'int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32']
 
 dtype_mapping = {
     'int8': (torch.int8),

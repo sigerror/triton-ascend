@@ -63,7 +63,7 @@ def triton_ne_4d_5d(
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape1_2_3d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dtype', ['bool', 'int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
 def test_ne(shape, dtype):
     logging.debug(f'dtype:{dtype} shape:{shape}')
     # 生成数据
