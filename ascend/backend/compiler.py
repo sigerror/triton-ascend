@@ -278,7 +278,6 @@ class NPUOptions:
     enable_fp_fusion: bool = True
     allow_fp8e4nv: bool = False
     allowed_dot_input_precisions: Tuple[str] = ("ieee", "hf32")
-    enable_npu_compile: bool = True
     max_num_imprecise_acc_default: bool = None
     extern_libs: dict = None
 
@@ -421,17 +420,14 @@ class AscendBackend(BaseBackend):
     def add_stages(self, stages, options):
         if self.target.backend == "npu":
             stages["ttir"] = lambda src, metadata: make_ttir(src, metadata, options)
-            if options.enable_npu_compile:
-                stages["ttadapter"] = lambda src, metadata: ttir_to_linalg(
-                    src, metadata, options, named_ops=True
+            stages["ttadapter"] = lambda src, metadata: ttir_to_linalg(
+                src, metadata, options, named_ops=True
+            )
+            stages["npubin"] = (
+                lambda src, metadata: linalg_to_bin_enable_npu_compile(
+                    src, metadata, options
                 )
-                stages["npubin"] = (
-                    lambda src, metadata: linalg_to_bin_enable_npu_compile(
-                        src, metadata, options
-                    )
-                )
-            else:
-                pass
+            )
         else:
             stages["ttir"] = lambda src, metadata: make_ttir(src, metadata, options)
             stages["ttadapter"] = lambda src, metadata: ttir_to_linalg(
