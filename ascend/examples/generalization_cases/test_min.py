@@ -22,7 +22,7 @@ def triton_min_1d(in_ptr0, out_ptr1, xnumel, XBLOCK : tl.constexpr):
     tl.store(out_ptr1, tmp4, None)
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape1d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 def test_min_1d(dtype, shape):
     if check_ub_mem_overflow(dtype, shape):
         return
@@ -52,18 +52,15 @@ def triton_min_2d(in_ptr0, out_ptr0, dim : tl.constexpr, M : tl.constexpr, N : t
         tl.store(out_ptr0 + tl.arange(0,M), tmp4, None)
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape2d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dim', [0, 1])
 def test_min_2d(dtype, shape, dim):
     dtype_size = get_dtype_size(dtype)
-    if dtype == 'int8':
+    if dtype == 'int8' or dtype == 'bool':
         if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 20):
-            print(f"dtype:{dtype} shape:{shape} mem overflow")
-            return
+            pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
     elif dtype_size * math.prod(shape) >= (TestUtils.ub_size / 5):
-        print(f"dtype:{dtype} shape:{shape} mem overflow")
-        return
-
+        pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
     shapex, shapey = shape
     x0 = test_common.generate_tensor(shape, dtype).npu()
     triton_res = torch.empty([shape[1-dim], ], dtype=eval("torch." + dtype)).npu()
@@ -136,7 +133,7 @@ def triton_min_3d(in_ptr, out_ptr, xnumel, ynumel, znumel, XB, YB, ZB, no_reduce
         triton_min_3d_0_1[1, 1, 1](in_ptr, out_ptr, xnumel, ynumel, znumel, XB, YB, ZB)
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape3d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('no_reduce_dim', [0, 1, 2])
 def test_min_3d(dtype, shape, no_reduce_dim):
     x0 = test_common.generate_tensor(shape, dtype).npu()
@@ -198,7 +195,7 @@ def triton_min_4d(in_ptr, out_ptr, XB, YB, ZB, MB, dim):
 @pytest.mark.parametrize('shape', [
     (2, 2, 4, 8)
 ])
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dim', [0])
 def test_min_4d(dtype, shape, dim):
     x0 = test_common.generate_tensor(shape, dtype).npu()
@@ -265,7 +262,7 @@ def triton_min_5d(in_ptr, out_ptr, XB, YB, ZB, MB, NB, dim):
 @pytest.mark.parametrize('shape', [
     (2, 2, 2, 4, 8)
 ])
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'float16', 'bfloat16', 'float32'])
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dim', [0])
 def test_min_5d(dtype, shape, dim):
     x0 = test_common.generate_tensor(shape, dtype).npu()

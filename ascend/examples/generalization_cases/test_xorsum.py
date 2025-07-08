@@ -37,7 +37,7 @@ def triton_xorsum_1d(in_ptr0, out_ptr1, xnumel, XBLOCK: tl.constexpr):
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape1d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'bool'])
 def test_xorsum_1d(dtype, shape):
     if check_ub_mem_overflow(dtype, shape):
         return
@@ -70,15 +70,16 @@ def triton_xorsum_2d(in_ptr0, out_ptr0, dim: tl.constexpr, M: tl.constexpr, N: t
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape2d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'bool'])
 @pytest.mark.parametrize('dim', [0, 1])
 def test_xorsum_2d(dtype, shape, dim):
     dtype_size = get_dtype_size(dtype)
     if dtype in ['int8', 'int16', 'int32', 'int64']:
         if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 3):
-            print(f"dtype:{dtype} shape:{shape} mem overflow")
-            return
-
+            pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
+    elif dtype in ['bool']:
+        if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 5):
+            pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
     shapex, shapey = shape
     x0 = test_common.generate_tensor(shape, dtype).npu()
     triton_res = torch.empty([shape[1 - dim], ], dtype=eval("torch." + dtype)).npu()
@@ -157,7 +158,7 @@ def triton_xorsum_3d(in_ptr, out_ptr, xnumel, ynumel, znumel, XB, YB, ZB, no_red
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape3d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'bool'])
 @pytest.mark.parametrize('no_reduce_dim', [0, 1, 2])
 def test_xorsum_3d(dtype, shape, no_reduce_dim):
     x0 = test_common.generate_tensor(shape, dtype).npu()
@@ -199,7 +200,7 @@ def triton_xorsum_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, Z
     (4, 2, 8, 4),
     (4, 3, 8, 1),
 ])
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'bool'])
 @pytest.mark.parametrize('dim', [0, 1, 2, 3])
 def test_xorsum_4d(dtype, shape, dim):
     dtype_size = get_dtype_size(dtype)
@@ -230,7 +231,7 @@ def test_xorsum_4d(dtype, shape, dim):
     (2, 4, 2, 8, 4),
     (3, 4, 2, 8, 1),
 ])
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64', 'bool'])
 @pytest.mark.parametrize('dim', [0, 1, 2, 3, 4])
 def test_xorsum_5d(dtype, shape, dim):
     dtype_size = get_dtype_size(dtype)

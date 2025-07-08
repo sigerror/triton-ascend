@@ -150,7 +150,7 @@ shape_map = {
 
 
 @pytest.mark.parametrize('shape', TestUtils.full_shape)
-@pytest.mark.parametrize('dtype', ["int8", "int16", "int32", "int64", "float16", "float32", "bfloat16"])  # no bool
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dims', [(0,), (1,), (2,), (0, 1), (1, 2), (0, 2)])
 def test_sum(dtype, shape, dims):
     if not is_legal_combine(shape, dims):
@@ -210,7 +210,7 @@ def triton_sum_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: 
     (4, 2, 8, 4),
     (4, 3, 8, 1),
 ])
-@pytest.mark.parametrize('dtype', ["int8", "int16", "int32", "int64", "float16", "float32", "bfloat16"])  # no bool
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dims', [(0,), (1,), (2,), (3,)])
 def test_sum_4d(dtype, shape, dims):
     torch.manual_seed(0)
@@ -235,7 +235,7 @@ def test_sum_4d(dtype, shape, dims):
     (2, 4, 2, 8, 4),
     (3, 4, 2, 8, 1),
 ])
-@pytest.mark.parametrize('dtype', ["int8", "int16", "int32", "int64", "float16", "float32", "bfloat16"])  # no bool
+@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dims', [(0,), (1,), (2,), (3,), (4,)])
 def test_sum_5d(dtype, shape, dims):
     torch.manual_seed(0)
