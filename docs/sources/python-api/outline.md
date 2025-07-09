@@ -5,7 +5,7 @@
 |                          |        Triton Op       | int8 | int16 | int32 | uint32 | int64 | fp16 | fp32 | bf16 | bool |
 |:------------------------:|:----------------------:|------|-------|-------|--------|-------|------|------|------|------|
 |       Creation Ops       | arange                 | ✓    | ✓     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | cat                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
+|                          | cat                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | full                   | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | zeros                  | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | zeros_like             | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
@@ -136,7 +136,7 @@
 
 - umulhi: 不支持负数输入
 
-- ALL: int8类型由于特殊处理，会占用更大的片上空间，编译时容易造成ub overflow报错，通常调整tilling即可解决；
-       triton kernel中同时存在所有tensor总和不能超过96KB，若关闭double buffer，则不能超过192KB；
-       所有tensor不允许某个shape的size小于1;
-       ✓*表示triton内部将bool类型转为int8类型进行运算，并能够执行得到结果的OP。
+- ALL: int8类型由于特殊处理，会占用更大的片上空间，编译时容易造成ub overflow报错，通常调整tilling即可解决
+- ALL: triton kernel中同时存在所有tensor总和不能超过96KB，若关闭double buffer，则不能超过192KB
+- ALL: 所有tensor不允许某个shape的size小于1
+- ALL: ✓*表示triton内部将bool类型转为int8类型进行运算，并能够执行得到结果的OP
