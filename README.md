@@ -51,7 +51,7 @@ source ${HOME}/Ascend/ascend-toolkit/set_env.sh
 
 ### 安装python依赖
 ```
-pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml
+pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml pybind11
 ```
 
 ### 安装torch_npu
@@ -272,7 +272,7 @@ python3 01-vector-add.py
 
 |                          |        Triton Op       | int8 | int16 | int32 | uint32 | int64 | fp16 | fp32 | bf16 | bool |
 |:------------------------:|:----------------------:|------|-------|-------|--------|-------|------|------|------|------|
-|       Creation Ops       | arange                 | ✓    | ✓     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
+|       Creation Ops       | arange                 | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
 |                          | cat                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | full                   | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | zeros                  | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
@@ -289,7 +289,7 @@ python3 01-vector-add.py
 |                          | split                  | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | trans                  | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ✓    |
 |                          | view                   | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
-|    Linear Algebra Ops    | dot                    | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
+|    Linear Algebra Ops    | dot                    | ✓    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | dot_scaled             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |    Memory/Pointer Ops    | load                   | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | store                  | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
@@ -303,7 +303,7 @@ python3 01-vector-add.py
 |                          | mul                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓*   |
 |                          | div                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓*   |
 |                          | floordiv(//)           | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
-|                          | mod                    | ✓    | ✓     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | mod                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
 |                          | neg                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
 |                          | invert(!)              | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ✓    |
 |                          | and(&)                 | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ✓    |
@@ -343,13 +343,13 @@ python3 01-vector-add.py
 |                          | sqrt                   | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | sqrt_rn                | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | umulhi                 | ×    | ×     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
-|       Reduction Ops      | argmax                 | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|                          | argmin                 | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|                          | max                    | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ✓*   |
-|                          | min                    | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ✓*    |
-|                          | reduce                 | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ✓*    |
-|                          | sum                    | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ✓*    |
-|                          | xor_sum                | ✓    | ✓     | ✓     | ×      | ×     | ×    | ×    | ×    | ✓*    |
+|       Reduction Ops      | argmax                 | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
+|                          | argmin                 | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
+|                          | max                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓*   |
+|                          | min                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓*    |
+|                          | reduce                 | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓*    |
+|                          | sum                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓*    |
+|                          | xor_sum                | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ✓*    |
 |       Scan/Sort Ops      | associative_scan       | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | cumprod                | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
 |                          | cumsum                 | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
@@ -404,11 +404,13 @@ python3 01-vector-add.py
 
 - umulhi: 不支持负数输入
 
+- mod: int64仅支持处理 -2^24 ~ 2^24 范围内的数值
+
 - ALL: int8类型由于特殊处理，会占用更大的片上空间，编译时容易造成ub overflow报错，通常调整tilling即可解决
 - ALL: triton kernel中同时存在所有tensor总和不能超过96KB，若关闭double buffer，则不能超过192KB
 - ALL: 所有tensor不允许某个shape的size小于1
 - ALL: ✓*表示triton内部将bool类型转为int8类型进行运算，并能够执行得到结果的OP
-
+- ALL: 不支持使用shape为"[[]]"的标量tensor进行计算
 
 # 当前支持的开源算子仓算子列表
 
