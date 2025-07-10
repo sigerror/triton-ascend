@@ -32,7 +32,7 @@ bisheng_not_support_dtypes = {
     'permute3d':  ['int64'],
     'trans2d':    ['int64'],
     'trans3d':    ['int64'],
-    'matmul':        ['int8', 'int16', 'int32', 'uint32', 'int64', 'bool']
+    'matmul':        ['int16', 'int32', 'uint32', 'int64', 'bool']
 }
 
 tritonascend_not_support_dtypes = {
@@ -90,6 +90,7 @@ def get_shape1_2_3d(in_shape1d, custom_shape):
 class TestUtils:
     in_shape1d = [1, 2, 3, 4, 8, 16, 32, 64, 128, 256, 37, 741]
     custom_shape = [3, 13, 32, 256]
+    batch = [1, 2, 3, 4, 5, 8]
     test_shape1d = get_shape1d(in_shape1d)
     test_shape2d = get_shape2d(in_shape1d, custom_shape)
     test_shape3d = [(1,22,39), (27,1,39), (27,22,1), (1,1,23), (23,1,1), (1,23,1),
