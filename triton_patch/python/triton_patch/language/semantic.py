@@ -224,6 +224,34 @@ def floordiv(input: Union[tl.tensor, numbers.Number], other: Union[tl.tensor, nu
     raise TypeError(f"unexpected type {input_scalar_ty}")
 
 
+def mod(input: tl.tensor | numbers.Number, other: tl.tensor | numbers.Number, builder: ir.builder) -> tl.tensor:
+    input, other = binary_op_type_checking_impl(input, other, builder, False, False, True, True)
+    scalar_ty = input.type.scalar
+    other_scalar_ty = other.type.scalar
+    if hasattr(input, 'was_bool_to_int8'):
+        if input.type.scalar.is_int8():
+            raise TypeError(f"unexpected type bool")
+    if hasattr(other, 'was_bool_to_int8'):
+        if other.type.scalar.is_int8():
+            raise TypeError(f"unexpected type bool")
+    # float
+    if scalar_ty.is_floating():
+        floor = math.floor(fdiv(input, other, False, builder), _builder=builder)
+        ret = sub(input, mul(floor, other, True, builder), True, builder)
+        return ret
+    # % int
+    elif scalar_ty.is_int():
+        if scalar_ty.int_signedness != other_scalar_ty.int_signedness:
+            raise TypeError("Cannot mod " + scalar_ty.__repr__() + " by " + other_scalar_ty.__repr__() + " "
+                            "because they have different signedness;"
+                            "this is unlikely to result in a useful answer. Cast them to the same signedness.")
+        if scalar_ty.is_int_signed():
+            return tl.tensor(builder.create_srem(input.handle, other.handle), input.type)
+        else:
+            return tl.tensor(builder.create_urem(input.handle, other.handle), input.type)
+    raise TypeError(f"unexpected type {scalar_ty}")
+
+
 def and_(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
     if input.type.scalar.is_floating():
         raise TypeError(f"unexpected type {input.type.scalar}")

@@ -643,6 +643,7 @@ from .triton_patch.language.semantic import (
     _load_legacy,
     maximum,
     minimum,
+    mod,
     invert,
     logical_and,
     logical_or,
@@ -681,6 +682,7 @@ language.semantic.minimum = minimum
 language.semantic.invert = invert
 language.semantic.logical_and = logical_and
 language.semantic.logical_or = logical_or
+language.semantic.mod = mod
 language.semantic.not_ = not_
 language.semantic.and_ = and_
 language.semantic.or_ = or_

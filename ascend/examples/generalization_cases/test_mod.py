@@ -69,14 +69,19 @@ def triton_mod_4d_5d(
 
 
 @pytest.mark.parametrize('shape', TestUtils.test_shape1_2_3d)
-@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32'])
+@pytest.mark.parametrize('dtype', ['float16', 'float32', 'bfloat16', 'int8', 'int16', 'int32', 'int64'])
 def test_case2(dtype, shape):
-    x = test_common.generate_tensor(shape, dtype).npu()
+    if dtype in ['int8', 'int16', 'int32', 'int64']:
+        x = test_common.generate_tensor_int_withSigns(shape, dtype).npu()
+        y = test_common.generate_tensor_int_withSigns(shape, dtype).npu()
+        z = test_common.generate_tensor_int_withSigns(shape, dtype).npu()
+    else:
+        x = test_common.generate_tensor(shape, dtype).npu()
+        y = test_common.generate_tensor(shape, dtype).npu()
+        z = test_common.generate_tensor(shape, dtype).npu()
+
     x[x <= 0] = 1
-    y = test_common.generate_tensor(shape, dtype).npu()
     y[y <= 0] = 1
-    z = test_common.generate_tensor(shape, dtype).npu()
-    new_shape = shape
     z[z <= 0] = 1
 
     ans = torch_pointwise(x.cpu(), y.cpu())
@@ -133,3 +138,17 @@ def test_mod_4d_5d(shape, dtype):
     test_common.validate_cmp(dtype, ans, output)
 
 
+invalid_types = [
+    'bool',
+]
+
+@pytest.mark.parametrize("sigtype", invalid_types)
+@test_common.raises_with_match(triton.compiler.errors.CompilationError, "unexpected type")
+def test_invalid_types(sigtype):
+    N = 32
+    x = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+    y = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+    z = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+    output = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
+
+    fn_npu_[1, 1, 1](output, x, y, z, 32, 1, 1, 32, 1, 1)
