@@ -221,7 +221,7 @@ def test_atomic_add_4d_5d(dtype, shape):
 
 
 @triton.jit
-def atomic_add_broadcast_5d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr,
+def atomic_add_5d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr,
                             XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr, MB1: tl.constexpr, NB1: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
     offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
@@ -283,7 +283,7 @@ def test_atomic_add_5d(x_dtype_str, y_dtype_str, param_list):
         triton_shape1.append(1)
     XB1, YB1, ZB1, MB1, NB1 = triton_shape1
 
-    atomic_add_broadcast_5d[(1, )](
+    atomic_add_5d[(1, )](
         x_ptr=x0,
         y_ptr=y, 
         out_ptr=out, 
@@ -296,7 +296,7 @@ def test_atomic_add_5d(x_dtype_str, y_dtype_str, param_list):
 
 
 @triton.jit
-def atomic_add_broadcast_4d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
+def atomic_add_4d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
                             XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr, MB1: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB)
     offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB)
@@ -357,7 +357,7 @@ def test_atomic_add_4d(x_dtype_str, y_dtype_str, param_list):
         triton_shape1.append(1)
     XB1, YB1, ZB1, MB1 = triton_shape1
 
-    atomic_add_broadcast_4d[(1, )](
+    atomic_add_4d[(1, )](
         x_ptr=x0,
         y_ptr=y, 
         out_ptr=out, 
@@ -370,7 +370,7 @@ def test_atomic_add_4d(x_dtype_str, y_dtype_str, param_list):
 
 
 @triton.jit
-def atomic_add_broadcast_3d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr,
+def atomic_add_3d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr,
                             XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB)
     offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB)
@@ -428,7 +428,7 @@ def test_atomic_add_3d_2(x_dtype_str, y_dtype_str, param_list):
         triton_shape1.append(1)
     XB1, YB1, ZB1 = triton_shape1
 
-    atomic_add_broadcast_3d[(1, )](
+    atomic_add_3d[(1, )](
         x_ptr=x0,
         y_ptr=y, 
         out_ptr=out, 
@@ -441,7 +441,7 @@ def test_atomic_add_3d_2(x_dtype_str, y_dtype_str, param_list):
 
 
 @triton.jit
-def atomic_add_broadcast_2d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr,
+def atomic_add_2d(x_ptr, y_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr,
                             XB1: tl.constexpr, YB1: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB)
     offsets = offsets[:, None] + tl.arange(0, YB)[None, :]
@@ -498,7 +498,7 @@ def test_atomic_add_2d(x_dtype_str, y_dtype_str, param_list):
         triton_shape1.append(1)
     XB1, YB1 = triton_shape1
 
-    atomic_add_broadcast_2d[(1, )](
+    atomic_add_2d[(1, )](
         x_ptr=x0,
         y_ptr=y, 
         out_ptr=out, 
