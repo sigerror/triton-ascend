@@ -6,6 +6,7 @@ from triton.language.semantic import wrap_tensor, _str_to_rounding_mode, not_equ
     binary_op_type_checking_impl, integer_promote_impl, broadcast_impl_shape, _str_to_sem, _str_to_scope, bitcast, \
     bitwise_op_type_checking_impl, shl, ashr, lshr, fdiv, sub, mul
 import triton.language.math as math
+import triton.language.core as core
 
 
 def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
@@ -275,7 +276,9 @@ def xor_(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
 
 def gather(src: tl.tensor, index: tl.tensor, axis: int, builder: ir.builder) -> tl.tensor:
     assert index.dtype.is_int(), "index must be an integer tensor"
-
+    if not src.dtype.is_floating():
+        raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {src.dtype}")
+    
     rank = len(src.type.shape)
     assert len(index.type.shape) == rank, "source and index tensors must have the same rank"
 
