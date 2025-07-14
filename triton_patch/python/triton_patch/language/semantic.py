@@ -225,7 +225,7 @@ def floordiv(input: Union[tl.tensor, numbers.Number], other: Union[tl.tensor, nu
     raise TypeError(f"unexpected type {input_scalar_ty}")
 
 
-def mod(input: tl.tensor | numbers.Number, other: tl.tensor | numbers.Number, builder: ir.builder) -> tl.tensor:
+def mod(input: Union[tl.tensor, numbers.Number], other: Union[tl.tensor, numbers.Number], builder: ir.builder) -> tl.tensor:
     input, other = binary_op_type_checking_impl(input, other, builder, False, False, True, True)
     scalar_ty = input.type.scalar
     other_scalar_ty = other.type.scalar
