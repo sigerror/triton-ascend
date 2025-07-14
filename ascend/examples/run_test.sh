@@ -2,6 +2,12 @@
 
 set -ex
 
+script=$(readlink -f "$0")
+script_dir=$(dirname "$script")
+
+# skiped script
+skip_script=("bench_utils.py" "11-rab_time.py")
+
 function uninstall_triton_ascend() {
   set +e
   while true; do
@@ -14,13 +20,7 @@ function uninstall_triton_ascend() {
   set -e
 }
 
-function build_and_test() {
-  if [ -d ${HOME}/.triton/dump ];then
-    rm -rf ${HOME}/.triton/dump
-  fi
-  if [ -d ${HOME}/.triton/cache ];then
-    rm -rf ${HOME}/.triton/cache
-  fi
+function build_triton() {
 
   cd ${WORKSPACE}
   # Run uninstall once because the while-loop does not stop. No idea why.
@@ -31,18 +31,80 @@ function build_and_test() {
   git submodule sync && git submodule update --init --recursive
 
   bash scripts/build.sh ${WORKSPACE}/ascend ${LLVM_BUILD_DIR} 3.2.0 install 0
+}
 
-#  wget https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta/Daily/v2.6.0/$(date +%Y%m%d).4/pytorch_v2.6.0_py311.tar.gz
-#  tar -zxvf pytorch_v2.6.0_py311.tar.gz
-#  pip uninstall torch_npu
-#  pip install torch_npu-2.6.0.dev$(date +%Y%m%d)-cp311-cp311-manylinux_2_28_aarch64.whl
+function run_pytestcases() {
+  if [ -d ${HOME}/.triton/dump ]; then
+    rm -rf ${HOME}/.triton/dump
+  fi
+  if [ -d ${HOME}/.triton/cache ]; then
+    rm -rf ${HOME}/.triton/cache
+  fi
 
-  TEST_triton="${WORKSPACE}/ascend/examples/pytest_ut"
-  cd ${TEST_triton}
+  cd ${script_dir}
+  TARGET_DIR="$1"
+  cd ${TARGET_DIR}
   pytest -n 16 --dist=load . || { exit 1 ; }
 
-  # Run inductor test cases
-  # bash ${WORKSPACE}/ascend/examples/inductor_cases/run_inductor_test.sh || { exit 1 ; }
+}
+
+function run_pythoncases() {
+  if [ -d ${HOME}/.triton/dump ]; then
+    rm -rf ${HOME}/.triton/dump
+  fi
+  if [ -d ${HOME}/.triton/cache ]; then
+    rm -rf ${HOME}/.triton/cache
+  fi
+
+  cd ${script_dir}
+  TARGET_DIR="$1"
+  cd ${TARGET_DIR}
+
+  declare -a pids
+  declare -A status_map
+  has_failure=0
+
+  # 查找并运行所有.py文件
+  for test_script in *.py; do
+    for skip_item in "${skip_script[@]}"; do
+        if [ "$test_script" == "$skip_item" ]; then
+            break
+        fi
+    done
+
+    if [ -f "$test_script" ]; then
+        echo "启动测试: $test_script"
+        python "./$test_script" &
+        pid=$!
+        pids+=($pid)
+        status_map[$pid]=$test_script
+    fi
+  done
+
+  # 等待所有后台进程完成并检查状态
+  for pid in "${pids[@]}"; do
+      wait "$pid"
+      exit_status=$?
+      script_name=${status_map[$pid]}
+
+      if [ $exit_status -ne 0 ]; then
+          echo "[失败] $script_name - 退出码 $exit_status"
+          has_failure=1
+      else
+          echo "[成功] $script_name"
+      fi
+  done
+
+  echo "--------------------------------"
+
+  # 根据测试结果退出
+  if [ $has_failure -eq 1 ]; then
+      echo "部分测试失败！"
+      exit 1
+  else
+      echo "所有测试通过！"
+      exit 0
+  fi
 }
 
 function validate_git_commit_title() {
@@ -100,4 +162,18 @@ export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/8.2.RC1.alpha002/compiler/bishengi
 
 # build in torch 2.6.0
 source /opt/miniconda3/bin/activate torch_260
-build_and_test
+build_triton
+
+pytestcase_dir=("pytest_ut")
+for test_dir in "${pytestcase_dir[@]}"; do
+    echo "run pytestcase in ${test_dir}"
+    run_pytestcases ${test_dir}
+done
+
+pythoncase_dir=("autotune_cases" "benchmark_cases" "tutorials")
+for test_dir in "${pythoncase_dir[@]}"; do
+    echo "run pythoncase in ${test_dir}"
+    run_pythoncases ${test_dir}
+done
+
+
