@@ -28,4 +28,8 @@ do
     mv ${skip_case} "${skip_case}_skip"
   fi
 done
-pytest -n 16 --dist=load .
+
+INDUCTOR_CASE_LOG_FILE="${WORKSPACE}/test_inductor_case_$(date +%Y%m%d).log"
+pytest -n 16 --dist=load . 2>&1 | tee -a "$INDUCTOR_CASE_LOG_FILE"
+
+cp "$INDUCTOR_CASE_LOG_FILE" "/home/daily_log"
