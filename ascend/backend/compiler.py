@@ -20,6 +20,7 @@ from triton.backends.ascend.utils import (
     _get_npucompiler_path,
     _get_triton_adapter_opt_path,
     _is_ascend_sanitizer_enabled,
+    _is_debug_line_info_disabled,
     downgrade_llir,
 )
 from triton.backends.compiler import (
@@ -77,7 +78,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             "-o",
             dst_path,
         ]
-        if _is_ascend_sanitizer_enabled():
+        if _is_ascend_sanitizer_enabled() or not _is_debug_line_info_disabled():
             cmd_list += ["--mlir-print-debuginfo"]  # pass debug info
 
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
@@ -231,6 +232,8 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
 
         if _is_ascend_sanitizer_enabled():
             _compile_option_list += ["--enable-sanitizer=true"]
+        if not _is_debug_line_info_disabled():
+            _compile_option_list += ["--enable-debug-info=true"]
         npu_compiler_path = _get_npucompiler_path()
         if npu_compiler_path.endswith("bishengir-compile"):
             _compile_option_list += [
