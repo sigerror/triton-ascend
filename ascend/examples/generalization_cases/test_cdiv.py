@@ -75,7 +75,7 @@ def triton_cdiv_4d_5d(
                          ['int8', 'int16', 'int32', 'int64'])
 def test_case2(dtype, shape):
     # 生成数据, cdiv int8 溢出的行为triton与torch_cpu不一致
-    x = test_common.generate_tensor(shape, dtype).abs().npu() // 2
+    x = (test_common.generate_tensor(shape, dtype) // 2).abs().npu()
     y = test_common.generate_tensor(shape, dtype).npu()
     z = test_common.generate_tensor(shape, dtype).npu()
     y = (y.abs() // 2 + 1)
@@ -128,7 +128,7 @@ def test_case2(dtype, shape):
 @pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
 def test_cdiv_4d_5d(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
-    x = test_common.generate_tensor(shape, dtype).abs().npu() // 2
+    x = (test_common.generate_tensor(shape, dtype) // 2).abs().npu()
     y = test_common.generate_tensor(shape, dtype).npu()
     y = (y.abs() // 2 + 1)
     output = torch.randint(1, shape, dtype=eval('torch.' + dtype)).npu()
