@@ -262,12 +262,16 @@ python3 01-vector-add.py
 
 参考triton社区提供的调试方法进行调试，官方链接：https://triton-lang.org/main/programming-guide/chapter-3/debugging.html
 
-# 7.当前支持的Ascend设备
+# 7. Triton算子性能调优
+
+triton autotune性能配置说明参考本仓库的 docs\sources\getting-started\tutorials\06-autotune.md
+
+# 8.当前支持的Ascend设备
 
   - 已支持：Atlas 800T/I A2产品
   - 开发中：Atlas 800T/I A3产品
 
-# 8.当前支持的triton op列表
+# 9.当前支持的triton op列表
 ## triton op 支持度总览
 
 |                          |        Triton Op       | int8 | int16 | int32 | uint32 | int64 | fp16 | fp32 | bf16 | bool |
@@ -412,7 +416,7 @@ python3 01-vector-add.py
 - ALL: ✓*表示triton内部将bool类型转为int8类型进行运算，并能够执行得到结果的OP
 - ALL: 不支持使用shape为"[[]]"的标量tensor进行计算
 
-# 当前支持的开源算子仓算子列表
+# 10. 当前支持的开源算子仓算子列表
 
 ## FlagGems:
 - abs

@@ -3,7 +3,7 @@
 在本节中，我们将展示使用 Triton 的 autotune 方法以自动选择最优的 kernel 配置参数。
 
 说明：
-当前Triton-Ascend autotune支持block size、multibuffer，未来还会持续增加autotune可调项。与社区相比，Triton-Ascend支持bishengir在MLIR编译过程中失败后继续测试下一组config，而非中断autotune。
+当前Triton-Ascend autotune支持block size、multibuffer（编译器的优化），未来还会持续增加autotune可调项。与社区相比，Triton-Ascend支持bishengir在MLIR编译过程中失败后继续测试下一组config，而非中断autotune。
 
 ```Python
 import torch, torch_npu
@@ -20,7 +20,26 @@ def test_triton_autotune():
             triton.Config({'XS': 12 * 1024, 'multibuffer': False}),
             triton.Config({'XS': 8 * 1024, 'multibuffer': True}),
         ]
-    # 使用 @autotune 装饰器自动选择最优的 kernel 配置
+    # 使用 @autotune 装饰器自动选择最优的 kernel 配置，autotune里可以接收的参数意义
+    # :param key: axis name: argument name组成的字典，argument 变化会触发候选配置的重新生成与评估. 
+    #     axis name 属于集合 {'x','y','z','w','v','t','rx','ry','rz','rw','rv','rt},前缀 'r' 表示规约轴.
+    #     只有此参数中的轴名称在作为规约轴时才应该添加前缀 r.
+    # :type key: Dict[str, str]
+    # :param split_params:axis name: argument name组成的字典, the argument 是切分轴的可调参数, 例如 'XBLOCK'.
+    #     The axis name必须在参数key的轴名称集合里. 请勿在轴名称前添加前缀 r. 此参数可以为空， 当split_params 和 tiling_params 都为空的时候不会进行自动寻优。
+    #     切分轴通常可以根据 `tl.program_id()` 分核语句来确定。
+    # :type split_params: Dict[str, str]
+    # :param tiling_params: axis name: argument name组成的字典， the argument is 是分块轴的可调参数, such as 'XBLOCK_SUB'.
+    #     axis name必须在参数key的轴名称集合里. 请勿在轴名称前添加前缀 r.
+    #     这个参数可以设置为空. 当split_params 和 tiling_params 都为空的时候不会进行自动寻优。
+    #     分块轴通常可以根据 `tl.arange()` 分块表达式来确定.
+    # :type tiling_params: Dict[str, str]
+    # :param low_dims: 所有低维轴的轴名称列表，axis name必须在参数key的轴名称集合里， 请勿在轴名称前添加前缀 r.
+    # :type low_dims: List[str]
+    # :param dual_reduction: 在多个轴上做规约，影响tiling策略。
+    # :param persistent_reduction: 在规约轴上是否做切分，影响tiling策略
+    # 使用可以参考 ascend\examples\autotune_cases 里面的案例
+    
     @triton.autotune(
         configs=get_autotune_config(),      # 配置列表
         key=['XS', 'multibuffer'],          # 选择输入变量作为选择依据
