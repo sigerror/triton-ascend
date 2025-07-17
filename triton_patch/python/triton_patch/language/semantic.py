@@ -146,9 +146,9 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
         # All combinations of supported fp8 x fp8 are permitted
         pass
     else:
-        assert lhs.dtype in (tl.int8, tl.uint8, tl.float16, tl.bfloat16,
+        assert lhs.dtype in (tl.int1, tl.int8, tl.uint8, tl.float16, tl.bfloat16,
                              tl.float32), f"Unsupported lhs dtype {lhs.dtype}"
-        assert rhs.dtype in (tl.int8, tl.uint8, tl.float16, tl.bfloat16,
+        assert rhs.dtype in (tl.int1, tl.int8, tl.uint8, tl.float16, tl.bfloat16,
                              tl.float32), f"Unsupported rhs dtype {rhs.dtype}"
         assert lhs.dtype == rhs.dtype, f"Both operands must be same dtype. Got {lhs.dtype} and {rhs.dtype}"
 
