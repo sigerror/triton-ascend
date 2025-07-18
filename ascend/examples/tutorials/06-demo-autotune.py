@@ -18,7 +18,7 @@ def test_triton_autotune():
     # Use @autotune decorator to automatically select the best kernel configuration
     @triton.autotune(
         configs=get_autotune_config(), # List of configurations
-        key=['XS', 'multibuffer'], # Use these keys to choose config
+        key=["numel"],  # the change of numel will trigger autotuning
     )
     @triton.jit
     def triton_calc_kernel(
