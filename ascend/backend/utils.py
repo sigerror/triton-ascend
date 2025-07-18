@@ -174,7 +174,7 @@ def _is_ascend_sanitizer_enabled() -> bool:
     return os.getenv("TRITON_ENABLE_SANITIZER", "false").lower() in ("true", "1")
 
 def _is_debug_line_info_disabled() -> bool:
-    return os.getenv("TRITON_DISABLE_LINE_INFO", "false").lower() in ("true", "1")
+    return os.getenv("TRITON_DISABLE_LINE_INFO", "true").lower() in ("true", "1")
 
 
 def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) -> str:
