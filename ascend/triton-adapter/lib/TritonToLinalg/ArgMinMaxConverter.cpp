@@ -24,7 +24,8 @@ LogicalResult ArgMinConverter::matchComparisonResult(
   }
 
   if (cmpIOp) {
-    if (cmpIOp.getPredicate() != arith::CmpIPredicate::slt ||
+    if ((cmpIOp.getPredicate() != arith::CmpIPredicate::slt &&
+         cmpIOp.getPredicate() != arith::CmpIPredicate::ult) ||
         currValue != cmpIOp.getLhs() || reduceValue != cmpIOp.getRhs()) {
       return failure();
     }
@@ -58,7 +59,8 @@ LogicalResult ArgMaxConverter::matchComparisonResult(
   }
 
   if (cmpIOp) {
-    if (cmpIOp.getPredicate() != arith::CmpIPredicate::sgt ||
+    if ((cmpIOp.getPredicate() != arith::CmpIPredicate::sgt &&
+         cmpIOp.getPredicate() != arith::CmpIPredicate::ugt) ||
         currValue != cmpIOp.getLhs() || reduceValue != cmpIOp.getRhs()) {
       return failure();
     }

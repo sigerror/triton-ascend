@@ -733,9 +733,11 @@ addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter,
 
   auto cmpMaskIOp = dyn_cast<arith::CmpIOp>(*opIter);
   if (cmpMaskIOp) {
-    if (cmpMaskIOp.getPredicate() == arith::CmpIPredicate::sgt) {
+    if (cmpMaskIOp.getPredicate() == arith::CmpIPredicate::sgt ||
+        cmpMaskIOp.getPredicate() == arith::CmpIPredicate::ugt) {
       reduceOp->setAttr(reduceRef, rewriter.getStringAttr("max_with_index"));
-    } else if (cmpMaskIOp.getPredicate() == arith::CmpIPredicate::slt) {
+    } else if (cmpMaskIOp.getPredicate() == arith::CmpIPredicate::slt ||
+               cmpMaskIOp.getPredicate() == arith::CmpIPredicate::ult) {
       reduceOp->setAttr(reduceRef, rewriter.getStringAttr("min_with_index"));
     }
   }

@@ -5,6 +5,7 @@ import math
 import pytest
 import torch
 import torch_npu
+import numpy as np
 import triton
 import triton.language as tl
 
@@ -300,3 +301,28 @@ def test_argmax_5d(dtype, shape, dim):
 
     test_common.validate_cmp("int32", triton_res, torch_res)
 # >>>>>>> test_argmax_5d
+
+
+# <<<<<<< test_argmax_1d_bool
+@triton.jit
+def triton_argmax_1d_bool(in_ptr0, out_ptr1, xnumel, XBLOCK: tl.constexpr):
+    xoffset = tl.program_id(0) + tl.arange(0, XBLOCK)
+    tmp0 = tl.load(in_ptr0 + xoffset, None).to(tl.int1)
+    tmp4 = tl.argmax(tmp0, 0)
+    tl.store(out_ptr1, tmp4, None)
+
+
+@pytest.mark.parametrize('shape', TestUtils.test_shape1d)
+@pytest.mark.parametrize('dtype', ['bool'])
+def test_argmax_1d_bool(dtype, shape):
+    dtype_size = get_dtype_size(dtype)
+    if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 3):
+        logger.warning(f"dtype:{dtype} shape:{shape} mem overflow")
+        return
+    x0 = test_common.generate_tensor(shape, dtype)
+    triton_res = torch.empty(1, dtype=torch.int32).npu()
+    numel = shape[0]
+    triton_argmax_1d_bool[1, 1, 1](x0.npu(), triton_res, numel, numel)
+    np_res = np.argmax(x0.numpy())
+    np.equal(triton_res.item(), np_res)
+# >>>>>>> test_argmax_1d_bool
