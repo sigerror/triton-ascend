@@ -173,6 +173,7 @@ def _get_ascend_path() -> str:
 def _is_ascend_sanitizer_enabled() -> bool:
     return os.getenv("TRITON_ENABLE_SANITIZER", "false").lower() in ("true", "1")
 
+
 def _is_debug_line_info_disabled() -> bool:
     return os.getenv("TRITON_DISABLE_LINE_INFO", "true").lower() in ("true", "1")
 
