@@ -74,7 +74,11 @@ cd ${WORKSPACE}
 run_tests "${TEST_generalization}"
 
 echo -e "\n===== 测试结束时间: $(date +"%Y-%m-%d %H:%M:%S") =====" >> "$GENE_CASE_LOG_FILE"
-cp "$GENE_CASE_LOG_FILE" "/home/daily_log"
+
+ZIP_FILE="test_generalizetion_case_$(date +%Y%m%d).zip"
+cd ${WORKSPACE}
+zip ${ZIP_FILE} ${GENE_CASE_LOG_FILE}
+cp "$ZIP_FILE" "/home/daily_log"
 
 # run inductor cases
 TEST_inductor_cases="${WORKSPACE}/ascend/examples/inductor_cases"
