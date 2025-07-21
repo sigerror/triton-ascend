@@ -114,7 +114,7 @@
 
 ## 约束说明
 
-- dot: 两个输入A[batch(optional), M, K], B[batch(optional), K, N]，M，N按照16对齐，K按照32B对齐。
+- dot: 两个输入A[batch(optional), M, K], B[batch(optional), K, N]。
 
 - gather: triton.gather(x, index, axis)，假设x的shape为n维度，目前只支持axis=n-1。
 
