@@ -371,7 +371,7 @@ triton autotune性能配置说明参考本仓库的 docs\sources\getting-started
 
 - trans: triton.trans(x, dims)，不支持dims=[2, 1 , 0]。
 
-- device_print: 需要增加2个环境变量，TRITON_DEVICE_PRINT=1，TRITON_ENABLE_TASKQUEUE=0。**TRITON_ENABLE_TASKQUEUE=0可能造成程序运行不稳定，建议仅临时使用。**
+- device_print: 需要设置1个环境变量，TRITON_DEVICE_PRINT=1
 
 - atomic_add: 不支持标量（包括长度为1的tensor）访存
 
