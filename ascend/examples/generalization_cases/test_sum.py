@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2024-2025. All rights reserved.
 import math
+import pytest
+import torch
 import triton
 import triton.language as tl
-import torch
-import pytest
+
 import test_common
-from test_common import TestUtils
+from test_common import TestUtils, get_dtype_size
 
 
 def torch_sum(x1, dim):
@@ -45,6 +46,52 @@ def tt_sum_2d(in_ptr, out_ptr,
     else:
         oidx = xidx
     tl.store(out_ptr + oidx, ret)
+
+
+@triton.jit
+def tt_sum_1d_dim_none(in_ptr, out_ptr,
+                       xnumel: tl.constexpr, ynumel: tl.constexpr, znumel: tl.constexpr,
+                       XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, dim: tl.constexpr):
+    idx = tl.arange(0, XB)
+    x = tl.load(in_ptr + idx)
+    ret = tl.sum(x, dim)
+    tl.store(out_ptr + tl.arange(0, 1), ret)
+
+
+@triton.jit
+def tt_sum_2d_dim_none(in_ptr, out_ptr,
+                       xnumel: tl.constexpr, ynumel: tl.constexpr, znumel: tl.constexpr,
+                       XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, dim: tl.constexpr):
+    xoffs = tl.program_id(0) * XB
+    yoffs = tl.program_id(1) * YB
+    xidx = tl.arange(0, XB) + xoffs
+    yidx = tl.arange(0, YB) + yoffs
+    idx = xidx[:, None] * ynumel + yidx[None, :]
+
+    x = tl.load(in_ptr + idx)
+    ret = tl.sum(x, dim)
+
+    tl.store(out_ptr + tl.arange(0, 1), ret)
+
+
+@triton.jit
+def tt_sum_3d_dim_none(in_ptr, out_ptr,
+                       xnumel: tl.constexpr, ynumel: tl.constexpr, znumel: tl.constexpr,
+                       XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, dim: tl.constexpr):
+    xoffs = tl.program_id(0) * XB
+    yoffs = tl.program_id(1) * YB
+    zoffs = tl.program_id(2) * ZB
+
+    xidx = tl.arange(0, XB) + xoffs
+    yidx = tl.arange(0, YB) + yoffs
+    zidx = tl.arange(0, ZB) + zoffs
+
+    idx = xidx[:, None, None] * ynumel * znumel + yidx[None, :, None] * znumel + zidx[None, None, :]
+
+    x = tl.load(in_ptr + idx)
+    ret = tl.sum(x, dim)
+
+    tl.store(out_ptr, ret)
 
 
 @triton.jit
@@ -132,7 +179,7 @@ def tt_sum_3d_1_2(in_ptr, out_ptr,
 
 
 def is_legal_combine(shape, dims):
-    return (len(shape) == 3) or \
+    return dims is None or (len(shape) == 3) or \
         (len(dims) == 1 and dims[0] < len(shape))
 
 
@@ -149,9 +196,17 @@ shape_map = {
 }
 
 
+def reduce_check_ub_mem_overflow(dtype, shape):
+    dtype_size = get_dtype_size(dtype)
+    if (dtype == "int8" or dtype == "bool") and dtype_size * math.prod(shape) >= (TestUtils.ub_size / 20):
+        pytest.skip("dtype:{dtype} shape:{shape} mem overflow, skipping.")
+    elif dtype_size * math.prod(shape) >= (TestUtils.ub_size / 6):
+        pytest.skip("dtype:{dtype} shape:{shape} mem overflow, skipping.")
+
+
 @pytest.mark.parametrize('shape', TestUtils.full_shape)
 @pytest.mark.parametrize('dtype', TestUtils.full_dtype)
-@pytest.mark.parametrize('dims', [(0,), (1,), (2,), (0, 1), (1, 2), (0, 2)])
+@pytest.mark.parametrize('dims', [None, (0,), (1,), (2,), (0, 1), (1, 2), (0, 2)])
 def test_sum(dtype, shape, dims):
     if not is_legal_combine(shape, dims):
         return
@@ -162,7 +217,22 @@ def test_sum(dtype, shape, dims):
 
     y_ref = torch_sum(x, dims)
     y_cal = torch.empty(y_ref.shape, dtype=eval('torch.' + dtype), device="npu")
-    if len(dims) == 1:  # 1d sum, 1-3d shape
+
+    if dims is None:
+        reduce_check_ub_mem_overflow(dtype, shape)
+        append_shape, tt_kernel = shape_map[len(shape)]["append_shape"], shape_map[len(shape)]["func"]
+        xnumel, ynumel, znumel = shape + append_shape
+        XB, YB, ZB = xnumel, ynumel, znumel
+        if len(shape) == 1:
+            tt_sum_1d_dim_none[1, 1, 1](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB, dims)
+        if len(shape) == 2:
+            tt_sum_2d_dim_none[1, 1, 1](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB, dims)
+        if len(shape) == 3:
+            tt_sum_3d_dim_none[1, 1, 1](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB, dims)
+
+        test_common.validate_cmp(dtype, y_cal, y_ref)
+
+    elif len(dims) == 1:  # 1d sum, 1-3d shape
         append_shape, tt_kernel = shape_map[len(shape)]["append_shape"], shape_map[len(shape)]["func"]
         xnumel, ynumel, znumel = shape + append_shape
         XB, YB, ZB = xnumel, ynumel, znumel
@@ -173,17 +243,19 @@ def test_sum(dtype, shape, dims):
             else:
                 grid = (xnumel, 1, 1)
                 XB = 1
+        tt_kernel[grid](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB, dims[0])
+        test_common.validate_cmp(dtype, y_cal, y_ref)
     else:  # 3d shape, 2d sum
         tt_kernel = dims_map[dims]
         xnumel, ynumel, znumel = shape
         XB, YB, ZB = xnumel, ynumel, znumel
-
-    tt_kernel[grid](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB, dims[0])
-    test_common.validate_cmp(dtype, y_cal, y_ref)
+        tt_kernel[grid](x, y_cal, xnumel, ynumel, znumel, XB, YB, ZB, dims[0])
+        test_common.validate_cmp(dtype, y_cal, y_ref)
 
 
 @triton.jit
-def triton_sum_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr, DIMS: tl.constexpr, DIM: tl.constexpr, REDUCE_NUMEL: tl.constexpr):
+def triton_sum_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
+                       NB: tl.constexpr, DIMS: tl.constexpr, DIM: tl.constexpr, REDUCE_NUMEL: tl.constexpr):
     offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
     if DIMS > 1:
         offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
@@ -211,14 +283,14 @@ def triton_sum_multi_d(in_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: 
     (4, 3, 8, 1),
 ])
 @pytest.mark.parametrize('dtype', TestUtils.full_dtype)
-@pytest.mark.parametrize('dims', [(0,), (1,), (2,), (3,)])
+@pytest.mark.parametrize('dims', [None, (0,), (1,), (2,), (3,)])
 def test_sum_4d(dtype, shape, dims):
     torch.manual_seed(0)
 
-    dim = dims[0]
     x = test_common.generate_tensor(shape, dtype).npu()
+    dim = dims[0] if dims is not None else None
 
-    y_ref = torch_sum(x, dim if dim is None else dims)
+    y_ref = torch_sum(x, dim)
     y_cal = torch.empty(y_ref.shape, dtype=eval('torch.' + dtype), device="npu")
 
     triton_shape = [*shape]
@@ -236,14 +308,14 @@ def test_sum_4d(dtype, shape, dims):
     (3, 4, 2, 8, 1),
 ])
 @pytest.mark.parametrize('dtype', TestUtils.full_dtype)
-@pytest.mark.parametrize('dims', [(0,), (1,), (2,), (3,), (4,)])
+@pytest.mark.parametrize('dims', [None, (0,), (1,), (2,), (3,), (4,)])
 def test_sum_5d(dtype, shape, dims):
     torch.manual_seed(0)
 
-    dim = dims[0]
     x = test_common.generate_tensor(shape, dtype).npu()
+    dim = dims[0] if dims is not None else None
 
-    y_ref = torch_sum(x, dim if dim is None else dims)
+    y_ref = torch_sum(x, dim)
     y_cal = torch.empty(y_ref.shape, dtype=eval('torch.' + dtype), device="npu")
 
     triton_shape = [*shape]

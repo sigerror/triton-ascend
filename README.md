@@ -332,8 +332,8 @@ triton autotune性能配置说明参考本仓库的 docs\sources\getting-started
 |                          | sum                    | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓*    |
 |                          | xor_sum                | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ✓*    |
 |       Scan/Sort Ops      | associative_scan       | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | cumprod                | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
-|                          | cumsum                 | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
+|                          | cumprod                | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
+|                          | cumsum                 | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | histogram              | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | sort                   | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | gather                 | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |

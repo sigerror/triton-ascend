@@ -144,7 +144,31 @@ def triton_kernel_5d(
     tl.store(out_ptr0 + idx, ret)
 
 
+def convert_cumsum_dtype(x: torch.Tensor) -> torch.Tensor:
+    """
+    根据 cumsum 类型转换规则，返回转换后的张量。
+    """
+    dtype_map = {
+        torch.int8: torch.int64,
+        torch.int16: torch.int64,
+        torch.int32: torch.int64,
+        torch.int64: torch.int64,
+        torch.bfloat16: torch.bfloat16,
+        torch.float16: torch.float16,
+        torch.float32: torch.float32,
+        torch.bool: torch.int64,
+    }
+
+    target_dtype = dtype_map.get(x.dtype, None)
+    if target_dtype is None:
+        raise ValueError(f"Unsupported input dtype for cumsum conversion: {x.dtype}")
+
+    return x.to(target_dtype)
+
+
 def triton_func(x, dim, reverse):
+    x = convert_cumsum_dtype(x)
+
     res = torch.empty_like(x)
     shape = x.size()
     if len(shape) == 1:
@@ -190,46 +214,41 @@ def cumsum_generate_tensor(shape, dtype):
         return torch.randint(low=0, high=3, size=shape, dtype=eval('torch.' + dtype))
     elif dtype == 'int8':
         return torch.randint(low=0, high=3, size=shape, dtype=eval('torch.' + dtype))
+    elif dtype == 'bool':
+        return torch.randint(low=0, high=2, size=shape).bool()
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
 
 
-# dtype=int8, bool, reverse=True not support;
-not_support_dtype = {'int8', 'bool'}
-support_dtypes = [dtype for dtype in TestUtils.full_dtype if dtype not in not_support_dtype]
+def should_skip_due_to_mem(dtype, shape):
+    dtype_size = get_dtype_size(dtype)
+    total_mem = dtype_size * math.prod(shape)
+
+    if dtype in ('int8', 'bool'):
+        threshold = TestUtils.ub_size / 13
+    else:
+        threshold = TestUtils.ub_size / 6
+
+    if total_mem >= threshold:
+        pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
 
 
-@pytest.mark.parametrize("dtype", support_dtypes)
+# reverse=True not support;
+
+
+@pytest.mark.parametrize("dtype", TestUtils.full_dtype)
 @pytest.mark.parametrize("shape", TestUtils.full_shape)
 @pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
 @pytest.mark.parametrize("reverse", [False])
 def test_cumsum(dtype, shape, dim, reverse):
-    if dtype in not_support_dtype:
-        pytest.skip("cumsum  does not support int8 and bool.")
+    should_skip_due_to_mem(dtype, shape)
 
-    dtype_size = get_dtype_size(dtype)
-    if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 4.5):
-        pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
     x = cumsum_generate_tensor(shape=shape, dtype=dtype)
-
     x_npu = x.npu()
 
     triton_res = triton_func(x_npu, dim, reverse)
-    torch_res = torch_func(x_npu, dim, reverse)
 
-    x_gold = x.to(torch.float32)
+    x_gold = x
     cpu_res = torch_func(x_gold, dim, reverse)
 
-    if dtype in ('float16', 'bfloat16', 'float32'):
-        try:
-            print("starting compare of cpu vs triton:")
-            acc_util.assert_close(cpu_res, triton_res)
-        except Exception as e:
-            print(e)
-            print("starting compare of cpu vs triton vs torch_npu:")
-            acc_util.benchmark_compare_close(cpu_res, triton_res, torch_res)
-        print("PASSED")
-    elif dtype in support_dtypes:
-        test_common.validate_cmp(dtype, triton_res, torch_res)
-    else:
-        print(f"dtype = {dtype} does not support.")
+    test_common.validate_cmp(dtype, triton_res, cpu_res)

@@ -147,7 +147,31 @@ def triton_kernel_5d(
     tl.store(out_ptr0 + idx, ret)
 
 
+def convert_cumprod_dtype(x: torch.Tensor) -> torch.Tensor:
+    """
+    根据 cumprod 类型转换规则，返回转换后的张量。
+    """
+    dtype_map = {
+        torch.int8: torch.int64,
+        torch.int16: torch.int64,
+        torch.int32: torch.int64,
+        torch.int64: torch.int64,
+        torch.bfloat16: torch.bfloat16,
+        torch.float16: torch.float16,
+        torch.float32: torch.float32,
+        torch.bool: torch.int64,
+    }
+
+    target_dtype = dtype_map.get(x.dtype, None)
+    if target_dtype is None:
+        raise ValueError(f"Unsupported input dtype for cumprod conversion: {x.dtype}")
+
+    return x.to(target_dtype)
+
+
 def triton_func(x, dim, reverse):
+    x = convert_cumprod_dtype(x)
+
     res = torch.empty_like(x)
     shape = x.size()
     if len(shape) == 1:
@@ -190,27 +214,42 @@ def cumprod_generate_tensor(shape, dtype):
     if dtype == 'float32' or dtype == 'float16' or dtype == 'bfloat16':
         return torch.rand(size=shape, dtype=eval('torch.' + dtype))
     elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16':
-        return torch.randint(low=0, high=3, size=shape, dtype=eval('torch.' + dtype))
+        return torch.randint(low=1, high=5, size=shape, dtype=eval('torch.' + dtype))
     elif dtype == 'int8':
-        return torch.randint(low=0, high=3, size=shape, dtype=eval('torch.' + dtype))
+        return torch.randint(low=1, high=5, size=shape, dtype=eval('torch.' + dtype))
+    elif dtype == 'bool':
+        return torch.randint(low=0, high=2, size=shape).bool()
     else:
         raise ValueError(f"Unsupported dtype: {dtype}")
 
 
-# dtype=int8, bool, reverse=True not support;
-not_support_dtype = {'int8', 'bool'}
-support_dtypes = [dtype for dtype in TestUtils.full_dtype if dtype not in not_support_dtype]
+def should_skip_due_to_mem(dtype, shape):
+    dtype_size = get_dtype_size(dtype)
+    total_mem = dtype_size * math.prod(shape)
+
+    if dtype in ('int8', 'bool'):
+        threshold = TestUtils.ub_size / 13
+    else:
+        threshold = TestUtils.ub_size / 6
+
+    if total_mem >= threshold:
+        pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
 
 
-@pytest.mark.parametrize("dtype", support_dtypes)
+# reverse=True not support;
+@pytest.mark.parametrize("dtype", TestUtils.full_dtype)
 @pytest.mark.parametrize("shape", TestUtils.full_shape)
 @pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
 @pytest.mark.parametrize("reverse", [False])
 def test_cumprod(dtype, shape, dim, reverse):
-    dtype_size = get_dtype_size(dtype)
-    if dtype_size * math.prod(shape) >= (TestUtils.ub_size / 4.5):
-        pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
-    x0 = cumprod_generate_tensor(shape=shape, dtype=dtype).npu()
-    triton_cal = triton_func(x0, dim, reverse)
-    torch_ref = torch_func(x0, dim, reverse)
-    validate_cmp(dtype, torch_ref, triton_cal)
+    should_skip_due_to_mem(dtype, shape)
+
+    x = cumprod_generate_tensor(shape=shape, dtype=dtype)
+    x_npu = x.npu()
+
+    triton_res = triton_func(x_npu, dim, reverse)
+
+    x_gold = x
+    cpu_res = torch_func(x_gold, dim, reverse)
+
+    validate_cmp(dtype, triton_res, cpu_res)
