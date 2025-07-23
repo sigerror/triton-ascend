@@ -89,6 +89,12 @@ void triton::UseAnalysis::visitOperation(Operation *op,
           propagateUse(operands[2], UseType::MetaUse);
         }
       })
+      .Case<triton::AtomicCASOp>([&](auto atomicOp) {
+        propagateUse(operands[0], UseType::MetaUse);
+        propagateUse(operands[1], UseType::DataUse);
+        propagateUse(operands[2], UseType::DataUse);
+        auto value = atomicOp.getVal();
+      })
       .Case<triton::DotOp>([&](auto dot) {
         propagateResults(operands[0], results);
         propagateResults(operands[1], results);
@@ -210,6 +216,11 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
               auto ptr = atomicOp.getPtr();
               auto mask = atomicOp.getMask();
               if (result == ptr || result == mask)
+                metaUsers.insert(user);
+            })
+            .Case<triton::AtomicCASOp>([&](auto atomicOp) {
+              auto ptr = atomicOp.getPtr();
+              if (result == ptr)
                 metaUsers.insert(user);
             })
             .Case<triton::DotOp>([&](auto dot) {

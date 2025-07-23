@@ -68,13 +68,18 @@ class NPULauncher(object):
         debug_mode = metadata.debug
         workspace_size = int(metadata.workspace_size) \
                               if hasattr(metadata, 'workspace_size') else -1
+        lock_init_value = int(metadata.lock_init_value) \
+                              if hasattr(metadata, 'lock_init_value') else 0
+        lock_num = int(metadata.lock_num) \
+                              if hasattr(metadata, 'lock_num') else -1
         constants = src.constants if hasattr(src, "constants") else dict()
         cst_key = lambda i: src.fn.arg_names.index(i) if isinstance(i, str) else i
         constants = {cst_key(key): value for key, value in constants.items()}
         signature = {cst_key(key): value for key, value in src.signature.items()}
         mix_mode = metadata.mix_mode
         wrapper_src = generate_npu_wrapper_src(constants, signature, \
-                                               workspace_size, mix_mode)
+                                               workspace_size, mix_mode, \
+                                               lock_num, lock_init_value)
         so_launcher_path = make_npu_launcher_stub(wrapper_src, debug_mode)
         # initialize launcher
         import importlib.util
@@ -277,7 +282,7 @@ def extract_device_print_code_from_cann():
 
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
-def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode):
+def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val):
     import os
     def _ty_to_cpp(ty):
         if ty[0] == '*':
@@ -550,9 +555,21 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       return {'ret' if enable_taskqueue else ''};
     }}
     // stub argument for workspace
+    void *syncBlockLock = NULL;
     void *workspace_addr = NULL;
     {f'''
     uint16_t ModuleId = 0;
+    uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
+    ret = rtMalloc(reinterpret_cast<void **>(&syncBlockLock),
+                   syncBlockLockSize, RT_MEMORY_HBM, 0);
+    std::vector<int64_t> lockInitData({lock_num}, {lock_ini_val});
+    ret = rtMemcpy(syncBlockLock, syncBlockLockSize, reinterpret_cast<void *>(lockInitData.data()),
+                   syncBlockLockSize, RT_MEMCPY_HOST_TO_DEVICE);
+    if (ret != RT_ERROR_NONE) {{
+      return {'ret' if enable_taskqueue else ''};
+    }}
+    ''' if lock_num > 0 else ''}
+    {f'''
     uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
     ret = rtMalloc(reinterpret_cast<void **>(&workspace_addr),
                    totalWorkSpaceSize, RT_MEMORY_HBM, ModuleId);
@@ -562,12 +579,14 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     ''' if workspace_size > 0 else ''}
     struct __attribute__((packed)) {{
       void* ffts_addr __attribute__((aligned(8)));
+      void* syncBlockLock __attribute__((aligned(8)));
       void* workspace_addr __attribute__((aligned(8)));
       {' '.join(f'{_ty_to_cpp(ty)} arg{i} __attribute__((aligned({4 if ty[0] != "*" and ty[-2:] != "64" else 8})));' for i, ty in signature.items() if i not in constants)}
       {' '.join(f'{_ty_to_cpp(ty)} grid{mark} __attribute__((aligned(4)));' for mark, ty in grid_info.items())}
       {'void* DTData __attribute__((aligned(8)));' if enable_device_print else ''}
     }} args = {{
       static_cast<void*>(ffts_addr),
+      static_cast<void*>(syncBlockLock),
       static_cast<void*>(workspace_addr),
       {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants)},
       {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(grid{mark})' for mark, ty in grid_info.items())}

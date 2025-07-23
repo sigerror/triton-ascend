@@ -123,6 +123,23 @@ class ScalarAtomicRMWCanonicalizer
                                 PatternRewriter &rewriter) const override;
 };
 
+class ScalarAtomicCASCanonicalizer
+    : public OpRewritePattern<triton::AtomicCASOp> {
+  using OpRewritePattern<triton::AtomicCASOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(triton::AtomicCASOp op,
+                                PatternRewriter &rewriter) const override;
+};
+
+class AtomicCASConverter : public OpConversionPattern<triton::AtomicCASOp> {
+public:
+  explicit AtomicCASConverter(MLIRContext *context) : OpConversionPattern<triton::AtomicCASOp>(context) {}
+  using OpConversionPattern<triton::AtomicCASOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+};
+
 class AtomicRMWConverter : public OpConversionPattern<triton::AtomicRMWOp> {
 private:
   Value createAtomicBinaryOps(OpBuilder &builder, Location loc,
@@ -157,6 +174,8 @@ private:
       } else {
         binaryOp = builder.create<arith::MinSIOp>(loc, lhs, rhs);
       }
+    } else if (rmwOp == triton::RMWOp::XCHG) {
+      binaryOp = rhs;
     } else {
       op.emitOpError("unsupported atomic RMW operation: ");
       llvm_unreachable(

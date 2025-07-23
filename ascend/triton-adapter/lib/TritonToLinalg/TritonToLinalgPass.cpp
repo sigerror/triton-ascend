@@ -422,11 +422,13 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
     patterns.add<TTOpConverters::AssertCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::LoadStoreCanonicalizer<triton::LoadOp>,
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::StoreOp>,
-                 LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicRMWOp>>(patterns.getContext());
+                 LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicRMWOp>,
+                 LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicCASOp>>(patterns.getContext());
     patterns.add<TTOpConverters::SelectCanonicalizer>(patterns.getContext());
     patterns.add<TTOpConverters::BitcastCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::ScalarStoreCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::ScalarAtomicRMWCanonicalizer>(patterns.getContext());
+    patterns.add<LoadStoreConverter::ScalarAtomicCASCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::AtomicMaxMinCanonicalizer>(patterns.getContext());
     patterns.add<
         TTOpConverters::ScalarMathCanonicalizer<math::AbsFOp>,
@@ -486,6 +488,7 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
       patterns.getContext());
   patterns.add<LoadStoreConverter::LoadConverter>(patterns.getContext());
   patterns.add<LoadStoreConverter::AtomicRMWConverter>(patterns.getContext());
+  patterns.add<LoadStoreConverter::AtomicCASConverter>(patterns.getContext());
   patterns.add<TTOpConverters::MakeRangeConverter>(patterns.getContext());
   patterns.add<TTOpConverters::SplatConverter>(patterns.getContext());
   patterns.add<TTOpConverters::ClampFConverter>(patterns.getContext());
@@ -669,7 +672,19 @@ void TritonToLinalgPass::runOnOperation() {
       continue;
 
     auto context = func.getContext();
-    constexpr int64_t workspaceArgIdx = 0;
+    constexpr int64_t syncBlockLockArgIdx = 0;
+    NamedAttribute syncBlockLockArgAttr(StringAttr::get(context, "syncBlockLock"),
+                                    UnitAttr::get(context));
+    MemRefType syncBlockLockArgType =
+        MemRefType::get(SmallVector<int64_t>(1, ShapedType::kDynamic),
+                        IntegerType::get(context, 8));
+    func.insertArgument(/*argIndex*/ syncBlockLockArgIdx,
+                        /*argType*/ syncBlockLockArgType,
+                        /*dicAttr*/ nullptr, func->getLoc());
+    func->setAttr("SyncBlockLockArgType",
+                  IntegerAttr::get(IntegerType::get(&getContext(), 64), 0));
+
+    constexpr int64_t workspaceArgIdx = 1;
     MemRefType workspaceArgType =
         MemRefType::get(SmallVector<int64_t>(1, ShapedType::kDynamic),
                         IntegerType::get(context, 8));
@@ -680,7 +695,7 @@ void TritonToLinalgPass::runOnOperation() {
                         /*argType*/ workspaceArgType,
                         /*dicAttr*/ nullptr, func->getLoc());
     func->setAttr("WorkspaceArgIdx",
-                  IntegerAttr::get(IntegerType::get(&getContext(), 64), 0));
+                  IntegerAttr::get(IntegerType::get(&getContext(), 64), 1));
   }
 
   // Fix the Location info

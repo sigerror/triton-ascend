@@ -517,6 +517,141 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
 }
 
 LogicalResult
+AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
+                                    ConversionPatternRewriter &rewriter) const {
+  // If the result of AtomicCASOp is not used, we don't need to load the old
+  // data stored at the ptr
+  auto ptr = adaptor.getPtr();
+  auto cmp = op.getCmp();
+  auto val = op.getVal();
+  auto loc = op.getLoc();
+
+  auto resType = dyn_cast<TensorType>(op.getResult().getType());
+  if (!resType) {
+    return rewriter.notifyMatchFailure(
+        op, "atomicCASConverter: scalar will be handled by "
+            "ScalarAtomicCASCanonicalizer");
+  }
+
+  // 1. Simple case where no mask is used.
+  auto type = dyn_cast<MemRefType>(ptr.getType());
+  if (!type) {
+    // Seen when implicit broadcasting is done late in a chain of
+    // operations. The workaround is to broadcast the pointers early in the
+    // address calculation. A proper fix is complicated, but at least we can
+    // provide a better error message.
+    return rewriter.notifyMatchFailure(
+        op, "AtomicCASOp expects a memref, not a memref of pointers");
+  }
+
+  auto dstMemref = ptr;
+  // Well, linalg structure op wouldn't support mixed tensor/buffer semantics
+  // any more in latest LLVM(triton LLVM dependency has involed this), so we
+  // need to convert tensor to buffer early.
+  auto dstType = dstMemref.getType();
+  Value inputMemref =
+      rewriter.create<bufferization::ToMemrefOp>(loc, dstType, val);
+
+  Value cmpMemref =
+      rewriter.create<bufferization::ToMemrefOp>(loc, dstType, cmp);
+
+  // 3. If needed, handle the return value of atomic op
+  //
+  // tt.atomicRMW op has two part of feature
+  // 1. load the old data at the ptr
+  // 2. atomically store the data on ub to the ptr
+  //    at the same time it perform the action it has been assigned
+  // So we lower this op to load + atomically store
+  //
+  // The first part is not necessary when the returned value of atomic op
+  // is not used, it will be deleted cause it's meaningless
+  // Here, we preemptively determine whether it will be used
+  // and decide whether it is necessary to create the load process based on
+  // this assessment.
+  //
+  // logic of handling is copied
+  // TODO: decoupling the logic of load, put it in the Utils
+  if (!op.getResult().use_empty()) {
+    auto tensorType =
+        RankedTensorType::get(type.getShape(), type.getElementType());
+    auto alloc = rewriter.create<memref::AllocOp>(
+        loc, MemRefType::get(type.getShape(), type.getElementType()));
+
+    // For the return value, don't need to care about mask for now
+    // this op don't support other, so we best not fill it
+    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
+    Value tensor = rewriter.create<bufferization::ToTensorOp>(
+        loc, tensorType, alloc, true /* restrict */, true /* writable */);
+    rewriter.replaceOp(op, tensor);
+  }
+
+  // create element-wise map
+  int64_t rank = type.getRank();
+  SmallVector<AffineExpr> inputDims;
+  auto context = rewriter.getContext();
+
+  for (int i = 0; i < rank; i++) {
+    inputDims.push_back(getAffineDimExpr(i, context));
+  }
+
+  SmallVector<AffineMap> indexingMaps;
+  // As mask has been erased for now
+  // the number of input must be 2
+  // the input memref is also the output memref
+  // Thus, there are a total of three inputs and outputs.
+  // so here we have 3 map to create
+  for (int i = 0; i < 4; i++) {
+    indexingMaps.push_back(AffineMap::get(rank, 0, inputDims, context));
+  }
+
+  auto linalgOp = rewriter.create<linalg::GenericOp>(
+      loc, /* operands */ ValueRange{dstMemref, cmpMemref, inputMemref},
+      mlir::ValueRange{dstMemref}, indexingMaps,
+      mlir::ConverterUtils::getNParallelLoopsAttrs(rank),
+      [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange blockArgs) {
+        Value lhs = blockArgs[0];
+        Value rhs = blockArgs[1];
+        Value setValue = blockArgs[2];
+        Value cond = nestedBuilder.create<arith::CmpIOp>(nestedLoc,
+                                                        arith::CmpIPredicate::eq,
+                                                        lhs, rhs);
+        auto ifOp = nestedBuilder.create<scf::IfOp>(nestedLoc, TypeRange{setValue.getType()}, cond, true);
+        {
+          OpBuilder::InsertionGuard guard(nestedBuilder);
+          nestedBuilder.setInsertionPointToEnd(&ifOp.getThenRegion().front());
+          nestedBuilder.create<scf::YieldOp>(nestedLoc, setValue);
+        }
+        {
+          OpBuilder::InsertionGuard guard(nestedBuilder);
+          nestedBuilder.setInsertionPointToEnd(&ifOp.getElseRegion().front());
+          nestedBuilder.create<scf::YieldOp>(nestedLoc, lhs);
+        }
+        nestedBuilder.setInsertionPointToEnd(nestedBuilder.getBlock());
+        nestedBuilder.create<mlir::linalg::YieldOp>(nestedLoc, ifOp.getResult(0));
+      });
+
+  const StringRef genericAtomicRMW = "GenericAtomicRMW";
+  const StringRef memSemantic = "MemSemantic";
+  const StringRef memSyncScope = "MemSyncScope";
+  auto attr = mlir::StringAttr::get(context, "cas");
+
+  linalgOp->setAttr(genericAtomicRMW, attr);
+  linalgOp->setAttr(memSemantic,
+                    rewriter.getStringAttr(stringifyEnum(op.getSem())));
+  linalgOp->setAttr(memSyncScope,
+                    rewriter.getStringAttr(stringifyEnum(op.getScope())));
+
+  linalgOp->setAttr("Software", rewriter.getUnitAttr());
+
+  // if the result hasn't been replace by load
+  // we need to erase it here
+  if (op.getResult().use_empty()) {
+    rewriter.eraseOp(op);
+  }
+  return success();
+}
+
+LogicalResult
 ScalarStoreCanonicalizer::matchAndRewrite(triton::StoreOp op,
                                           PatternRewriter &rewriter) const {
 
@@ -559,6 +694,32 @@ ScalarAtomicRMWCanonicalizer::matchAndRewrite(triton::AtomicRMWOp op,
 
   auto newAtomicOp = rewriter.create<triton::AtomicRMWOp>(
       op.getLoc(), valTy, op.getAtomicRmwOp(), ptrSplat, valSplat, maskSplat,
+      op.getSem(), op.getScope());
+  rewriter.replaceOp(op, newAtomicOp);
+  return success();
+}
+
+LogicalResult
+ScalarAtomicCASCanonicalizer::matchAndRewrite(triton::AtomicCASOp op,
+                                              PatternRewriter &rewriter) const {
+
+  if (!op.getVal().getType().isIntOrIndexOrFloat() && !op.getCmp().getType().isIntOrIndexOrFloat()) {
+    return rewriter.notifyMatchFailure(
+        op, "ScalarAtomicCASCanonicalizer handles scalar atomic cas op scene!");
+  }
+
+  auto ptr = op.getPtr();
+  auto ptrTy = RankedTensorType::get({(int64_t)1}, ptr.getType());
+  auto ptrSplat = rewriter.create<triton::SplatOp>(op.getLoc(), ptrTy, ptr);
+  auto cmpTy = RankedTensorType::get({(int64_t)1}, op.getCmp().getType());
+  auto cmpSplat =
+      rewriter.create<triton::SplatOp>(op.getLoc(), cmpTy, op.getCmp());
+  auto valTy = RankedTensorType::get({(int64_t)1}, op.getVal().getType());
+  auto valSplat =
+      rewriter.create<triton::SplatOp>(op.getLoc(), valTy, op.getVal());
+
+  auto newAtomicOp = rewriter.create<triton::AtomicCASOp>(
+      op.getLoc(), valTy, ptrSplat, cmpSplat, valSplat,
       op.getSem(), op.getScope());
   rewriter.replaceOp(op, newAtomicOp);
   return success();

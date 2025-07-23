@@ -254,12 +254,26 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
         if Path(callback_path).is_file():
             lib = ctypes.CDLL(callback_path)
-            callback_func = getattr(
+            ws_callback_func = getattr(
                 lib, metadata["kernel_name"] + "_infer_workspace_shape_function"
             )
-            callback_func.restype = ctypes.c_int64
-            callback_func.argtypes = []
-            metadata["workspace_size"] = callback_func()
+            ws_callback_func.restype = ctypes.c_int64
+            ws_callback_func.argtypes = []
+            metadata["workspace_size"] = ws_callback_func()
+
+            lock_num_callback_func = getattr(
+                lib, metadata["kernel_name"] + "_infer_sync_block_lock_num_function "
+            )
+            lock_num_callback_func.restype = ctypes.c_int64
+            lock_num_callback_func.argtypes = []
+            metadata["lock_num"] = lock_num_callback_func()
+
+            lock_init_val_callback_func = getattr(
+                lib, metadata["kernel_name"] + "_infer_sync_block_lock_num_function"
+            )
+            lock_init_val_callback_func.restype = ctypes.c_int64
+            lock_init_val_callback_func.argtypes = []
+            metadata["lock_init_val"] = lock_init_val_callback_func()
 
         return Path(bin_path).read_bytes()
 
