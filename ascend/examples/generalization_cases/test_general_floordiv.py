@@ -66,7 +66,7 @@ def triton_floordiv_4d_5d(
 
 
 @pytest.mark.parametrize('shape', TestUtils.full_shape) # some shape with int8 over ub
-@pytest.mark.parametrize('dtype', ['bool', 'int8', 'int16', 'int32', 'int64'])
+@pytest.mark.parametrize('dtype', ['int8', 'int16', 'int32', 'int64'])
 def test_floordiv(shape, dtype):
     logging.log(logging.DEBUG, f"shape = {shape}")
     x = test_common.generate_tensor_int_withSigns(shape, dtype).npu()
@@ -131,6 +131,7 @@ def test_floordiv_4d_5d(shape, dtype):
     test_common.validate_cmp(dtype, ans, output)
 
 invalid_types = [
+    'bool',
     'float16',
     'float32',
     'bfloat16',

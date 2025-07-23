@@ -212,8 +212,12 @@ def floordiv(input: Union[tl.tensor, numbers.Number], other: Union[tl.tensor, nu
     input, other = binary_op_type_checking_impl(input, other, builder, False, False, True, True)
     input_scalar_ty = input.type.scalar
     other_scalar_ty = other.type.scalar
-    if input_scalar_ty.is_bool() or other_scalar_ty.is_bool():
-        raise TypeError(f"unexpected type {input_scalar_ty}")
+    if hasattr(input, 'was_bool_to_int8'):
+        if input.type.scalar.is_int8():
+            raise TypeError(f"unexpected type bool")
+    if hasattr(other, 'was_bool_to_int8'):
+        if other.type.scalar.is_int8():
+            raise TypeError(f"unexpected type bool")
     if input_scalar_ty.is_int() and other_scalar_ty.is_int():
         ret_ty = integer_promote_impl(input_scalar_ty, other_scalar_ty)
         input = cast(input, ret_ty, builder)

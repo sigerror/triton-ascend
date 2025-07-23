@@ -6,6 +6,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "TritonToLinalg/TritonOpConverter.h"
+#include "TritonToLinalg/TritonToLinalgPass.h"
 #include "TritonToLinalg/BlockPtrAnalysis.h"
 #include "TritonToLinalg/MaskAnalysis.h"
 #include "Utils/Utils.h"
@@ -16,6 +17,7 @@
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LogicalResult.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/FormatVariadic.h"
 #include <utility>
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -246,6 +248,49 @@ LogicalResult MakeTensorPtrConverter::matchAndRewrite(
   data.setSource(redundantOp.getResult());
   auto castOp = data.createCastOp(resultShape, loc, rewriter);
   rewriter.replaceOp(op, castOp.getResult());
+  
+  if (nd2nzFlag) {
+    auto basePtr = castOp.getResult();
+    int original_rank = op.getShape().size() + 1;
+    std::string shapeStr;
+    if (auto memrefType = mlir::dyn_cast<MemRefType>(basePtr.getType())) {
+        for (auto dim : memrefType.getShape()) {
+            shapeStr += llvm::formatv("_{0}", dim);
+        }
+    }
+    auto funcName = rewriter.getStringAttr(
+        llvm::formatv("__hmf_original_shape{0}d{1}", original_rank, shapeStr)
+    );
+    const int vectorSize = 4;
+    SmallVector<Type, vectorSize> srcElemTys;
+    for (auto sz : op.getShape()) {
+      srcElemTys.push_back(sz.getType());
+    }
+    srcElemTys.push_back(basePtr.getType());
+    Type dstElemTy = rewriter.getNoneType();
+    FunctionType hintFuncType =
+        FunctionType::get(rewriter.getContext(), srcElemTys, {dstElemTy});
+
+    auto mod = SymbolTable::getNearestSymbolTable(op);
+    auto extFunc = dyn_cast_or_null<SymbolOpInterface>(
+        SymbolTable::lookupSymbolIn(mod, funcName));
+    SmallVector<Value, vectorSize> args;
+    for (auto sz : op.getShape()) {
+      args.push_back(sz);
+    }
+    args.push_back(basePtr);
+    if (!extFunc) {
+      OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPointToStart(&mod->getRegion(0).front());
+      extFunc = rewriter.create<func::FuncOp>(rewriter.getUnknownLoc(),
+                                              funcName, hintFuncType);
+      extFunc.setPrivate();
+      extFunc->setAttr(LLVM::LLVMDialect::getReadnoneAttrName(),
+                       UnitAttr::get(rewriter.getContext()));
+      rewriter.setInsertionPoint(op);
+    }
+    rewriter.create<func::CallOp>(loc, funcName, dstElemTy, args);
+  }
   return success();
 }
 

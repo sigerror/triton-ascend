@@ -49,17 +49,3 @@ def test_floordiv(sigtype, N):
     triton_cal = triton_func(x0, x1, N)
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
-invalid_types = [
-    'bool',
-]
-
-@pytest.mark.parametrize("sigtype", invalid_types)
-def test_floordiv_bool(sigtype):
-    N = 32
-    x0 = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
-    x1 = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
-    x1 = x1.masked_fill(x1 == 0, 1)
-
-    torch_ref = torch_func(x0, x1)
-    triton_cal = triton_func(x0, x1, N)
-    test_common.validate_cmp(sigtype, triton_cal, torch_ref)

@@ -17,6 +17,8 @@
 #define GEN_PASS_CLASSES
 #include "../../include/TritonToLinalg/Passes.h.inc"
 
+extern int nd2nzFlag;
+
 namespace mlir {
 namespace triton {
 

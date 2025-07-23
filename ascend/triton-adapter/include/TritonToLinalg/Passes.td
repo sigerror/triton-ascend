@@ -12,7 +12,10 @@ def TritonToLinalg : Pass<"triton-to-linalg", "mlir::ModuleOp"> {
             "generate a global kernel">,
         Option<"namedOps", "named-ops", 
             "bool", /*default*/"false",
-            "use linalg named ops instead of linalg.generic">
+            "use linalg named ops instead of linalg.generic">,
+        Option<"enableNd2nzOnVector", "enable-nd2nz-on-vector", 
+            "bool", /*default*/"false",
+            "enable nd2nz on vector">
     ];
 }
 

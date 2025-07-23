@@ -39,6 +39,8 @@
 using namespace mlir;
 using namespace triton;
 
+int nd2nzFlag = 0;
+
 TritonTypeConverter::TritonTypeConverter() {
   addConversion([](Type type) { return type; });
 
@@ -477,6 +479,7 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
 void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
     TypeConverter &typeConverter, RewritePatternSet &patterns,
     unsigned int launchGridRank) {
+    nd2nzFlag = this->enableNd2nzOnVector;
   populateFunctionOpInterfaceTypeConversionPattern<triton::FuncOp>(
       patterns, typeConverter);
 
