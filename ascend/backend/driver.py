@@ -562,6 +562,9 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
     ret = rtMalloc(reinterpret_cast<void **>(&syncBlockLock),
                    syncBlockLockSize, RT_MEMORY_HBM, 0);
+    if (ret != RT_ERROR_NONE) {{
+      return {'ret' if enable_taskqueue else ''};
+    }}
     std::vector<int64_t> lockInitData({lock_num}, {lock_ini_val});
     ret = rtMemcpy(syncBlockLock, syncBlockLockSize, reinterpret_cast<void *>(lockInitData.data()),
                    syncBlockLockSize, RT_MEMCPY_HOST_TO_DEVICE);
