@@ -570,7 +570,6 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
   // this assessment.
   //
   // logic of handling is copied
-  // TODO: decoupling the logic of load, put it in the Utils
   if (!op.getResult().use_empty()) {
     auto tensorType =
         RankedTensorType::get(type.getShape(), type.getElementType());
@@ -598,14 +597,14 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
   // As mask has been erased for now
   // the number of input must be 2
   // the input memref is also the output memref
-  // Thus, there are a total of three inputs and outputs.
-  // so here we have 3 map to create
-  for (int i = 0; i < 4; i++) {
+  // Thus, there are a total of four inputs and outputs.
+  // so here we have 4 map to create
+  for (int i = 0; i < 4; i++) {   // 4: 3 input and 1 output
     indexingMaps.push_back(AffineMap::get(rank, 0, inputDims, context));
   }
 
   auto linalgOp = rewriter.create<linalg::GenericOp>(
-      loc, /* operands */ ValueRange{dstMemref, cmpMemref, inputMemref},
+      loc, ValueRange{dstMemref, cmpMemref, inputMemref},
       mlir::ValueRange{dstMemref}, indexingMaps,
       mlir::ConverterUtils::getNParallelLoopsAttrs(rank),
       [&](OpBuilder &nestedBuilder, Location nestedLoc, ValueRange blockArgs) {
@@ -654,7 +653,6 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
 LogicalResult
 ScalarStoreCanonicalizer::matchAndRewrite(triton::StoreOp op,
                                           PatternRewriter &rewriter) const {
-
   if (!op.getValue().getType().isIntOrIndexOrFloat()) {
     return rewriter.notifyMatchFailure(
         op, "ScalarStoreCanonicalizer handles scalar store scene!");
@@ -676,7 +674,6 @@ ScalarStoreCanonicalizer::matchAndRewrite(triton::StoreOp op,
 LogicalResult
 ScalarAtomicRMWCanonicalizer::matchAndRewrite(triton::AtomicRMWOp op,
                                               PatternRewriter &rewriter) const {
-
   if (!op.getVal().getType().isIntOrIndexOrFloat()) {
     return rewriter.notifyMatchFailure(
         op, "ScalarAtomicRMWCanonicalizer handles scalar atomic rmw op scene!");
@@ -702,7 +699,6 @@ ScalarAtomicRMWCanonicalizer::matchAndRewrite(triton::AtomicRMWOp op,
 LogicalResult
 ScalarAtomicCASCanonicalizer::matchAndRewrite(triton::AtomicCASOp op,
                                               PatternRewriter &rewriter) const {
-
   if (!op.getVal().getType().isIntOrIndexOrFloat() && !op.getCmp().getType().isIntOrIndexOrFloat()) {
     return rewriter.notifyMatchFailure(
         op, "ScalarAtomicCASCanonicalizer handles scalar atomic cas op scene!");

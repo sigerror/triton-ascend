@@ -678,11 +678,11 @@ void TritonToLinalgPass::runOnOperation() {
     MemRefType syncBlockLockArgType =
         MemRefType::get(SmallVector<int64_t>(1, ShapedType::kDynamic),
                         IntegerType::get(context, 8));
-    func.insertArgument(/*argIndex*/ syncBlockLockArgIdx,
-                        /*argType*/ syncBlockLockArgType,
-                        /*dicAttr*/ nullptr, func->getLoc());
+    func.insertArgument(syncBlockLockArgIdx, // argIndex
+                        syncBlockLockArgType, // argType
+                        nullptr, func->getLoc()); // dicAttr
     func->setAttr("SyncBlockLockArgType",
-                  IntegerAttr::get(IntegerType::get(&getContext(), 64), 0));
+                  IntegerAttr::get(IntegerType::get(&getContext(), 64), 0));  // 64: 64位整型
 
     constexpr int64_t workspaceArgIdx = 1;
     MemRefType workspaceArgType =
@@ -695,7 +695,7 @@ void TritonToLinalgPass::runOnOperation() {
                         /*argType*/ workspaceArgType,
                         /*dicAttr*/ nullptr, func->getLoc());
     func->setAttr("WorkspaceArgIdx",
-                  IntegerAttr::get(IntegerType::get(&getContext(), 64), 1));
+                  IntegerAttr::get(IntegerType::get(&getContext(), 64), 1));  // 64: 64位整型
   }
 
   // Fix the Location info

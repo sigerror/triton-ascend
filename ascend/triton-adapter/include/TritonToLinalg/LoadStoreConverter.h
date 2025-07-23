@@ -132,7 +132,8 @@ class ScalarAtomicCASCanonicalizer
 
 class AtomicCASConverter : public OpConversionPattern<triton::AtomicCASOp> {
 public:
-  explicit AtomicCASConverter(MLIRContext *context) : OpConversionPattern<triton::AtomicCASOp>(context) {}
+  explicit AtomicCASConverter(MLIRContext *context) :
+    OpConversionPattern<triton::AtomicCASOp>(context) {}
   using OpConversionPattern<triton::AtomicCASOp>::OpConversionPattern;
 
   LogicalResult
