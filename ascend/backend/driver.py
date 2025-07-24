@@ -557,8 +557,8 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     // stub argument for workspace
     void *syncBlockLock = NULL;
     void *workspace_addr = NULL;
-    {f'''
     uint16_t ModuleId = 0;
+    {f'''
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
     ret = rtMalloc(reinterpret_cast<void **>(&syncBlockLock),
                    syncBlockLockSize, RT_MEMORY_HBM, 0);

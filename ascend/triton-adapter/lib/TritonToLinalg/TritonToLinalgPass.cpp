@@ -681,7 +681,7 @@ void TritonToLinalgPass::runOnOperation() {
     func.insertArgument(syncBlockLockArgIdx, // argIndex
                         syncBlockLockArgType, // argType
                         nullptr, func->getLoc()); // dicAttr
-    func->setAttr("SyncBlockLockArgType",
+    func->setAttr("SyncBlockLockArgIdx",
                   IntegerAttr::get(IntegerType::get(&getContext(), 64), 0));  // 64: 64位整型
 
     constexpr int64_t workspaceArgIdx = 1;
