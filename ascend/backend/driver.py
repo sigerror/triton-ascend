@@ -405,28 +405,40 @@ extern "C" {
       tensorInfo.timeStamp = endTime;
       auto profTensorData = reinterpret_cast<MsprofTensorInfo *>(tensorInfo.data);
       profTensorData->opName = opNameHashID;
-      profTensorData->tensorNum = max_tensors_num;
-      for (int i = 0; i < max_tensors_num; i++) {{
-        profTensorData->tensorData[i].tensorType = MSPROF_GE_TENSOR_TYPE_INPUT; // FIXME
-        profTensorData->tensorData[i].format = 2; // GeDataFormat: ND = 2
-        int nDim = tensorShapes[i].size();
-        nDim = nDim < MSPROF_GE_TENSOR_DATA_SHAPE_LEN ? nDim : MSPROF_GE_TENSOR_DATA_SHAPE_LEN;
-        for (int j = 0; j < nDim; j++) {{
-          profTensorData->tensorData[i].shape[j] = tensorShapes[i][j];
-        }}
-        for (int j = nDim; j < MSPROF_GE_TENSOR_DATA_SHAPE_LEN; j++) {{
-          profTensorData->tensorData[i].shape[j] = 0;
-        }}
-      }}
-      if (max_tensors_num > 0) {{
-        // Scalars don't have a '*' and are returned without cropping
-        // MSPROF_GE_TENSOR_DATA_NUM is 5 which means max 5 tensors can be registered
+      int tensorCount = 0;
+      int dataTypes[MSPROF_GE_TENSOR_DATA_NUM];
+      if (tensorShapes.size() > 0) {{
         {LINE_CHANGE_CHAR.join(
-          f'profTensorData->tensorData[{i}].dataType = {convert_sigtype_to_int(ty[1:])};'
+          f'dataTypes[{i}] = {convert_sigtype_to_int(ty[1:])};'
           for i, ty in signature.items()
           if ty.startswith("*") and i < 5
         )}
       }}
+      for (int i = 0; i < tensorShapes.size() && tensorCount < MSPROF_GE_TENSOR_DATA_NUM; i++) {{
+        auto fillTensorData = [&](int index, int tensorType) {{
+          profTensorData->tensorData[index].tensorType = tensorType;
+          profTensorData->tensorData[index].format = 2; // GeDataFormat: ND = 2
+          profTensorData->tensorData[index].dataType = dataTypes[i];
+          int nDim = tensorShapes[i].size();
+          nDim = nDim < MSPROF_GE_TENSOR_DATA_SHAPE_LEN ? nDim : MSPROF_GE_TENSOR_DATA_SHAPE_LEN;
+          for (int j = 0; j < nDim; j++) {{
+            profTensorData->tensorData[index].shape[j] = tensorShapes[i][j];
+          }}
+          for (int j = nDim; j < MSPROF_GE_TENSOR_DATA_SHAPE_LEN; j++) {{
+            profTensorData->tensorData[index].shape[j] = 0;
+          }}
+        }};
+        int tensorType = (i < tensorKinds.size()) ? tensorKinds[i] : 0;  // DeFault tensor type is input
+        if (tensorType == TENSOR_KIND_INPUT || tensorType == TENSOR_KIND_INPUT_OUTPUT) {{
+          fillTensorData(tensorCount, MSPROF_GE_TENSOR_TYPE_INPUT);
+          tensorCount++;
+        }}
+        if ((tensorType == TENSOR_KIND_OUTPUT || tensorType == TENSOR_KIND_INPUT_OUTPUT) && tensorCount < MSPROF_GE_TENSOR_DATA_NUM){{
+          fillTensorData(tensorCount, MSPROF_GE_TENSOR_TYPE_OUTPUT);
+          tensorCount++;
+        }}
+      }}
+      profTensorData->tensorNum = tensorCount;
       MsprofReportAdditionalInfo(false, static_cast<void *>(&tensorInfo), sizeof(MsprofAdditionalInfo));
     }}
 """
@@ -445,11 +457,15 @@ extern "C" {
 #include "experiment/runtime/runtime/rt.h"
 {'#include "device_print.h"' if enable_device_print else ''}
 
+#define TENSOR_KIND_INPUT 0
+#define TENSOR_KIND_OUTPUT 1
+#define TENSOR_KIND_INPUT_OUTPUT 2
+
 {cpp_msprof_extern}
 
 {cpp_device_pointer}
 
-static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, std::vector<std::vector<int64_t>> &tensorShapes, {arg_decls}) {{
+static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, std::vector<std::vector<int64_t>> &tensorShapes, std::vector<int> &tensorKinds, {arg_decls}) {{
   {'pybind11::scoped_ostream_redirect output;' if enable_device_print else ''}
   // only 1D parallelization is supported for NPU
   // Pointer type becomes flattend 1-D Memref tuple: base_ptr, data_ptr, offset, shape, stride
@@ -547,10 +563,20 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
       }}
     }}
   }}
+  // get tensor_kinds
+  std::vector<int> tensorKinds;
+  PyObject *tensorKindList = PyDict_GetItemString(packedMetadata, "tensor_kinds");
+  if (tensorKindList) {{
+    int size = PyObject_Size(tensorKindList);
+    for (int i = 0; i < size; i++) {{
+      PyObject *kind = PySequence_GetItem(tensorKindList, i);
+      tensorKinds.push_back(PyLong_AsLong(kind));
+    }}
+  }}
 
   // raise exception asap
   {"; ".join([f"DevicePtrInfo ptr_info{i} = getPointer(_arg{i}, {i}); if (!ptr_info{i}.valid) return NULL;" if ty[0]=="*" else "" for i, ty in signature.items()])};
-  _launch(kernelName, function, stream, gridX, gridY, gridZ, &profilerRegistered, tensorShapes, {', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}" for i, ty in signature.items())});
+  _launch(kernelName, function, stream, gridX, gridY, gridZ, &profilerRegistered, tensorShapes, tensorKinds, {', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}" for i, ty in signature.items())});
   if (PyErr_Occurred()) {{
     return NULL;
   }}

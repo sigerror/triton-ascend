@@ -210,6 +210,11 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
     # Check the function load_binary in npu_driver.py.
     metadata["name"] = metadata["kernel_name"] + " " + metadata["mix_mode"]
     # remove the mix_mode attribute
+    # tt.tensor_kind = <int> : i32 
+    tensor_kinds = []
+    for _, tensor_kind in re.findall(r'%arg(\d+):[^,)]*?\{[^}]*?tt\.tensor_kind\s*=\s*([^:\s}]+)\s*:[^}]*?\}', linalg):
+        tensor_kinds.append(int(tensor_kind))
+    metadata["tensor_kinds"] = tensor_kinds
     linalg = re.sub(r', mix_mode\s*=\s*"[^"]*"', "", linalg)
     with tempfile.TemporaryDirectory() as tmpdir:
         ttadapter_path = os.path.join(tmpdir, "kernel.ttadapter.mlir")
@@ -406,6 +411,7 @@ class AscendBackend(BaseBackend):
             "hash": metadata.hash,
             "debug": metadata.debug,
             "profiler_registered": TRITON_PROFILER_REGISTERED,
+            "tensor_kinds": metadata.tensor_kinds,
         }
 
     def get_codegen_implementation(self):

@@ -89,6 +89,54 @@ void TritonToLinalgPass::addProgramInfo(triton::FuncOp func,
   }
 }
 
+static void setBlockArgumentAttr(BlockArgument blockArg, triton::FuncOp func, TensorKind tensorKind)
+{
+    unsigned argIdx = blockArg.getArgNumber();
+    auto existingAttr = func.getArgAttrOfType<IntegerAttr>(argIdx, "tt.tensor_kind");
+    TensorKind oldVal = existingAttr ? static_cast<TensorKind>(existingAttr.getInt()) : TensorKind::NONE;
+
+    TensorKind finalVal = tensorKind;
+    if ((oldVal == TensorKind::INPUT && tensorKind == TensorKind::OUTPUT) ||
+        (oldVal == TensorKind::OUTPUT && tensorKind == TensorKind::INPUT)) {
+        finalVal = TensorKind::INPUT_OUTPUT;
+    } else if (oldVal == TensorKind::INPUT_OUTPUT) {
+        finalVal = oldVal;
+    }
+
+    func.setArgAttr(argIdx, "tt.tensor_kind",
+                    IntegerAttr::get(IntegerType::get(func.getContext(), INT_BIT_WIDTH), static_cast<int>(finalVal)));
+}
+
+template <typename OpTy>
+void TritonToLinalgPass::addTensorKindToArguments(OpTy op, triton::FuncOp func, TensorKind tensorKind)
+{
+    Value ptr = op.getPtr();
+    if (!ptr)
+        return;
+
+    Value cur = ptr;
+    llvm::SmallPtrSet<Value, SET_INIT_SIZE> visited;
+    // 回溯 def-use 链，找到起源 BlockArgument
+    while (visited.insert(cur).second) {
+        // 如果是 BlockArgument，则尝试设置属性
+        if (auto blockArg = dyn_cast<BlockArgument>(cur)) {
+            if (blockArg.getOwner() == &func.getBody().front()) {
+                auto type = blockArg.getType();
+                // 检查是否是 triton::PointerType
+                if (!isa<triton::PointerType>(type))
+                    break;
+                setBlockArgumentAttr(blockArg, func, tensorKind);
+                break;
+            }
+        }
+
+        Operation *defOp = cur.getDefiningOp();
+        if (!defOp)
+            break;
+        cur = defOp->getOperand(0);
+    }
+}
+
 void TritonToLinalgPass::convertTTFunc(triton::FuncOp func,
                                        const bool existDot) {
   OpBuilder builder(func);
@@ -495,6 +543,23 @@ void TritonToLinalgPass::runOnOperation() {
   });
 
   RewritePatternSet canonicalizerPatterns(&getContext());
+
+  // 遍历所有的triton::FuncOp，添加tensor_kind属性
+  moduleOp.walk([&](triton::FuncOp func) {
+    func.walk([&](triton::LoadOp loadOp) {
+      addTensorKindToArguments(loadOp, func, TensorKind::INPUT);
+    });
+    func.walk([&](triton::StoreOp storeOp) {
+      addTensorKindToArguments(storeOp, func, TensorKind::OUTPUT);
+    });
+    func.walk([&](triton::AtomicRMWOp atomicOp) {
+      addTensorKindToArguments(atomicOp, func, TensorKind::INPUT_OUTPUT);
+    });
+    func.walk([&](triton::AtomicCASOp atomicOp) {
+      addTensorKindToArguments(atomicOp, func, TensorKind::INPUT_OUTPUT);
+    });
+  });
+
   // 1.标准化 LoadStore ScalarStoreCanonicalizer
   this->populateTritonToLinalgCanonicalizationPatterns(canonicalizerPatterns);
   if (failed(applyPatternsAndFoldGreedily(moduleOp,
