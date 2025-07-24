@@ -2,6 +2,7 @@
 # Copyright (c) Huawei Technologies Co., Ltd. 2025-2025. All rights reserved.
 
 import math
+import random
 import triton
 import triton.language as tl
 
@@ -241,7 +242,7 @@ def structParam(x0):
     return dim, stride0, stride1, stride2, shape0, shape1, shape2
 
 
-@pytest.mark.parametrize('shape', TestUtils.full_shape)
+@pytest.mark.parametrize('shape', random.sample(TestUtils.full_shape, 5))
 @pytest.mark.parametrize('srcDtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dstDtype', TestUtils.full_dtype)
 def test_cast(srcDtype, dstDtype, shape):

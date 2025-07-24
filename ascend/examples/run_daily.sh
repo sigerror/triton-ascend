@@ -27,66 +27,87 @@ function build_triton() {
   bash scripts/build.sh ${WORKSPACE}/ascend ${LLVM_BUILD_DIR} 3.2.0 install 0
 }
 
+function run_case_by_multi_card() {
+
+    EACH_DEVICE_THREAD=64
+    # 获取可用昇腾卡数量
+    NPU_DEVICES=$(ls /dev/davinci? 2>/dev/null | wc -l)
+    [ $NPU_DEVICES -eq 0 ] && {
+        echo "No Ascend devices found!"
+        exit 1
+    }
+
+    echo "Detected $NPU_DEVICES Ascend devices"
+
+    if [ -d ${WORKSPACE}triton ];then
+      rm -rf ${WORKSPACE}triton
+    fi
+
+    if [ -d ~/.triton/dump ];then
+      rm -rf ~/.triton/dump
+    fi
+
+    if [ -d ~/.triton/cache ];then
+      rm -rf ~/.triton/cache
+    fi
+
+    test_dir=$1
+
+    cd ${test_dir}
+
+    # 清理旧日志
+    rm -rf logs && mkdir logs
+
+    # 记录测试开始时间
+    echo "===== 测试开始时间: $(date +"%Y-%m-%d %H:%M:%S") ====="
+    n_value=$(echo "scale=0; $NPU_DEVICES * $EACH_DEVICE_THREAD * 0.75 / 1" | bc)
+
+    pytest ${test_dir} -n ${n_value} --dist=loadscope -v --junitxml=logs/results.xml | tee logs/raw_output.log
+
+    # 处理日志（添加设备标签）
+    awk '
+      />> Worker gw[0-9]+ using NPU device/ {
+        split($0, parts, / /)
+        dev_id = parts[NF]
+        worker = parts[3]
+        print "[" strftime("%Y-%m-%d %H:%M:%S") "| DEV-" dev_id "] " $0
+        next
+      }
+      { print "[" strftime("%Y-%m-%d %H:%M:%S") "| DEV-" dev_id "] " $0 }
+    ' logs/raw_output.log > logs/combined.log
+
+    echo "========================================"
+    echo "All tests completed!"
+    echo "JUnit Report: logs/results.xml"
+    echo "Combined Log: logs/combined.log"
+    echo "========================================"
+
+    echo -e "\n===== 测试结束时间: $(date +"%Y-%m-%d %H:%M:%S") ====="
+
+    log_file=$2
+    cp ${test_dir}/logs/combined.log "/home/daily_log/${log_file}"
+}
 
 # build in torch 2.6.0
 source /opt/miniconda3/bin/activate torch_260
 build_triton
 
-if [ -d ${WORKSPACE}triton ];then
-  rm -rf ${WORKSPACE}triton
-fi
-
-if [ -d ~/.triton/dump ];then
-  rm -rf ~/.triton/dump
-fi
-
-if [ -d ~/.triton/cache ];then
-  rm -rf ~/.triton/cache
-fi
-
 cd ${WORKSPACE}
 
-# 定义日志文件名（格式示例：test_results_20231015_153045.log）
-GENE_CASE_LOG_FILE="${WORKSPACE}/test_generalizetion_case_$(date +%Y%m%d).log"
-
-# 定义要运行的测试目录
+# run gene case
+log_file="test_generalizetion_case_$(date +%Y%m%d).log"
 TEST_generalization="${WORKSPACE}/ascend/examples/generalization_cases"
-
-# 记录测试开始时间
-echo "===== 测试开始时间: $(date +"%Y-%m-%d %H:%M:%S") =====" > "$GENE_CASE_LOG_FILE"
-
-#函数:运行测试并返回状态码
-function run_tests() {
-  local dir="$1"
-  echo "Running tests in dir: $dir" | tee -a "$GENE_CASE_LOG_FILE"
-  cd ${dir} || {
-    echo "failed to cd to : ${dir}" | tee -a "$GENE_CASE_LOG_FILE"
-    return 1
-    }
-
-  #运行测试
-  pytest -sv -n 16 . 2>&1 | tee -a "$GENE_CASE_LOG_FILE"
-
-  local pytest_exit=$?
-  return $pytest_exit
-}
-cd ${WORKSPACE}
-run_tests "${TEST_generalization}"
-
-echo -e "\n===== 测试结束时间: $(date +"%Y-%m-%d %H:%M:%S") =====" >> "$GENE_CASE_LOG_FILE"
-
-ZIP_FILE="test_generalizetion_case_$(date +%Y%m%d).zip"
-cd ${WORKSPACE}
-zip ${ZIP_FILE} ${GENE_CASE_LOG_FILE}
-cp "$ZIP_FILE" "/home/daily_log"
+run_case_by_multi_card ${TEST_generalization} ${log_file}
 
 # run inductor cases
 TEST_inductor_cases="${WORKSPACE}/ascend/examples/inductor_cases"
 cd ${TEST_inductor_cases}
 bash run_inductor_test.sh
 
-#run flaggems cases
+# run flaggems cases
 TEST_flaggems_cases="${WORKSPACE}/ascend/examples/flaggems_cases"
 cd ${TEST_flaggems_cases}
 bash run_flaggems_test.sh
+
+
 

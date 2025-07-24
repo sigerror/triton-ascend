@@ -7,4 +7,4 @@ cd flaggems
 git checkout 4f3f548
 mv ../op_test_run.sh ./
 ls -al
-bash op_test_run.sh tests
+bash op_test_run.sh tests fullop 8 32
