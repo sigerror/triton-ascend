@@ -90,12 +90,12 @@
 |                          | gather                 | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |        Atomic Ops        | atomic_add             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | atomic_and             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | atomic_cas             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | atomic_cas             | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ×    |
 |                          | atomic_max             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | atomic_min             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|                          | atomic_or              | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | atomic_xchg            | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | atomic_xor             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | atomic_or              | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
+|                          | atomic_xchg            | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ×    |
+|                          | atomic_xor             | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
 | Random Number Generation | randint4x              | ×    | ×     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | randint                | ×    | ×     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | rand                   | ×    | ×     | ×     | ×      | ×     | ×    | ✓    | ×    | ×    |
@@ -125,6 +125,10 @@
 - device_print: 需要增加2个环境变量，TRITON_DEVICE_PRINT=1，TRITON_ENABLE_TASKQUEUE=0。**TRITON_ENABLE_TASKQUEUE=0可能造成程序运行不稳定，建议仅临时使用。**
 
 - atomic_add: 昇腾不支持atomic_add实现多核add+保存中间结果，需要修改成普通add来保存中间结果
+
+- atomic_or: sem只支持默认值"acq_rel"模式，其他值均按默认值处理；scope只支持默认值"gpu"，其他值均按默认值处理
+
+- atomic_xor: sem只支持默认值"acq_rel"模式，其他值均按默认值处理；scope只支持默认值"gpu"，其他值均按默认值处理
 
 - permute: 不支持不相邻轴转置，如`(0, 1, 2) -> (2, 1, 0)`
 

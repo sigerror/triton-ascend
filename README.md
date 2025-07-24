@@ -312,12 +312,12 @@ triton autotune性能配置说明参考本仓库的 docs\sources\getting-started
 |                          | gather                 | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |        Atomic Ops        | atomic_add             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | atomic_and             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | atomic_cas             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | atomic_cas             | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ×    |
 |                          | atomic_max             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | atomic_min             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|                          | atomic_or              | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | atomic_xchg            | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | atomic_xor             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | atomic_or              | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
+|                          | atomic_xchg            | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ×    |
+|                          | atomic_xor             | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
 | Random Number Generation | randint4x              | ×    | ×     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | randint                | ×    | ×     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | rand                   | ×    | ×     | ×     | ×      | ×     | ×    | ✓    | ×    | ×    |
@@ -351,6 +351,10 @@ triton autotune性能配置说明参考本仓库的 docs\sources\getting-started
 - atomic_max: 不支持标量（包括长度为1的tensor）访存
 
 - atomic_min: 不支持标量（包括长度为1的tensor）访存
+
+- atomic_or: sem只支持默认值"acq_rel"模式，其他值均按默认值处理；scope只支持默认值"gpu"，其他值均按默认值处理
+
+- atomic_xor: sem只支持默认值"acq_rel"模式，其他值均按默认值处理；scope只支持默认值"gpu"，其他值均按默认值处理
 
 - permute: 不支持不相邻轴转置，如`(0, 1, 2) -> (2, 1, 0)`
 
