@@ -58,6 +58,8 @@ def triton_load_store_multi_d(
                              ['float32', (8, 8, 4), 2, 128, 64],
                              ['float16', (8, 8, 4), 2, 128, 64],
                              ['int8', (8, 8, 4), 2, 128, 64],
+                             ['int8', (8, 7, 4), 2, 128, 64],
+
                          ]
                          )
 def test_load_store(param_list):

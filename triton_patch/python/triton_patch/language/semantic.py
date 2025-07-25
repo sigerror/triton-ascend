@@ -4,7 +4,7 @@ import triton.language as tl
 from triton._C.libtriton import ir
 from triton.language.semantic import wrap_tensor, _str_to_rounding_mode, not_equal, _str_to_dot_input_precision, \
     binary_op_type_checking_impl, integer_promote_impl, broadcast_impl_shape, _str_to_sem, _str_to_scope, bitcast, \
-    bitwise_op_type_checking_impl, shl, ashr, lshr, fdiv, sub, mul
+    bitwise_op_type_checking_impl, shl, ashr, lshr, fdiv, sub, mul, to_tensor
 import triton.language.math as math
 import triton.language.core as core
 
@@ -380,6 +380,8 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
                          "pointers or loading a scalar. Because the compiler does not know the boundary; please "
                          "use block pointers (defined by `make_block_ptr`) instead")
 
+    if other is None:
+        other = to_tensor(0, builder)
     # For a pointer of scalar, check the type of `mask` and `other`
     if not ptr.type.is_block():
         if mask and mask.type.is_block():
