@@ -266,6 +266,8 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
             __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_num_function", metadata, "lock_num")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_init_function", metadata, "lock_init_val")
+            
+        return Path(bin_path).read_bytes()
 
 
 @dataclass(frozen=True)
