@@ -427,6 +427,63 @@ BitcastCanonicalizer::matchAndRewrite(triton::BitcastOp bitcastOp,
   return failure();
 }
 
+void rewriteUserWithNewOrder(mlir::Operation *user, PatternRewriter &rewriter, llvm::SmallVector<int64_t, 8> &blkShapeI64, // 8: container size
+                             mlir::Location &loc, llvm::ArrayRef<int32_t> &order, size_t &orderSize)
+{
+  rewriter.setInsertionPointAfter(user);
+  if (auto loadOp = dyn_cast<triton::LoadOp>(user)) {
+    auto loadResTy = loadOp.getResult().getType();
+    auto loadResShapedTy = cast<ShapedType>(loadResTy);
+    auto newLoadTy = loadResShapedTy.cloneWith(
+        blkShapeI64, loadResShapedTy.getElementType());
+    auto newLoadOp = rewriter.create<triton::LoadOp>(
+        loc, newLoadTy, loadOp->getOperands(), loadOp->getAttrs());
+    rewriter.replaceOp(loadOp, newLoadOp);
+    // load contiguous data then permute. thus the permute order is as
+    // follows.
+    SmallVector<int32_t, 8> permuteOrder; // 8: container size
+    for (auto [i, v] : llvm::enumerate(order)) {
+      permuteOrder.push_back(orderSize - 1 - order[i]);
+    }
+    auto permuteOp = rewriter.create<triton::TransOp>(
+        loc, newLoadOp.getResult(),
+        DenseI32ArrayAttr::get(loadOp.getContext(), permuteOrder));
+    newLoadOp.getResult().replaceAllUsesExcept(permuteOp.getResult(), permuteOp);
+  } else if (auto storeOp = dyn_cast<triton::StoreOp>(user)) {
+    // permute to contiguous then store. thus the permute order is as follows.
+    SmallVector<int32_t, 8> permuteOrder; // 8: container size
+    for (auto [i, v] : llvm::enumerate(order)) {
+      permuteOrder.push_back(order[orderSize - 1 - i]);
+    }
+    auto permuteOp = rewriter.create<triton::TransOp>(
+        loc, storeOp.getValue(),
+        DenseI32ArrayAttr::get(storeOp.getContext(), permuteOrder));
+    storeOp.getValue().replaceAllUsesExcept(permuteOp.getResult(), permuteOp);
+    auto newStoreOp = rewriter.create<triton::StoreOp>(
+        loc, storeOp.getPtr(), storeOp.getValue(), storeOp.getMask(),
+        storeOp.getBoundaryCheck(), storeOp.getCache(), storeOp.getEvict());
+    rewriter.replaceOp(storeOp, newStoreOp);
+  } else {
+    auto advanceOp = dyn_cast<triton::AdvanceOp>(user);
+    auto advanceResPtrTy =
+        cast<triton::PointerType>(advanceOp.getResult().getType());
+    auto advanceResShapedTy =
+        cast<ShapedType>(advanceResPtrTy.getPointeeType());
+    auto newAdvanceResShapedTy = advanceResShapedTy.cloneWith(
+        blkShapeI64, advanceResShapedTy.getElementType());
+    auto newAdvanceResPtrTy = triton::PointerType::get(
+        newAdvanceResShapedTy, advanceResPtrTy.getAddressSpace());
+    auto advanceOffsets = advanceOp.getOffsets();
+    llvm::SmallVector<Value, 8> newAdvanceOffsets; // 8: container size
+    for (int i = orderSize - 1; i >= 0; i--) {
+      newAdvanceOffsets.push_back(advanceOffsets[order[i]]);
+    }
+    auto newAdvanceOp = rewriter.create<triton::AdvanceOp>(
+        loc, newAdvanceResPtrTy, advanceOp.getPtr(), newAdvanceOffsets);
+    rewriter.replaceOp(advanceOp, newAdvanceOp);
+  }
+}
+
 LogicalResult
 MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
                                             PatternRewriter &rewriter) const {
@@ -459,7 +516,25 @@ MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
   auto result = op.getResult();
   auto opUsers = result.getUsers();
   for (auto user : opUsers) {
-    if (!isa<triton::LoadOp>(user) && !isa<triton::StoreOp>(user) &&
+    if (isa<scf::ForOp>(user)) {
+      auto forOp = dyn_cast<scf::ForOp>(user);
+      auto initArgs = forOp.getInitArgs();
+      for (auto [idx, initArg] : llvm::enumerate(initArgs)) {
+        if (initArg == result) {
+          auto iterArgs = forOp.getRegionIterArgs();
+          auto targetIterArg = iterArgs[idx];
+          auto argUsers = targetIterArg.getUsers();
+          for (auto argUser : argUsers) {
+            if (!isa<triton::LoadOp>(argUser) && !isa<triton::StoreOp>(argUser) &&
+                !isa<triton::AdvanceOp>(argUser)) {
+              return rewriter.notifyMatchFailure(forOp,
+                                                 "[MakeTensorPtrCanonicalizer] scf.for's arg is "
+                                                 "not used by load/store/advance op");
+            }
+          }
+        }
+      }
+    } else if (!isa<triton::LoadOp>(user) && !isa<triton::StoreOp>(user) &&
         !isa<triton::AdvanceOp>(user)) {
       return rewriter.notifyMatchFailure(
           op, "[MakeTensorPtrCanonicalizer] tt.make_tensor_ptr's result is "
@@ -499,58 +574,21 @@ MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
   rewriter.replaceOp(op, newMakeTensorPtrOp);
 
   for (auto user : opUsers) {
-    rewriter.setInsertionPointAfter(user);
-    if (auto loadOp = dyn_cast<triton::LoadOp>(user)) {
-      auto loadResTy = loadOp.getResult().getType();
-      auto loadResShapedTy = cast<ShapedType>(loadResTy);
-      auto newLoadTy = loadResShapedTy.cloneWith(
-          blkShapeI64, loadResShapedTy.getElementType());
-      auto newLoadOp = rewriter.create<triton::LoadOp>(
-          loc, newLoadTy, loadOp->getOperands(), loadOp->getAttrs());
-      rewriter.replaceOp(loadOp, newLoadOp);
-      // load contiguous data then permute. thus the permute order is as
-      // follows.
-      SmallVector<int32_t, 8> permuteOrder;
-      for (auto [i, v] : llvm::enumerate(order)) {
-        permuteOrder.push_back(orderSize - 1 - order[i]);
+    if (isa<scf::ForOp>(user)) {
+      auto forOp = dyn_cast<scf::ForOp>(user);
+      auto initArgs = forOp.getInitArgs();
+      for (auto [idx, initArg] : llvm::enumerate(initArgs)) {
+        if (initArg == newMakeTensorPtrOp.getResult()) {
+          auto iterArgs = forOp.getRegionIterArgs();
+          auto targetIterArg = iterArgs[idx];
+          auto argUsers = targetIterArg.getUsers();
+          for (auto argUser : argUsers) {
+            rewriteUserWithNewOrder(argUser, rewriter, blkShapeI64, loc, order, orderSize);
+          }
+        }
       }
-      auto permuteOp = rewriter.create<triton::TransOp>(
-          loc, newLoadOp.getResult(),
-          DenseI32ArrayAttr::get(loadOp.getContext(), permuteOrder));
-      newLoadOp.getResult().replaceAllUsesExcept(permuteOp.getResult(),
-                                                 permuteOp);
-    } else if (auto storeOp = dyn_cast<triton::StoreOp>(user)) {
-      // permute to contiguous then store. thus the permute order is as follows.
-      SmallVector<int32_t, 8> permuteOrder;
-      for (auto [i, v] : llvm::enumerate(order)) {
-        permuteOrder.push_back(order[orderSize - 1 - i]);
-      }
-      auto permuteOp = rewriter.create<triton::TransOp>(
-          loc, storeOp.getValue(),
-          DenseI32ArrayAttr::get(storeOp.getContext(), permuteOrder));
-      storeOp.getValue().replaceAllUsesExcept(permuteOp.getResult(), permuteOp);
-      auto newStoreOp = rewriter.create<triton::StoreOp>(
-          loc, storeOp.getPtr(), storeOp.getValue(), storeOp.getMask(),
-          storeOp.getBoundaryCheck(), storeOp.getCache(), storeOp.getEvict());
-      rewriter.replaceOp(storeOp, newStoreOp);
     } else {
-      auto advanceOp = dyn_cast<triton::AdvanceOp>(user);
-      auto advanceResPtrTy =
-          cast<triton::PointerType>(advanceOp.getResult().getType());
-      auto advanceResShapedTy =
-          cast<ShapedType>(advanceResPtrTy.getPointeeType());
-      auto newAdvanceResShapedTy = advanceResShapedTy.cloneWith(
-          blkShapeI64, advanceResShapedTy.getElementType());
-      auto newAdvanceResPtrTy = triton::PointerType::get(
-          newAdvanceResShapedTy, advanceResPtrTy.getAddressSpace());
-      auto advanceOffsets = advanceOp.getOffsets();
-      llvm::SmallVector<Value, 8> newAdvanceOffsets;
-      for (int i = orderSize - 1; i >= 0; i--) {
-        newAdvanceOffsets.push_back(advanceOffsets[order[i]]);
-      }
-      auto newAdvanceOp = rewriter.create<triton::AdvanceOp>(
-          loc, newAdvanceResPtrTy, advanceOp.getPtr(), newAdvanceOffsets);
-      rewriter.replaceOp(advanceOp, newAdvanceOp);
+      rewriteUserWithNewOrder(user, rewriter, blkShapeI64, loc, order, orderSize);
     }
   }
 
