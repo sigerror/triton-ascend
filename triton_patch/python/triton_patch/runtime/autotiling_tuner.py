@@ -29,6 +29,7 @@ class AutoTilingTuner(Autotuner):
         rep=None,
         use_cuda_graph=False,
         do_bench=None,
+        auto_profile_dir=None,
         split_params=None,
         tiling_params=None,
         low_dims=None,
@@ -70,6 +71,7 @@ class AutoTilingTuner(Autotuner):
             rep,
             use_cuda_graph,
             do_bench,
+            auto_profile_dir,
         )
 
         if not configs:
@@ -187,6 +189,9 @@ class AutoTilingTuner(Autotuner):
                 f"Triton autotuning for function {self.base_fn.__name__} finished after "
                 f"{self.bench_time:.2f}s; best config selected: {self.best_config};"
             )
+
+        if not used_cached_result and self.auto_profile_dir is not None:
+            self._profile(*args, config=self.best_config, **kwargs)
         if config.pre_hook is not None:
             full_nargs = {**self.nargs, **kwargs, **config.all_kwargs()}
             config.pre_hook(full_nargs)

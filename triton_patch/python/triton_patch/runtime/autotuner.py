@@ -28,6 +28,7 @@ class Autotuner(KernelInterface):
         rep=None,
         use_cuda_graph=False,
         do_bench=None,
+        auto_profile_dir=None,
     ):
         """
         :param prune_configs_by: a dict of functions that are used to prune configs, fields:
@@ -100,6 +101,7 @@ class Autotuner(KernelInterface):
         self.num_warmups = warmup
         self.num_reps = rep
         self.use_cuda_graph = use_cuda_graph
+        self.auto_profile_dir = auto_profile_dir
 
         # If we got explicitly called via the old interface, raise a warning
         # and proceed with the old behavior.
@@ -166,6 +168,41 @@ class Autotuner(KernelInterface):
             return self.do_bench(kernel_call, quantiles=(0.5, 0.2, 0.8))
         except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as e:
             return [float("inf"), float("inf"), float("inf")]
+        
+    def _profile(self, *args, config, **meta):
+        from triton.testing import do_bench_npu
+
+        # check for conflicts, i.e. meta-parameters both provided
+        # as kwargs and by the autotuner
+        conflicts = meta.keys() & config.kwargs.keys()
+        if conflicts:
+            raise ValueError(f"Conflicting meta-parameters: {', '.join(conflicts)}."
+                             " Make sure that you don't re-define auto-tuned symbols.")
+        # augment meta-parameters with tunable ones
+        current = dict(meta, **config.all_kwargs())
+        full_nargs = {**self.nargs, **current}
+
+        def kernel_call():
+            if config.pre_hook:
+                config.pre_hook(full_nargs)
+            self.pre_hook(full_nargs)
+            try:
+                self.fn.run(
+                    *args,
+                    **current,
+                )
+            except Exception as e:
+                try:
+                    self.post_hook(full_nargs, exception=e)
+                finally:
+                    # Throw exception raised by `self.fn.run`
+                    raise
+
+            self.post_hook(full_nargs, exception=None)
+
+        do_bench_npu(
+            kernel_call, prof_dir=self.auto_profile_dir, keep_res=True
+        )
 
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
@@ -197,6 +234,9 @@ class Autotuner(KernelInterface):
         if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
             print(f"Triton autotuning for function {self.base_fn.__name__} finished after "
                   f"{self.bench_time:.2f}s; best config selected: {self.best_config};")
+
+        if not used_cached_result and self.auto_profile_dir is not None:
+            self._profile(*args, config=self.best_config, **kwargs)
         if config.pre_hook is not None:
             full_nargs = {**self.nargs, **kwargs, **config.all_kwargs()}
             config.pre_hook(full_nargs)
@@ -308,7 +348,7 @@ class Config:
 
 
 def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None,
-             pre_hook=None, post_hook=None, warmup=None, rep=None, use_cuda_graph=False, do_bench=None,
+             pre_hook=None, post_hook=None, warmup=None, rep=None, use_cuda_graph=False, do_bench=None, auto_profile_dir=None,
              split_params=None, tiling_params=None, low_dims=None, dual_reduction=False, persistent_reduction=False):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
@@ -363,6 +403,9 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     :type rep: int
     :param do_bench: a benchmark function to measure the time of each run.
     :type do_bench: lambda fn, quantiles
+    :param auto_profile_dir: a directory for storing the profiling result of the best config.
+        It will automatically profile the best configuration when the value is not None.
+    :type auto_profile_dir: str
     """
 
     def decorator(fn):
@@ -370,12 +413,13 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
             from .autotiling_tuner import AutoTilingTuner
             return AutoTilingTuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
                                    post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
-                                   use_cuda_graph=use_cuda_graph, split_params=split_params, tiling_params=tiling_params,
-                                   low_dims=low_dims, dual_reduction=dual_reduction, persistent_reduction=persistent_reduction)
+                                   use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_profile_dir,
+                                   split_params=split_params, tiling_params=tiling_params, low_dims=low_dims,
+                                   dual_reduction=dual_reduction, persistent_reduction=persistent_reduction)
         else:
             return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
                              post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
-                             use_cuda_graph=use_cuda_graph)
+                             use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_profile_dir)
 
     return decorator
 

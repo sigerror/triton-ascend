@@ -201,7 +201,8 @@ def collect_single(base_dir: str, key: str = None) -> float:
 
     return float('inf')
 
-def do_bench_npu(fn, warmup=5, active=30):
+
+def do_bench_npu(fn, warmup=5, active=30, prof_dir=None, keep_res=False):
     import torch
     import torch_npu
     from datetime import datetime, timezone
@@ -217,16 +218,20 @@ def do_bench_npu(fn, warmup=5, active=30):
     wait = 0
     repeat = 1
     total = skip_first + (wait + warmup + active) * repeat
-    process = multiprocessing.current_process()
-    pid = process.pid
-    process_name = process.name
-    timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
-    base_path = os.path.join(runtime.cache.get_home_dir(), ".triton", "profile_results")
-    torch_path = os.path.join(base_path, f"prof_{timestamp}_{process_name}-{pid}")
+
+    if prof_dir is not None:
+        torch_path = prof_dir
+    else:
+        process = multiprocessing.current_process()
+        pid = process.pid
+        process_name = process.name
+        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+        base_path = os.path.join(runtime.cache.get_home_dir(), ".triton", "profile_results")
+        torch_path = os.path.join(base_path, f"prof_{timestamp}_{process_name}-{pid}")
     with torch_npu.profiler.profile(
         activities=[
             torch_npu.profiler.ProfilerActivity.NPU
-            ],
+        ],
         schedule=torch_npu.profiler.schedule(wait=wait, warmup=warmup, active=active, repeat=repeat, skip_first=skip_first),
         on_trace_ready=torch_npu.profiler.tensorboard_trace_handler(torch_path),
         record_shapes=False,
@@ -234,7 +239,8 @@ def do_bench_npu(fn, warmup=5, active=30):
         with_stack=False,
         with_flops=False,
         with_modules=False,
-        experimental_config=experimental_config) as prof:
+        experimental_config=experimental_config,
+    ) as prof:
         stream.synchronize()
 
         for i in range(total):
@@ -244,11 +250,11 @@ def do_bench_npu(fn, warmup=5, active=30):
 
     time = collect_single(torch_path)
 
-    import shutil
-    if os.path.exists(torch_path):
-        shutil.rmtree(torch_path)
-    # TODO: use logging
-    # print("avg time = ", time, type(time))
+    if not keep_res:
+        import shutil
+        if os.path.exists(torch_path):
+            shutil.rmtree(torch_path)
+
     return time
 
 def assert_close(x, y, atol=None, rtol=None, err_msg=''):
