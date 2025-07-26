@@ -5,6 +5,7 @@ import test_common
 import torch
 import torch_npu
 
+
 @triton.jit
 def atomic_or(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
     xoffset = tl.program_id(0) * BLOCK_SIZE
@@ -20,7 +21,6 @@ def atomic_or(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr)
 
 @pytest.mark.parametrize('param_list',
                          [
-                            #  ['int64', (32, 32), 4],  # 社区不支持int64
                              ['int32', (32, 32), 2],
                              ['int16', (32, 32), 2],
                              ['int8', (16, 16), 4],
