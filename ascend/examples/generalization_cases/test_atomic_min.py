@@ -119,9 +119,9 @@ def test_atomic_min_3d(x_dtype_str, y_dtype_str, shape):
     if out_dtype == torch.bfloat16:
         out_dtype = torch.float32
     if out_dtype == torch.int8 or out_dtype == torch.int16 or out_dtype == torch.int32:
-        y = torch.full(shape, torch.iinfo(out_dtype).max, dtype=out_dtype).npu()
+        y = torch.full(shape, torch.iinfo(out_dtype).max, dtype=out_dtype)
     else:
-        y = torch.full(shape, float('inf'), dtype=out_dtype).npu()
+        y = torch.full(shape, float('inf'), dtype=out_dtype)
 
     y_tmp = y
     x1_ref = torch.minimum(y_tmp, x0)
