@@ -374,6 +374,7 @@ void init_triton_ir(py::module &&m) {
   py::class_<Attribute>(m, "attribute", py::module_local());
   py::class_<IntegerAttr, Attribute>(m, "integer_attr", py::module_local());
   py::class_<BoolAttr, Attribute>(m, "bool_attr", py::module_local());
+  py::class_<UnitAttr, Attribute>(m, "unit_attr", py::module_local());
 
   // Ops
   py::class_<OpState>(m, "OpState", py::module_local())
@@ -626,6 +627,9 @@ void init_triton_ir(py::module &&m) {
            [](TritonOpBuilder &self, int32_t value) {
              return self.getBuilder().getI32IntegerAttr(value);
            })
+      .def(
+          "get_unit_attr",
+          [](TritonOpBuilder &self) { return self.getBuilder().getUnitAttr(); })
       // Use arith.ConstantOp to create constants
       // Constants
       .def("get_int1",
@@ -1651,6 +1655,14 @@ void init_triton_ir(py::module &&m) {
            [](TritonOpBuilder &self, Value &ptr,
               std::vector<Value> &offsets) -> Value {
              return self.create<AdvanceOp>(ptr.getType(), ptr, offsets);
+           })
+      // Add an annotation
+      .def("create_annotation",
+           [](TritonOpBuilder &self, Value &ptr, const std::string &attrKey,
+              Attribute &attrVal) {
+             auto annotationOp = self.create<AnnotationOp>(ptr);
+             annotationOp->setAttr(self.getBuilder().getStringAttr(attrKey),
+                                   attrVal);
            });
 
   py::class_<PassManager>(m, "pass_manager", py::module_local())

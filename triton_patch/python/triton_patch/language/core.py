@@ -329,3 +329,11 @@ class parallel(range):
     def __init__(self, arg1, arg2=None, step=None, num_stages=None, loop_unroll_factor=None, bind_sub_block: bool = False):
         super().__init__(arg1, arg2, step, num_stages, loop_unroll_factor)
         self.bind_sub_block = bind_sub_block
+
+
+@builtin
+def compile_hint(ptr, hint_name, hint_val=None, _builder=None):
+    hint_name = _constexpr_to_value(hint_name)
+    assert isinstance(hint_name, str), f"hint name: {hint_name} is not string"
+    hint_val = _unwrap_if_constexpr(hint_val) if hint_val else hint_val
+    semantic.compile_hint(ptr, hint_name, hint_val, _builder)

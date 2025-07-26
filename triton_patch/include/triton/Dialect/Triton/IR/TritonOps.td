@@ -1283,4 +1283,24 @@ def TT_ExperimentalTensormapFenceproxyAcquireOp: TT_Op<
 }
 
 
+//
+// Annotation Op
+//
+def TT_AnnotationOp : TT_Op<"annotation", [Pure, MemoryEffects<[MemWrite]>]> {
+  let summary = "Annotate a tensor with key-value attribute pairs";
+  let description = [{
+    `tt.annotation` operation can be used to annotate a tensor with
+    key-value attribute pairs.
+
+    Example:
+    ```mlir
+    tt.annotation %target {key : val}
+    ```
+  }];
+  let arguments = (ins TT_Tensor:$src);
+  let assemblyFormat = [{
+    $src attr-dict `:` type($src)
+  }];
+}
+
 #endif // Triton_OPS

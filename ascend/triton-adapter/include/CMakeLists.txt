@@ -1,1 +1,2 @@
+add_subdirectory(TritonToAnnotation)
 add_subdirectory(TritonToLinalg)

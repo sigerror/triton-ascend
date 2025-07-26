@@ -74,6 +74,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         cmd_list = [
             triton_adapter_opt_path,
             src_path,
+            "--triton-to-annotation",
             f"--triton-to-linalg=global-kernel=false named-ops={named_ops}",
             "-o",
             dst_path,
