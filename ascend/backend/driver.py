@@ -1,6 +1,8 @@
 from pathlib import Path
 import tempfile
 import os
+import os.path
+import re
 import subprocess
 import sysconfig
 from typing import Optional
@@ -204,6 +206,74 @@ def make_npu_launcher_stub(src, debug=False):
                 return dump_manager.put(f.read(), so_name, binary=True)
         with open(so, "rb") as f:
             return so_cache_manager.put(f.read(), so_name, binary=True)
+
+
+def extract_device_print_code_from_cann():
+    from triton.backends.ascend.utils import _get_bisheng_path
+    ccec_compiler_bin_folder, _ = os.path.split(_get_bisheng_path())
+    ccec_compiler_folder, _ = os.path.split(ccec_compiler_bin_folder)
+    clang_version = os.listdir(os.path.join(ccec_compiler_folder, "lib/clang/"))[0]
+    ccelib_path = os.path.join(ccec_compiler_folder, f"lib/clang/{clang_version}/include/ccelib")
+
+    def read_header(header_path):
+        with open(os.path.join(ccelib_path, header_path), 'r') as f:
+            code = f.read()
+
+        # remove all #include "..."
+        lines = code.splitlines()
+        purged_lines = []
+        for line in lines:
+            normalized_line = ' '.join(line.split())
+            if not normalized_line.startswith('#include "'):
+                purged_lines.append(line)
+        code = '\n'.join(purged_lines)
+
+        # remove [aicore] functions
+        aicore_positions = []
+        for m in re.finditer('\[aicore\]', code):
+            aicore_positions.append(m.start())
+
+        def find_aicore_function_span(src, pos):
+            for i in range(pos - 1, -1, -1):
+                if src[i] == '}':  # this relies on that all [aicore] functions come after normal functions
+                    left = i + 1
+                    break
+            n = len(src)
+            brace_nest = 0
+            for j in range(pos, n, 1):
+                if src[j] == '{':
+                    brace_nest += 1
+                elif src[j] == '}':
+                    brace_nest -= 1
+                    if brace_nest == 0:
+                        right = j
+                        break
+            return left, right
+
+        new_code = ''
+        segment_start = 0
+        for pos in aicore_positions:
+            left, right = find_aicore_function_span(code, pos)
+            new_code += code[segment_start:left]
+            segment_start = right + 1
+        new_code += code[segment_start:]
+
+        # remove __gm__ and rename macros
+        new_code = new_code.replace('__gm__', ' ')
+        new_code = new_code.replace('__CCELIB_RT_ERROR_NONE', 'RT_ERROR_NONE')
+        new_code = new_code.replace('__CCELIB_RT_MEMORY_HBM', 'RT_MEMORY_HBM')
+        new_code = new_code.replace('__CCELIB_RT_MEMCPY_HOST_TO_DEVICE', 'RT_MEMCPY_HOST_TO_DEVICE')
+        new_code = new_code.replace('__CCELIB_RT_MEMCPY_DEVICE_TO_HOST', 'RT_MEMCPY_DEVICE_TO_HOST')
+        return new_code
+
+    # the following headers should be included in this order 
+    return '\n'.join([
+        read_header('common/common_impl.h'),
+        read_header('internal/debug_tunnel/payload.h'),
+        read_header('internal/debug_tunnel/payload_impl.h'),
+        read_header('internal/debug_tunnel/tunnel.h'),
+        read_header('internal/debug_tunnel/tunnel_impl.h')
+    ])
 
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
@@ -448,14 +518,12 @@ extern "C" {
 #include <stdbool.h>
 #include <string>
 #include <sys/syscall.h>
-{'#include <pybind11/pybind11.h>' if enable_device_print else ''}
-{'#include <pybind11/iostream.h>' if enable_device_print else ''}
 #include <vector>
 #define PY_SSIZE_T_CLEAN
 #include <Python.h>
 {'#include <torch_npu/csrc/framework/OpCommand.h>' if enable_taskqueue else ''}
 #include "experiment/runtime/runtime/rt.h"
-{'#include "device_print.h"' if enable_device_print else ''}
+{extract_device_print_code_from_cann() if enable_device_print else ''}
 
 #define TENSOR_KIND_INPUT 0
 #define TENSOR_KIND_OUTPUT 1
@@ -466,7 +534,6 @@ extern "C" {
 {cpp_device_pointer}
 
 static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, std::vector<std::vector<int64_t>> &tensorShapes, std::vector<int> &tensorKinds, {arg_decls}) {{
-  {'pybind11::scoped_ostream_redirect output;' if enable_device_print else ''}
   // only 1D parallelization is supported for NPU
   // Pointer type becomes flattend 1-D Memref tuple: base_ptr, data_ptr, offset, shape, stride
   // base_ptr offset shape and stride are not used, arbitrarily set for now
@@ -475,7 +542,7 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   {cpp_msprof_callback}
   {'auto launch_call = [=]()' if enable_taskqueue else ''} {{
     uint32_t blockNum = gridX * gridY * gridZ;
-    {'TTAscDebug::DebugTunnelData *DTData = TTAscDebug::Open(blockNum);' if enable_device_print else ''}
+    {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
     rtError_t ret;
     void *ffts_addr = NULL;
     uint32_t ffts_len; ret = rtGetC2cCtrlAddr((uint64_t*)&ffts_addr, &ffts_len);
@@ -508,7 +575,8 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     }};
     {cpp_msprof_call_before_launch}
     ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
-    {'TTAscDebug::Close(DTData, stream);' if enable_device_print else ''}
+    {'void *&stream_ref = const_cast<void*&>(stream);' if enable_device_print else ''}
+    {'cce::internal::DebugTunnel::Close(DTData, stream_ref);' if enable_device_print else ''}
     {cpp_msprof_call_after_launch}
     {'return ret;' if enable_taskqueue else ''}
    }};
