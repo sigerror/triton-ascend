@@ -641,6 +641,7 @@ def get_default_version():
         return version_file.read_text().strip()
     return "3.2.0"
 
+
 def get_version():
     version = os.environ.get("TRITON_VERSION", get_default_version()) + os.environ.get(
         "TRITON_WHEEL_VERSION_SUFFIX", ""
