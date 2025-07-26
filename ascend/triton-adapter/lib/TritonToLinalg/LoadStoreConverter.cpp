@@ -611,9 +611,16 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
         Value lhs = blockArgs[0];
         Value rhs = blockArgs[1];
         Value setValue = blockArgs[2];
-        Value cond = nestedBuilder.create<arith::CmpIOp>(nestedLoc,
-                                                        arith::CmpIPredicate::eq,
-                                                        lhs, rhs);
+        Value cond;
+        if (mlir::isa<mlir::FloatType>(lhs.getType())) {
+          cond = nestedBuilder.create<arith::CmpFOp>(nestedLoc,
+                                                     arith::CmpFPredicate::UEQ,
+                                                     lhs, rhs);
+        } else {
+          cond = nestedBuilder.create<arith::CmpIOp>(nestedLoc,
+                                                     arith::CmpIPredicate::eq,
+                                                     lhs, rhs);
+        }
         auto ifOp = nestedBuilder.create<scf::IfOp>(nestedLoc, TypeRange{setValue.getType()}, cond, true);
         {
           OpBuilder::InsertionGuard guard(nestedBuilder);
