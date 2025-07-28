@@ -347,3 +347,10 @@ rm -rf ~/.triton/dump
 ## 4. FAQ
 
 1. 目前triton-ascend中含有很多kernel运行时的参数和ascend npu性能无关，为了避免用户微调这些参数以期望达到性能提升的目的，在运行时增加了[WARNING]的提示，用户可以在观察运行时打印输出的log:"[WARNING] Please DO NOT tune arg xxx"，来避免对无效参数比如num_waprs等的微调。
+
+## 5 Triton+ 功能
+
+在开源triton的基础上，额外添加一些triton的语法，帮助使用者通过triton代码，跳过编译器的自动优化，
+手动影响后续的编译过程, 用于极致的性能调优。
+
+1. triton.language.multibuffer(tensor, buffer_size): 使用该接口后，可以对这个tensor同时进行读取和写入，增强计算的性能，但内存占用翻倍。
