@@ -215,7 +215,7 @@ def make_npu_launcher_stub(src, debug=False):
 
 def extract_device_print_code_from_cann():
     from triton.backends.ascend.utils import _get_bisheng_path
-    ccec_compiler_bin_folder, _ = os.path.split(_get_bisheng_path())
+    ccec_compiler_bin_folder, _ = os.path.split(os.path.realpath(_get_bisheng_path()))
     ccec_compiler_folder, _ = os.path.split(ccec_compiler_bin_folder)
     clang_version = os.listdir(os.path.join(ccec_compiler_folder, "lib/clang/"))[0]
     ccelib_path = os.path.join(ccec_compiler_folder, f"lib/clang/{clang_version}/include/ccelib")
