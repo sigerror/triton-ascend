@@ -14,6 +14,7 @@ DIR_BENCHMARK="benchmark"
 DAILY_LOG_DIR="/home/daily_log"
 TIMESTAMP=$(date +"%Y%m%d")
 LOG_ARCHIVE="test_flaggems_logs_${TIMESTAMP}.tar.gz"
+SUMMARY_FILE="${WORKSPACE}/ascend/examples/summary.txt"  # 新增：统计信息文件
 
 # 检查日志目录
 mkdir -p "$DAILY_LOG_DIR" || { echo "无法创建日志目录 $DAILY_LOG_DIR"; exit 1; }
@@ -22,6 +23,35 @@ mkdir -p "$DAILY_LOG_DIR" || { echo "无法创建日志目录 $DAILY_LOG_DIR"; e
 COUNTER_FILE=$(mktemp)
 LOCK_FILE="/tmp/op_test_run.lock"
 touch $LOCK_FILE
+
+# ===== 修改：改进的统计结果收集机制 =====
+# 使用文件存储统计结果
+STATS_DIR=$(mktemp -d)
+# 初始化设备统计文件
+for ((device_id=0; device_id < device_count; device_id++)); do
+    stats_file="${STATS_DIR}/device_${device_id}.stats"
+    echo "success=0" > "$stats_file"
+    echo "failure=0" >> "$stats_file"
+    echo "skipped=0" >> "$stats_file"
+    echo "error=0" >> "$stats_file"
+done
+
+# 原子更新统计
+record_stats() {
+    local device_id=$1
+    local status=$2  # success/failure/skipped/error
+    local stats_file="${STATS_DIR}/device_${device_id}.stats"
+
+    (
+        flock -x 20
+        # 读取当前值
+        current=$(grep "^${status}=" "$stats_file" | cut -d= -f2)
+        # 更新值
+        new_value=$((current + 1))
+        # 替换文件中的值
+        sed -i "s/^${status}=.*/${status}=${new_value}/" "$stats_file"
+    ) 20>"${stats_file}.lock"
+}
 
 # 任务队列管理函数
 init_task_queue() {
@@ -113,8 +143,8 @@ echo "使用设备数量: $device_count"
 echo "每设备线程数: $threads_per_device"
 echo "======================================"
 
-# 初始化性能计数器
-start_time=$SECONDS
+# 初始化性能计数器 - 修复开始时间显示问题
+start_time=$(date +%s)  # 使用Unix时间戳
 
 # 线程执行函数 - 正确性测试
 run_tests_thread() {
@@ -133,9 +163,28 @@ run_tests_thread() {
 
         # 执行正确性测试并记录时间
         start_op=$(date +%s)
-        pytest -m $task_name --ref cpu -sv &> "$log_file"
+        pytest -m $task_name --dist=loadfile --ref cpu -sv &> "$log_file"
         exit_code=$?
         duration=$(( $(date +%s) - start_op ))
+
+        # 根据退出码记录不同状态
+        case $exit_code in
+            0)
+                status="success"
+                ;;
+            1)
+                status="failure"
+                ;;
+            2)  # pytest跳过用例的退出码
+                status="skipped"
+                ;;
+            *)
+                status="error"
+                ;;
+        esac
+
+        # 记录统计结果
+        record_stats $device_id $status
 
         # 原子更新完成计数
         new_completed=$(update_progress)
@@ -174,6 +223,25 @@ run_benchmark_thread() {
         pytest -m $task_name --level core --record "$perf_file" &> "$log_file"
         exit_code=$?
         duration=$(( $(date +%s) - start_op ))
+
+        # 根据退出码记录不同状态
+        case $exit_code in
+            0)
+                status="success"
+                ;;
+            1)
+                status="failure"
+                ;;
+            2)  # pytest跳过用例的退出码
+                status="skipped"
+                ;;
+            *)
+                status="error"
+                ;;
+        esac
+
+        # 记录统计结果
+        record_stats $device_id $status
 
         # 原子更新完成计数
         new_completed=$(update_progress)
@@ -259,12 +327,97 @@ fi
 wait
 cleanup_tasks
 
+# ===== 修改：改进的统计信息汇总 =====
+total_success=0
+total_failure=0
+total_skipped=0
+total_error=0
+
+# 按设备汇总结果
+for ((device_id=0; device_id < device_count; device_id++)); do
+    stats_file="${STATS_DIR}/device_${device_id}.stats"
+
+    if [ -f "$stats_file" ]; then
+        # 从文件加载统计
+        d_success=$(grep '^success=' "$stats_file" | cut -d= -f2)
+        d_failure=$(grep '^failure=' "$stats_file" | cut -d= -f2)
+        d_skipped=$(grep '^skipped=' "$stats_file" | cut -d= -f2)
+        d_error=$(grep '^error=' "$stats_file" | cut -d= -f2)
+
+        total_success=$((total_success + d_success))
+        total_failure=$((total_failure + d_failure))
+        total_skipped=$((total_skipped + d_skipped))
+        total_error=$((total_error + d_error))
+
+        # 记录设备统计
+        echo "设备 $device_id 完成情况: $d_success 成功, $d_failure 失败, $d_skipped 跳过, $d_error 错误"
+    else
+        echo "警告: 设备 $device_id 的统计文件未找到"
+    fi
+done
+
+# 清理统计目录
+rm -rf "$STATS_DIR"
+
 # 计算总耗时
-total_time=$(( SECONDS - start_time ))
+total_time=$(( $(date +%s) - start_time ))  # 使用绝对时间计算总耗时
 hours=$(( total_time / 3600 ))
 minutes=$(( (total_time % 3600) / 60 ))
 seconds=$(( total_time % 60 ))
 time_str=$(printf "%02dh %02dm %02ds" $hours $minutes $seconds)
+
+# 计算平均耗时
+if [[ $total_ops -gt 0 ]]; then
+    completed_ops=$((total_success + total_failure + total_error))
+    if [[ $completed_ops -gt 0 ]]; then
+        avg_time=$((total_time / completed_ops))
+        avg_min=$((avg_time / 60))
+        avg_sec=$((avg_time % 60))
+        avg_str=$(printf "%02dm %02ds" $avg_min $avg_sec)
+    else
+        avg_str="N/A"
+    fi
+else
+    avg_str="N/A"
+fi
+
+# 生成统计信息摘要
+{
+    echo "===================== flaggems测试统计摘要 ====================="
+    echo "执行类型:       ${param^}"
+    echo "开始时间:       $(date -d @$start_time '+%Y-%m-%d %H:%M:%S')"
+    echo "结束时间:       $(date '+%Y-%m-%d %H:%M:%S')"
+    echo "测试日期:       $(date '+%Y-%m-%d')"
+    echo "总耗时:         $time_str"
+    echo "--------------------------------------------------------"
+    echo "总算子数:       $total_ops"
+    echo "成功用例数:     $total_success"
+    echo "失败用例数:     $total_failure"
+    echo "跳过用例数:     $total_skipped"
+    echo "错误用例数:     $total_error"
+    echo "完成用例数:     $((total_success + total_failure + total_error))"
+
+    if [[ $total_ops -gt 0 ]]; then
+        echo "完成率:         $(( (total_success + total_failure + total_error) * 100 / total_ops ))%"
+    else
+        echo "完成率:         N/A"
+    fi
+
+    if [[ $total_success -gt 0 ]] || [[ $total_failure -gt 0 ]] || [[ $total_error -gt 0 ]]; then
+        success_rate=$(( total_success * 100 / (total_success + total_failure + total_error) ))
+        echo "成功率:         ${success_rate}%"
+    else
+        echo "成功率:         N/A"
+    fi
+
+    echo "平均耗时/算子:   $avg_str"
+    echo "--------------------------------------------------------"
+    echo "设备数量:       $device_count"
+    echo "每设备线程数:   $threads_per_device"
+    echo "并行效率:       $(( (total_success + total_failure + total_error) * 100 / (device_count * threads_per_device * total_time) )) OPS/线程秒"
+    echo "========================================================"
+    echo ""
+} | tee -a $SUMMARY_FILE  # 追加到统计文件并同时输出到控制台
 
 # 归档所有日志文件
 log_dirs=($(find . -maxdepth 1 -type d -name "device_*_logs" 2>/dev/null))
@@ -284,32 +437,6 @@ else
     echo "警告：未找到任何日志目录，跳过归档"
 fi
 
-# 获取最终完成情况
-read completed total < <(get_progress 2>/dev/null || echo "0 $total_ops")
-
-# 计算平均耗时
-if [ $total -gt 0 ]; then
-    avg_time=$(( total_time * 1.0 / total | bc -l ))
-    avg_time_seconds=$(printf "%.0f" $avg_time)
-    avg_str=$(printf "%02d:%02d" $((avg_time_seconds / 60)) $((avg_time_seconds % 60)))
-else
-    avg_time=0
-    avg_str="N/A"
-fi
-
-# 输出统计信息
-echo -e "\n=============== 测试统计 ==============="
-echo "执行类型:       ${param^}"
-echo "总算子数:       $total"
-echo "完成算子数:     $completed"
-echo "使用设备数:     $device_count"
-echo "每设备线程数:   $threads_per_device"
-echo "总耗时:         $time_str"
-echo "平均耗时/算子:   $avg_str (mm:ss)"
-echo "日志位置:       $DAILY_LOG_DIR/$LOG_ARCHIVE"
-echo "开始时间:       $(date -d @$start_time '+%Y-%m-%d %H:%M:%S')"
-echo "结束时间:       $(date '+%Y-%m-%d %H:%M:%S')"
-echo "========================================="
-
 echo "所有算子测试执行完成!"
+echo "详细统计信息已追加到: $SUMMARY_FILE"
 exit 0

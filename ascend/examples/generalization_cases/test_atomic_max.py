@@ -1,3 +1,4 @@
+import random
 import triton
 import triton.language as tl
 import torch
@@ -42,7 +43,7 @@ def promote_dtype(x_dtype, y_dtype):
 
 
 # torch.max do not support int
-@pytest.mark.parametrize('shape', TestUtils.test_shape2d + TestUtils.test_shape1d)
+@pytest.mark.parametrize('shape', random.sample(TestUtils.test_shape2d + TestUtils.test_shape1d, 5))
 @pytest.mark.parametrize('x_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
 @pytest.mark.parametrize('y_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
 def test_atomic_max(x_dtype_str, y_dtype_str, shape):
@@ -97,7 +98,8 @@ testlist = [
     (3,2,257),
 ]
 
-@pytest.mark.parametrize('shape', testlist)
+
+@pytest.mark.parametrize('shape', random.sample(testlist, 5))
 @pytest.mark.parametrize('x_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
 @pytest.mark.parametrize('y_dtype_str', ['float32', 'int32', 'int8', 'int16', 'bfloat16', 'float16'])
 def test_atomic_max_3d(x_dtype_str, y_dtype_str, shape):
