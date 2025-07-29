@@ -64,7 +64,6 @@ class NPUUtils(object):
 
 class NPULauncher(object):
     def __init__(self, src, metadata):
-        self.enable_msprof_register_tensor = os.getenv("TRITON_REGISTER_TENSOR_MSPROF", 'false').lower() in ('true', '1')
         debug_mode = metadata.debug
         workspace_size = int(metadata.workspace_size) \
                               if hasattr(metadata, 'workspace_size') else -1
@@ -89,18 +88,8 @@ class NPULauncher(object):
         self.launch = getattr(mod, "launch")
 
     def __call__(self, *args, **kwargs):
-        if (self.enable_msprof_register_tensor):
-            import torch
-            tensor_params = [arg for arg in args if isinstance(arg, torch.Tensor)]
-            tensor_params_shape = []
-            for t in tensor_params:
-                tensor_params_shape.append([s for s in t.shape])
-            # args[5] must be the packed metadata.
-            # Check the launch wrapper in which PyArg_ParseTuple specifies the ordering of args
-            args[5]['tensor_params_shape'] = tensor_params_shape
-        profiler_registered = self.launch(*args, **kwargs)
-        import triton
-        triton.backends.ascend.utils.TRITON_PROFILER_REGISTERED = True if profiler_registered == 1 else False
+        self.launch(*args, **kwargs)
+
 
 class NPUDriver(DriverBase):
     def __init__(self):
@@ -418,10 +407,7 @@ extern "C" {
 """
 
     cpp_msprof_callback = """
-  if (!(*profilerRegistered)) {
-     MsprofRegisterCallback(8, ProfCtrlHandle);      // 8 - CCE defined in msprof headerfile slog.h
-     *profilerRegistered = 1;
-  }
+  MsprofRegisterCallback(8, ProfCtrlHandle);      // 8 - CCE defined in msprof headerfile slog.h
 """
 
     cpp_msprof_call_before_launch = """
@@ -431,16 +417,14 @@ extern "C" {
     unsigned int threadId = 0;
     char* _kernelName = const_cast<char*>(name.c_str());
     size_t length = name.length();
-    // FIXME: to avoid bug in msprof, currently we disable these checks
-    // if (__MsprofFlagL0 || __MsprofFlagL1)
+    if (__MsprofFlagL0 || __MsprofFlagL1)
     {
       beginTime = MsprofSysCycleTime();
     }
 """
 
     cpp_msprof_call_after_launch = f"""
-    // FIXME: to avoid bug in msprof, currently we disable these checks
-    // if (__MsprofFlagL0 || __MsprofFlagL1)
+    if (__MsprofFlagL0 || __MsprofFlagL1)
     {{
       endTime = MsprofSysCycleTime();
       opNameHashID = MsprofGetHashId(_kernelName, length);
@@ -456,8 +440,7 @@ extern "C" {
       info.itemId = opNameHashID;
       MsprofReportApi(false, &info);
     }}
-    // FIXME: to avoid bug in msprof, currently we disable these checks
-    // if (__MsprofFlagL1)
+    if (__MsprofFlagL1)
     {{
       MsprofCompactInfo nodeBasicInfo;
       nodeBasicInfo.level = MSPROF_REPORT_NODE_LEVEL;
@@ -470,8 +453,8 @@ extern "C" {
       nodeBasicInfo.data.nodeBasicInfo.taskType = {task_type};
       nodeBasicInfo.data.nodeBasicInfo.blockDim = blockNum;
       MsprofReportCompactInfo(0, static_cast<void *>(&nodeBasicInfo), sizeof(MsprofCompactInfo));
-    }}
-    {{
+
+      // Report tensor info
       int max_tensors_num = tensorShapes.size() < MSPROF_GE_TENSOR_DATA_NUM ? tensorShapes.size() : MSPROF_GE_TENSOR_DATA_NUM;
       MsprofAdditionalInfo tensorInfo;
       tensorInfo.level = MSPROF_REPORT_NODE_LEVEL;
@@ -538,7 +521,7 @@ extern "C" {
 
 {cpp_device_pointer}
 
-static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, int *profilerRegistered, std::vector<std::vector<int64_t>> &tensorShapes, std::vector<int> &tensorKinds, {arg_decls}) {{
+static void _launch(const char* kernelName, const void* func, rtStream_t stream, int gridX, int gridY, int gridZ, std::vector<std::vector<int64_t>> &tensorShapes, std::vector<int> &tensorKinds, {arg_decls}) {{
   // only 1D parallelization is supported for NPU
   // Pointer type becomes flattend 1-D Memref tuple: base_ptr, data_ptr, offset, shape, stride
   // base_ptr offset shape and stride are not used, arbitrarily set for now
@@ -606,6 +589,32 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   return;
 }}
 
+// Extract tensor shape from PyObject
+static std::vector<int64_t> _get_tensor_shape(PyObject *tensor) {{
+  std::vector<int64_t> shape;
+
+  // Calling tensor.size()
+  PyObject* size_result = PyObject_CallMethod(tensor, "size", NULL);
+  if (!size_result) {{
+    return shape;
+  }}
+  // Using PySequence_Fast to improve access efficiency
+  PyObject* seq = PySequence_Fast(size_result, "Expected a sequence from tensor.size()");
+  if (seq) {{
+    Py_ssize_t len = PySequence_Fast_GET_SIZE(seq);
+    PyObject** items = PySequence_Fast_ITEMS(seq);
+    for (Py_ssize_t i = 0; i < len; ++i) {{
+      PyObject* dim = items[i];
+      if (PyLong_Check(dim)) {{
+        shape.push_back(PyLong_AsLong(dim));
+      }}
+    }}
+  }}
+  Py_DECREF(seq);
+  Py_DECREF(size_result);
+  return shape;
+}}
+
 static PyObject* launch(PyObject* self, PyObject* args) {{
   int gridX, gridY, gridZ;
   rtStream_t stream;
@@ -614,6 +623,7 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   PyObject *launch_metadata = NULL;
   PyObject *launch_enter_hook = NULL;
   PyObject *launch_exit_hook = NULL;
+  std::vector<std::vector<int64_t>> tensorShapes;
   {' '.join([f"{_extracted_ty(ty)} _arg{i}; " for i, ty in signature.items()])}
   if(!PyArg_ParseTuple(
       args, \"{format}\",
@@ -625,6 +635,10 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
     ) {{
     return NULL;
   }}
+  if (__MsprofFlagL1)
+  {{
+    {LINE_CHANGE_CHAR.join(f"tensorShapes.push_back(_get_tensor_shape(_arg{i}));" for i, ty in signature.items() if ty[0] == "*")}
+  }}
 
   if (launch_enter_hook != Py_None && !PyObject_CallObject(launch_enter_hook, args)) {{
     return NULL;
@@ -633,26 +647,6 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   // get kernel_name
   PyObject *kernelNameObj = PyDict_GetItemString(packedMetadata, "kernel_name");
   const char *kernelName = PyUnicode_AsUTF8(kernelNameObj);
-  PyObject *profilerRegisteredObj = PyDict_GetItemString(packedMetadata, "profiler_registered");
-  int profilerRegistered = PyObject_IsTrue(profilerRegisteredObj);
-  //
-  std::vector<std::vector<int64_t>> tensorShapes;
-  PyObject *shapeList = PyDict_GetItemString(packedMetadata, "tensor_params_shape");
-  if (shapeList) {{
-    PyObject *dimList = NULL;
-    int nDims = 0;
-    int nShapes = PyObject_Size(shapeList);
-    for (int i = 0; i < nShapes; i++) {{
-      dimList = PySequence_GetItem(shapeList, i);
-      nDims = PyObject_Size(dimList);
-      tensorShapes.push_back(std::vector<int64_t>());
-      PyObject *dimItem = NULL;
-      for (int j = 0; j < nDims; j++) {{
-        dimItem = PySequence_GetItem(dimList, j);
-        tensorShapes[i].push_back(PyLong_AsLong(dimItem));
-      }}
-    }}
-  }}
   // get tensor_kinds
   std::vector<int> tensorKinds;
   PyObject *tensorKindList = PyDict_GetItemString(packedMetadata, "tensor_kinds");
@@ -666,15 +660,14 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
 
   // raise exception asap
   {"; ".join([f"DevicePtrInfo ptr_info{i} = getPointer(_arg{i}, {i}); if (!ptr_info{i}.valid) return NULL;" if ty[0]=="*" else "" for i, ty in signature.items()])};
-  _launch(kernelName, function, stream, gridX, gridY, gridZ, &profilerRegistered, tensorShapes, tensorKinds, {', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}" for i, ty in signature.items())});
+  _launch(kernelName, function, stream, gridX, gridY, gridZ, tensorShapes, tensorKinds, {', '.join(f"ptr_info{i}.dev_ptr" if ty[0]=="*" else f"_arg{i}" for i, ty in signature.items())});
   if (PyErr_Occurred()) {{
     return NULL;
   }}
   if (launch_exit_hook != Py_None && !PyObject_CallObject(launch_exit_hook, args)) {{
     return NULL;
   }}
-
-  return Py_BuildValue("I", profilerRegistered);
+  Py_RETURN_NONE;
 }}
 
 static PyMethodDef ModuleMethods[] = {{

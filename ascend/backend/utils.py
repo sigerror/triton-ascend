@@ -10,8 +10,6 @@ from pathlib import Path
 
 import pybind11
 
-TRITON_PROFILER_REGISTERED = False
-
 
 def downgrade_llir(llir):
     llir = _downgrade_mem_attrs(llir)

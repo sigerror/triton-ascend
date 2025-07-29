@@ -209,23 +209,50 @@ def __get_metadata_attr_by_callback(lib, postfix: str, metadata, meta_key: str):
         metadata[meta_key] = callback_func()
 
 
-def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
+def _parse_linalg_metadata(linalg: str, metadata: dict):
+    """
+    Parse Linalg IR to extract metadata required for NPU compilation.
+    Extracts and updates the following fields in metadata:
+      - mix_mode
+      - kernel_name
+      - tensor_kinds
+      - shared (currently hardcoded)
+      - name (combined kernel_name and mix_mode)
+
+    Additionally, removes the mix_mode attribute from the IR.
+    """
+    # --- Regular expressions and examples ---
+
+    # Example: mix_mode = "aiv" -> aiv
+    MIX_MODE_REGEX = r'mix_mode\s*=\s*"([^"]+)"'
+
+    # Example: func.func @gather_sorted_kernel(%arg0: ...) -> gather_sorted_kernel
+    KERNEL_NAME_REGEX = r"func\.func\s+@(\w+)"
+
+    # Example: %arg1: memref<?xf32> {tt.divisibility = 16 : i32, tt.tensor_kind = 0 : i32} -> ('1', '0')
+    TENSOR_KIND_REGEX = r'%arg(\d+):[^,)]*?\{[^}]*?tt\.tensor_kind\s*=\s*([^:\s}]+)\s*:[^}]*?\}'
+
+    # Example removal:   ', mix_mode = "aiv"' → ''
+    REMOVE_MIX_MODE_REGEX = r', mix_mode\s*=\s*"[^"]*"'
+
     # Note: Compiled Kernel requires to estimate size of shared memory to occupy
     # Currently, NPU backend does not limit on shared memory
     metadata["shared"] = 1
     # the mix mode is also encoded into metadata['name'] for runtime to distinguish
-    metadata["mix_mode"] = re.search(r'mix_mode\s*=\s*"([^"]+)"', linalg).group(1)
-    metadata["kernel_name"] = re.search(r"func\.func\s+@(\w+)", linalg).group(1)
+    metadata["mix_mode"] = re.search(MIX_MODE_REGEX, linalg).group(1)
+    metadata["kernel_name"] = re.search(KERNEL_NAME_REGEX, linalg).group(1)
     # Use while space to split kernel_name and mix_mode.
     # Check the function load_binary in npu_driver.py.
     metadata["name"] = metadata["kernel_name"] + " " + metadata["mix_mode"]
+    # Parse all tensor kinds from arguments
+    metadata["tensor_kinds"] = [int(kind) for _, kind in re.findall(TENSOR_KIND_REGEX, linalg)]
     # remove the mix_mode attribute
-    # tt.tensor_kind = <int> : i32 
-    tensor_kinds = []
-    for _, tensor_kind in re.findall(r'%arg(\d+):[^,)]*?\{[^}]*?tt\.tensor_kind\s*=\s*([^:\s}]+)\s*:[^}]*?\}', linalg):
-        tensor_kinds.append(int(tensor_kind))
-    metadata["tensor_kinds"] = tensor_kinds
-    linalg = re.sub(r', mix_mode\s*=\s*"[^"]*"', "", linalg)
+    linalg = re.sub(REMOVE_MIX_MODE_REGEX, "", linalg)
+    return linalg, metadata
+
+
+def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
+    linalg, metadata = _parse_linalg_metadata(linalg, metadata)
     with tempfile.TemporaryDirectory() as tmpdir:
         ttadapter_path = os.path.join(tmpdir, "kernel.ttadapter.mlir")
         Path(ttadapter_path).write_text(linalg)
@@ -394,8 +421,6 @@ class AscendBackend(BaseBackend):
         return options
 
     def pack_metadata(self, metadata):
-        from triton.backends.ascend.utils import TRITON_PROFILER_REGISTERED
-
         # collect necessary metadata to launch kernels
         # TORCHINDUCTOR_UNIQUE_KERNEL_NAMES=1 could set unique name.
         # Get this name as the kernel_name to CANN runtime.
@@ -417,7 +442,6 @@ class AscendBackend(BaseBackend):
             "kernel_name": kernel_name,
             "hash": metadata.hash,
             "debug": metadata.debug,
-            "profiler_registered": TRITON_PROFILER_REGISTERED,
             "tensor_kinds": metadata.tensor_kinds,
         }
 
