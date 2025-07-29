@@ -214,7 +214,7 @@ python3 01-vector-add.py
 
 # 6. Triton算子性能调优
 
-triton autotune性能配置说明参考本仓库的 docs\sources\getting-started\tutorials\06-autotune.md
+[Triton Ascend autotune 性能调优说明](./docs/sources/getting-started/tutorials/06-autotune.md)
 
 # 7.当前支持的Ascend设备
 
