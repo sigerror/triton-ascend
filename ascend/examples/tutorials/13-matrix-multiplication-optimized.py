@@ -2,6 +2,13 @@ import torch
 import torch_npu
 import triton
 import triton.language as tl
+import triton.runtime.driver as driver
+
+
+# get device properties of npu
+def get_npu_properties():
+    device = torch.npu.current_device()
+    return driver.active.utils.get_device_properties(device)
 
 
 @triton.jit
@@ -67,7 +74,7 @@ def matmul_kernel(
             pid, NUM_BLOCKS, num_cores
         ):
             #8 * 8 对角线分核代码实现 
-            curThresholdM = BLOCK_TRESHHOLD if block_idx < (NUM_BLOCKS_M // BLOCK_TRESHHOLD * BLOCK_TRESHHOLD) * NUM_BLOCKS_N else NUM_BLOCKS_M % 8
+            curThresholdM = BLOCK_TRESHHOLD if block_idx < (NUM_BLOCKS_M // BLOCK_TRESHHOLD * BLOCK_TRESHHOLD) * NUM_BLOCKS_N else NUM_BLOCKS_M % BLOCK_TRESHHOLD
             curThresholdM_thresholdN = curThresholdM * BLOCK_TRESHHOLD
             curThresholdN = BLOCK_TRESHHOLD if block_idx % (NUM_BLOCKS_N * BLOCK_TRESHHOLD) < (curThresholdM * NUM_BLOCKS_N) // curThresholdM_thresholdN * curThresholdM_thresholdN else NUM_BLOCKS_N % BLOCK_TRESHHOLD
             localRelativeBlock = block_idx % (BLOCK_TRESHHOLD * NUM_BLOCKS_N) % (BLOCK_TRESHHOLD * curThresholdM)
@@ -162,8 +169,7 @@ def triton_matmul(
     BLOCK_N = 256
     BLOCK_K = 256
     
-    #此处应当根据芯片型号选择对应的num_cores, 如910B3具有20个cube计算核心
-    num_cores = 20
+    num_cores = get_npu_properties()["num_aicore"]
     NUM_BLOCKS_N = triton.cdiv(n, BLOCK_N)
     NUM_BLOCKS_M = triton.cdiv(m, BLOCK_M)
     
