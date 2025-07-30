@@ -593,6 +593,11 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
 static std::vector<int64_t> _get_tensor_shape(PyObject *tensor) {{
   std::vector<int64_t> shape;
 
+  // Early return if tensor is None or null
+  if (!tensor || tensor == Py_None) {{
+    return shape;
+  }}
+
   // Calling tensor.size()
   PyObject* size_result = PyObject_CallMethod(tensor, "size", NULL);
   if (!size_result) {{
@@ -637,7 +642,12 @@ static PyObject* launch(PyObject* self, PyObject* args) {{
   }}
   if (__MsprofFlagL1)
   {{
-    {LINE_CHANGE_CHAR.join(f"tensorShapes.push_back(_get_tensor_shape(_arg{i}));" for i, ty in signature.items() if ty[0] == "*")}
+    {
+      LINE_CHANGE_CHAR.join(
+        f"{{ auto tmp = _get_tensor_shape(_arg{i}); if (!tmp.empty()) tensorShapes.push_back(tmp); }}"
+        for i, ty in signature.items() if ty[0] == "*"
+      )
+    }
   }}
 
   if (launch_enter_hook != Py_None && !PyObject_CallObject(launch_enter_hook, args)) {{
