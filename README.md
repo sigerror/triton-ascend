@@ -229,6 +229,10 @@ python3 01-vector-add.py
 
 [Triton Ascend 当前支持的开源算子仓算子列表](./docs/OPLIST.md)
 
-# 10. 安全声明
+# 10. 算子迁移指南
+
+[算子迁移指南](./docs/sources/programming-guide/migration.md)
+
+# 11. 安全声明
 
 [Triton Ascend 安全声明](./SECURITYNOTE.md)
