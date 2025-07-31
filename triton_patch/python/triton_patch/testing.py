@@ -207,7 +207,10 @@ def do_bench_npu(fn, warmup=5, active=30, prof_dir=None, keep_res=False):
     import torch_npu
     from datetime import datetime, timezone
 
-    stream = torch.npu.current_stream()
+    # warmup kernel
+    fn()
+    torch.npu.synchronize()
+
     experimental_config = torch_npu.profiler._ExperimentalConfig(
         aic_metrics=torch_npu.profiler.AiCMetrics.PipeUtilization,
         profiler_level=torch_npu.profiler.ProfilerLevel.Level1,
@@ -241,13 +244,11 @@ def do_bench_npu(fn, warmup=5, active=30, prof_dir=None, keep_res=False):
         with_modules=False,
         experimental_config=experimental_config,
     ) as prof:
-        stream.synchronize()
-
-        for i in range(total):
+        for _ in range(total):
             fn()
             prof.step()
-        stream.synchronize()
 
+    torch.npu.synchronize()
     time = collect_single(torch_path)
 
     if not keep_res:
