@@ -122,7 +122,7 @@
 
 - trans: triton.trans(x, dims)，不支持dims=[2, 1 , 0]。
 
-- device_print: 需要增加2个环境变量，TRITON_DEVICE_PRINT=1，TRITON_ENABLE_TASKQUEUE=0。**TRITON_ENABLE_TASKQUEUE=0可能造成程序运行不稳定，建议仅临时使用。**
+- device_print: 需要增加1个环境变量，TRITON_DEVICE_PRINT=1。
 
 - atomic_add: 昇腾不支持atomic_add实现多核add+保存中间结果，需要修改成普通add来保存中间结果
 
