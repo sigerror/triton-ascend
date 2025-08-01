@@ -21,7 +21,11 @@ from triton.backends.ascend.utils import (
     _get_triton_adapter_opt_path,
     _is_ascend_sanitizer_enabled,
     _is_debug_line_info_disabled,
+    _is_auto_map_parallel_blocks_enabled,
     downgrade_llir,
+)
+from triton.backends.ascend.driver import (
+    NPUUtils
 )
 from triton.backends.compiler import (
     AttrsDescriptor,
@@ -269,15 +273,20 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
             bishengir_hivm_opt = "--enable-hivm-compile=true"
         bin_path = os.path.join(tmpdir, bin_file_with_ext)
         callback_path = os.path.join(tmpdir, "libkernel.so")
+        _compile_option_list = []
+        _compile_option_list += [
+            f"--target={NPUUtils().get_arch()}",
+        ]
         multibuffer = metadata["multibuffer"]
-        _compile_option_list = [
+        _compile_option_list += [
             f"--enable-auto-multi-buffer={multibuffer}",
         ]
-
         if _is_ascend_sanitizer_enabled():
             _compile_option_list += ["--enable-sanitizer=true"]
         if not _is_debug_line_info_disabled():
             _compile_option_list += ["--enable-debug-info=true"]
+        if _is_auto_map_parallel_blocks_enabled():
+            _compile_option_list += ["--enable-auto-blockify-loop"]
         npu_compiler_path = _get_npucompiler_path()
         if npu_compiler_path.endswith("bishengir-compile"):
             _compile_option_list += [

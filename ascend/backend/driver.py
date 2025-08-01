@@ -11,7 +11,12 @@ import hashlib
 from triton.runtime.cache import get_cache_manager, get_dump_manager
 from triton.backends.driver import DriverBase
 from triton.backends.compiler import GPUTarget
-from triton.backends.ascend.utils import _build_npu_ext, _check_cxx11_abi, convert_sigtype_to_int
+from triton.backends.ascend.utils import (
+    _build_npu_ext,
+    _check_cxx11_abi,
+    convert_sigtype_to_int,
+    _is_auto_map_parallel_blocks_enabled
+)
 
 class NPUUtils(object):
     def __new__(cls):
@@ -50,7 +55,7 @@ class NPUUtils(object):
         # fetch available memory at runtime
         num_aic = self.get_aicore_num()
         num_aiv = num_aic * 2
-        return {"max_shared_mem" : 1, "num_aicore" : num_aic, "num_vectorcore" : num_aiv}
+        return {"max_shared_mem": 1, "num_aicore": num_aic, "num_vectorcore": num_aiv}
 
     @functools.lru_cache()
     def get_arch(self):
@@ -61,6 +66,11 @@ class NPUUtils(object):
     def get_aicore_num(self):
         # temporarily return empty arch descriptor
         return self.npu_utils_mod.get_aicore_num()
+
+    @functools.lru_cache()
+    def get_aivector_core_num(self):
+        return self.get_device_properties("npu")["num_vectorcore"]
+
 
 class NPULauncher(object):
     def __init__(self, src, metadata):
@@ -159,6 +169,7 @@ class NPUDriver(DriverBase):
         import torch
         cache_size = 192 * 1024 * 1024
         return torch.empty(cache_size // 4, dtype=torch.int, device='npu')
+
 
 def make_npu_launcher_stub(src, debug=False):
     """
@@ -273,6 +284,7 @@ def extract_device_print_code_from_cann():
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
 def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val):
     import os
+
     def _ty_to_cpp(ty):
         if ty[0] == '*':
             return "void*"
@@ -333,10 +345,16 @@ def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, loc
 
     grid_info = {'X': 'i32', 'Y': 'i32', 'Z': 'i32'}
 
-    enable_device_print = os.getenv("TRITON_DEVICE_PRINT", 'false').lower() in ('true', '1')
-    enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
+    enable_device_print = os.getenv(
+        "TRITON_DEVICE_PRINT", 'false').lower() in ('true', '1')
+    enable_taskqueue = os.getenv(
+        "TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
+    enable_auto_map_parallel_blocks = _is_auto_map_parallel_blocks_enabled()
+    npu_utils = NPUUtils()
+    num_physical_blocks = npu_utils.get_aivector_core_num(
+    ) if mix_mode == "aiv" else npu_utils.get_aicore_num()
     task_type = "MSPROF_GE_TASK_TYPE_AIV" if mix_mode == "aiv" else "MSPROF_GE_TASK_TYPE_AI_CORE"
-    LINE_CHANGE_CHAR = chr(10) # it is \n
+    LINE_CHANGE_CHAR = chr(10)  # it is \n
 
     cpp_device_pointer = """
 typedef struct _DevicePtrInfo {
@@ -529,6 +547,7 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   name.append(kernelName);
   {'auto launch_call = [=]()' if enable_taskqueue else ''} {{
     uint32_t blockNum = gridX * gridY * gridZ;
+    {'blockNum = std::min(blockNum, (uint32_t)' + str(num_physical_blocks) + ');' if enable_auto_map_parallel_blocks else ''}
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
     rtError_t ret;
     void *ffts_addr = NULL;

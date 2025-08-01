@@ -176,6 +176,10 @@ def _is_debug_line_info_disabled() -> bool:
     return os.getenv("TRITON_DISABLE_LINE_INFO", "true").lower() in ("true", "1")
 
 
+def _is_auto_map_parallel_blocks_enabled() -> bool:
+    return os.getenv("TRITON_ALL_BLOCKS_PARALLEL", "false").lower() in ("true", "1")
+
+
 def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) -> str:
     suffix = sysconfig.get_config_var("EXT_SUFFIX")
     so_path = os.path.join(src_dir, f"{obj_name}{suffix}")
