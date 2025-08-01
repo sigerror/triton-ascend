@@ -623,7 +623,7 @@ from .triton_patch.language.core import (
     parallel,
     compile_hint,
 )
-from .triton_patch.language.standard import flip, sigmoid, softmax
+from .triton_patch.language.standard import flip, sigmoid, softmax, isfinited, finitef, rint, atan2
 from .triton_patch.language.math import (
     umulhi,
     exp,
@@ -744,6 +744,10 @@ language.math.atan2 = language.extra.ascend.libdevice.atan2
 language.math.div_rz = language.extra.ascend.libdevice.div_rz
 language.math.fmod = language.extra.ascend.libdevice.fmod
 language.math.trunc = language.extra.ascend.libdevice.trunc
+language.math.finitef = finitef
+language.math.isfinited = isfinited
+language.math.rint = rint
+language.math.atan2 = atan2
 language.extra.ascend.libdevice.umulhi = language.math.umulhi
 language.extra.ascend.libdevice.exp = language.math.exp
 language.extra.ascend.libdevice.exp2 = language.math.exp2
