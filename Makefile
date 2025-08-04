@@ -32,6 +32,8 @@ OBSUTIL_TAR                 := obsutil.tar.gz
 OBSUTIL_URL                 := https://obs-community.obs.cn-north-1.myhuaweicloud.com/obsutil/current/obsutil_linux_$(PLATFORM_NAME).tar.gz
 OBSUTIL_CONFIG              := ~/.obsutilconfig
 TRITON_WHL                  := dist/triton_ascend-*.whl
+NINJA_TAR                   := $(shell if [ "`uname -m`" = "aarch64" ]; then echo "ninja-linux-aarch64"; else echo "ninja-linux"; fi)
+NINJA_URL                   := https://github.com/ninja-build/ninja/releases/download/v1.13.1/$(NINJA_TAR).zip
 IS_MANYLINUX                ?= False
 PYPI_URL                    ?= testpypi
 TRITON_WHEEL_VERSION_SUFFIX ?= rc3
@@ -94,12 +96,12 @@ triton: upload-triton ## Build and upload Triton wheel to OBS
 upload-pypi: $(PYPI_CONFIG) install-deps ## Build and upload Triton wheel to PyPI
 	for PY in python3.9 python3.10 python3.11; do \
 		echo "Building wheel for $$PY..."; \
-		# Should provided by setup.py
 		rm -rf build dist; \
 		make package PYTHON=$$PY IS_MANYLINUX=True; \
 		WHEEL=$$(ls dist/*.whl); \
 		echo "Uploading $$WHEEL to $(PYPI_URL)..."; \
-		twine upload --repository $(PYPI_URL) --skip-existing $$WHEEL; \
+		$$PY -m twine upload --repository $(PYPI_URL) $$WHEEL; \
+		[[ $$? -ne 0 ]] && exit 1; \
 		rm -f .req_dev_installed; \
 	done
 
@@ -298,7 +300,12 @@ ifeq ($(OS_ID),ubuntu)
 	@python3 -m pip install cmake ninja
 else ifeq ($(OS_ID),almalinux)
 	@echo "Installing dependencies for AlmaLinux..."
-	dnf install --assumeyes clang lld cmake ccache ninja-build git
+	dnf install --assumeyes clang lld cmake ccache git
+
+	# In AlmaLinux, the ninja version provided by dnf is too low.
+	curl -Lo $(NINJA_TAR).zip $(NINJA_URL)
+	unzip $(NINJA_TAR).zip && install -m 755 ninja /usr/local/bin/
+	rm -f $(NINJA_TAR).zip ninja
 else
 	@echo "Unsupported OS: $(OS_ID)"
 	exit 1
@@ -350,11 +357,9 @@ $(PYPI_CONFIG):
 		echo "Please set PASSWORD environment variable before uploading to $(PYPI_URL)."; \
 		exit 1; \
 	fi
-	@cat > $(PYPI_CONFIG) <<EOF
-[pypi]
-  username = __token__
-  password = $$PASSWORD
-EOF
+	@echo "[$(PYPI_URL)]"         >  $@
+	@echo "  username = __token__" >> $@
+	@echo "  password = $$PASSWORD" >> $@
 
 
 # ======================
