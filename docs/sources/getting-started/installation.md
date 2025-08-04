@@ -54,10 +54,10 @@ pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6
 
 ### 安装torch_npu
 
-当前配套的torch_npu版本为2.6.0rc1版本。
+当前配套的torch_npu版本为2.6.0版本。
 
 ```bash
-pip install torch_npu==2.6.0rc1
+pip install torch_npu==2.6.0
 ```
 
 ## 源代码安装 Triton-Ascend
