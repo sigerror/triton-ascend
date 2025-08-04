@@ -2,36 +2,40 @@
 # Run `make help` before using.
 
 # Configurable variables
-PYTHON       ?= python3
-PYTEST       := $(PYTHON) -m pytest
-NUM_PROCS    ?= $(shell nproc)
-OS_ID        := $(shell . /etc/os-release && echo $$ID)
-ARCH         := $(shell uname -i)
-ARCH_NAME    := $(subst x86_64,x64,$(subst aarch64,arm64,$(ARCH)))
-PLATFORM_NAME := $(subst x86_64,amd64,$(subst aarch64,arm64,$(ARCH)))
-LLVM_REPO    := https://github.com/llvm/llvm-project.git
-LLVM_DIR     := llvm-project
-LLVM_COMMIT  := $(shell cat llvm-hash.txt)
-LLVM_COMMIT_SHORT := $(shell cut -c1-8 llvm-hash.txt)
-LLVM_INSTALL_DIR := llvm-$(LLVM_COMMIT_SHORT)-$(OS_ID)-$(ARCH_NAME)
-LLVM_TARBALL := $(LLVM_INSTALL_DIR).tar.gz
-SUDO := $(shell command -v sudo >/dev/null 2>&1 && echo sudo || echo)
-TOOLKIT_URL  := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-toolkit_8.2.RC1_linux-$(ARCH).run
-KERNEL_URL   := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-kernels-910b_8.2.RC1_linux-$(ARCH).run
-CANN_TOOLKIT := Ascend-cann-toolkit.run
-CANN_KERNELS := Ascend-cann-kernels.run
-DEPS_STAMP := .deps_installed
-REQ_RT_FILE := requirements.txt
-REQ_DEV_FILE := requirements_dev.txt
-REQ_RT_STAMP := .req_rt_installed
-REQ_DEV_STAMP := .req_dev_installed
-REQ_RT_HASH := $(shell md5sum $(REQ_RT_FILE) 2>/dev/null | cut -d' ' -f1)
-REQ_DEV_HASH := $(shell md5sum $(REQ_DEV_FILE) 2>/dev/null | cut -d' ' -f1)
-OBSUTIL_DIR := obsutil
-OBSUTIL_TAR := obsutil.tar.gz
-OBSUTIL_URL := https://obs-community.obs.cn-north-1.myhuaweicloud.com/obsutil/current/obsutil_linux_$(PLATFORM_NAME).tar.gz
-OBSUTIL_CONFIG := ~/.obsutilconfig
-TRITON_WHL := dist/triton_ascend-*.whl
+PYTHON                      ?= python3
+PYTEST                      := $(PYTHON) -m pytest
+NUM_PROCS                   ?= $(shell nproc)
+OS_ID                       := $(shell . /etc/os-release && echo $$ID)
+ARCH                        := $(shell uname -i)
+ARCH_NAME                   := $(subst x86_64,x64,$(subst aarch64,arm64,$(ARCH)))
+PLATFORM_NAME               := $(subst x86_64,amd64,$(subst aarch64,arm64,$(ARCH)))
+LLVM_REPO                   := https://github.com/llvm/llvm-project.git
+LLVM_DIR                    := llvm-project
+LLVM_COMMIT                 := $(shell cat llvm-hash.txt)
+LLVM_COMMIT_SHORT           := $(shell cut -c1-8 llvm-hash.txt)
+LLVM_INSTALL_DIR            := llvm-$(LLVM_COMMIT_SHORT)-$(OS_ID)-$(ARCH_NAME)
+LLVM_TARBALL                := $(LLVM_INSTALL_DIR).tar.gz
+SUDO                        := $(shell command -v sudo >/dev/null 2>&1 && echo sudo || echo)
+TOOLKIT_URL                 := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-toolkit_8.2.RC1_linux-$(ARCH).run
+KERNEL_URL                  := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-kernels-910b_8.2.RC1_linux-$(ARCH).run
+CANN_TOOLKIT                := Ascend-cann-toolkit.run
+CANN_KERNELS                := Ascend-cann-kernels.run
+DEPS_STAMP                  := .deps_installed
+REQ_RT_FILE                 := requirements.txt
+REQ_DEV_FILE                := requirements_dev.txt
+REQ_RT_STAMP                := .req_rt_installed
+REQ_DEV_STAMP               := .req_dev_installed
+REQ_RT_HASH                 := $(shell md5sum $(REQ_RT_FILE) 2>/dev/null | cut -d' ' -f1)
+REQ_DEV_HASH                := $(shell md5sum $(REQ_DEV_FILE) 2>/dev/null | cut -d' ' -f1)
+OBSUTIL_DIR                 := obsutil
+OBSUTIL_TAR                 := obsutil.tar.gz
+OBSUTIL_URL                 := https://obs-community.obs.cn-north-1.myhuaweicloud.com/obsutil/current/obsutil_linux_$(PLATFORM_NAME).tar.gz
+OBSUTIL_CONFIG              := ~/.obsutilconfig
+TRITON_WHL                  := dist/triton_ascend-*.whl
+IS_MANYLINUX                ?= False
+PYPI_URL                    ?= testpypi
+TRITON_WHEEL_VERSION_SUFFIX ?= rc3
+PYPI_CONFIG                 := ~/.pypirc
 
 
 .DEFAULT_GOAL := all
@@ -67,6 +71,8 @@ $(TRITON_WHL): $(DEPS_STAMP) install-dev-reqs
 	TRITON_WHEEL_NAME="triton-ascend" \
 	TRITON_APPEND_CMAKE_ARGS="-DTRITON_BUILD_UT=OFF" \
 	MAX_JOBS=$(NUM_PROCS) \
+	IS_MANYLINUX=$(IS_MANYLINUX) \
+	TRITON_WHEEL_VERSION_SUFFIX=$(TRITON_WHEEL_VERSION_SUFFIX) \
 	$(PYTHON) setup.py bdist_wheel
 
 .PHONY: package
@@ -81,10 +87,21 @@ upload-triton: install-obsutil package
 	echo "Uploading $$WHEEL to OBS..."; \
 	obsutil/obsutil cp -u "$$WHEEL" obs://triton-ascend-artifacts/triton-ascend/
 
-
 .PHONY: triton
 triton: upload-triton ## Build and upload Triton wheel to OBS
 
+.PHONY: upload-pypi
+upload-pypi: $(PYPI_CONFIG) install-deps ## Build and upload Triton wheel to PyPI
+	for PY in python3.9 python3.10 python3.11; do \
+		echo "Building wheel for $$PY..."; \
+		# Should provided by setup.py
+		rm -rf build dist; \
+		make package PYTHON=$$PY IS_MANYLINUX=True; \
+		WHEEL=$$(ls dist/*.whl); \
+		echo "Uploading $$WHEEL to $(PYPI_URL)..."; \
+		twine upload --repository $(PYPI_URL) --skip-existing $$WHEEL; \
+		rm -f .req_dev_installed; \
+	done
 
 # ======================
 # Build: LLVM
@@ -270,6 +287,7 @@ $(CANN_KERNELS):
 # ======================
 .PHONY: install-deps
 install-deps: $(DEPS_STAMP) ## Install OS-level dependencies
+
 $(DEPS_STAMP):
 ifeq ($(OS_ID),ubuntu)
 	@echo "Installing dependencies for Ubuntu..."
@@ -280,8 +298,7 @@ ifeq ($(OS_ID),ubuntu)
 	@python3 -m pip install cmake ninja
 else ifeq ($(OS_ID),almalinux)
 	@echo "Installing dependencies for AlmaLinux..."
-	dnf install --assumeyes llvm-toolset ninja-build git
-	@/opt/python/cp38-cp38/bin/python3 -m pip install --upgrade cmake ninja lit
+	dnf install --assumeyes clang lld cmake ccache ninja-build git
 else
 	@echo "Unsupported OS: $(OS_ID)"
 	exit 1
@@ -327,6 +344,18 @@ $(OBSUTIL_CONFIG): $(OBSUTIL_DIR)
 	fi
 	$(OBSUTIL_DIR)/obsutil config -i=$(AK) -k=$(SK) -e=https://obs.cn-southwest-2.myhuaweicloud.com
 
+# Config pypi
+$(PYPI_CONFIG):
+	@if [ -z "$$PASSWORD" ]; then \
+		echo "Please set PASSWORD environment variable before uploading to $(PYPI_URL)."; \
+		exit 1; \
+	fi
+	@cat > $(PYPI_CONFIG) <<EOF
+[pypi]
+  username = __token__
+  password = $$PASSWORD
+EOF
+
 
 # ======================
 # Clean
@@ -335,4 +364,4 @@ $(OBSUTIL_CONFIG): $(OBSUTIL_DIR)
 clean: ## Remove build and temporary files
 	$(PYTHON) setup.py clean
 	$(SUDO) rm -rf $(OBSUTIL_DIR) $(OBSUTIL_CONFIG) $(REQ_RT_STAMP) $(REQ_DEV_STAMP) $(DEPS_STAMP) \
-	 $(LLVM_INSTALL_DIR) $(LLVM_TARBALL) $(LLVM_DIR) $(CANN_TOOLKIT) $(CANN_KERNELS)
+	 $(LLVM_INSTALL_DIR) $(LLVM_TARBALL) $(LLVM_DIR) $(CANN_TOOLKIT) $(CANN_KERNELS) $(PYPI_CONFIG)
