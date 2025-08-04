@@ -153,7 +153,7 @@ class AutoTilingTuner(Autotuner):
                 key.append(str(arg.dtype))
                 dtype = (
                     arg.dtype
-                    if get_byte_per_numel(arg.dtype) > get_byte_per_numel(dtype)
+                    if get_byte_per_numel(arg.dtype) >= get_byte_per_numel(dtype)
                     else dtype
                 )
         if dtype is None:
