@@ -624,6 +624,7 @@ from .triton_patch.language.core import (
     parallel,
     compile_hint,
     multibuffer,
+    dtype_to_ir,
 )
 from .triton_patch.language.standard import flip, sigmoid, softmax, isfinited, finitef, rint, atan2
 from .triton_patch.language.math import (
@@ -716,6 +717,7 @@ language.erf = erf
 language.tanh = tanh
 language.floor = floor
 language.ceil = ceil
+language.core.dtype.to_ir = dtype_to_ir
 language.math.umulhi = umulhi
 language.math.exp = exp
 language.math.exp2 = exp2
