@@ -33,20 +33,37 @@ def triton_add(output_ptr, x_ptr, y_ptr, z_ptr, XB: tl.constexpr, YB: tl.constex
 
 
 @triton.jit
-def triton_add_broadcast(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexpr):
-    x0_tensor = tl.load(in_ptr0)
+def triton_add_broadcast(in_ptr0, in_ptr1, out_ptr0, X_SHAPE_0: tl.constexpr,
+                X_SHAPE_1: tl.constexpr, X_SHAPE_2: tl.constexpr, X_SHAPE_3: tl.constexpr, X_SHAPE_4: tl.constexpr,
+                Y_SHAPE_0: tl.constexpr, Y_SHAPE_1: tl.constexpr, Y_SHAPE_2: tl.constexpr, Y_SHAPE_3: tl.constexpr,
+                Y_SHAPE_4: tl.constexpr):
+    x_idx0 = tl.arange(0, X_SHAPE_0)
+    x_idx1 = tl.arange(0, X_SHAPE_1)
+    x_idx2 = tl.arange(0, X_SHAPE_2)
+    x_idx3 = tl.arange(0, X_SHAPE_3)
+    x_idx4 = tl.arange(0, X_SHAPE_4)
 
-    offset = tl.program_id(0) * XBLOCK
-    base1 = tl.arange(0, XBLOCK_SUB)
-    loops1: tl.constexpr = (XBLOCK + XBLOCK_SUB - 1) // XBLOCK_SUB
-    for loop1 in range(loops1):
-        x0 = offset + (loop1 * XBLOCK_SUB) + base1
-        tmp1 = tl.load(in_ptr1 + (x0), None)
-        out = tl.load(out_ptr0 + (x0), None)
+    y_idx0 = tl.arange(0, Y_SHAPE_0)
+    y_idx1 = tl.arange(0, Y_SHAPE_1)
+    y_idx2 = tl.arange(0, Y_SHAPE_2)
+    y_idx3 = tl.arange(0, Y_SHAPE_3)
+    y_idx4 = tl.arange(0, Y_SHAPE_4)
 
-        out = out + tmp1
-        out = out + x0_tensor
-        tl.store(out_ptr0 + (x0), out, None)
+    xidx = x_idx0[:, None, None, None, None] * X_SHAPE_1 * X_SHAPE_2 * X_SHAPE_3 * X_SHAPE_4 + \
+           x_idx1[None, :, None, None, None] * X_SHAPE_2 * X_SHAPE_3 * X_SHAPE_4 + \
+           x_idx2[None, None, :, None, None] * X_SHAPE_3 * X_SHAPE_4 + \
+           x_idx3[None, None, None, :, None] * X_SHAPE_4 + x_idx4[None, None, None, None, :]
+
+    yidx = y_idx0[:, None, None, None, None] * Y_SHAPE_1 * Y_SHAPE_2 * Y_SHAPE_3 * Y_SHAPE_4 + \
+           y_idx1[None, :, None, None, None] * Y_SHAPE_2 * Y_SHAPE_3 * Y_SHAPE_4 + \
+           y_idx2[None, None, :, None, None] * Y_SHAPE_3 * Y_SHAPE_4 + \
+           y_idx3[None, None, None, :, None] * Y_SHAPE_4 + y_idx4[None, None, None, None, :]
+
+    X = tl.load(in_ptr0 + xidx)
+    Y = tl.load(in_ptr1 + yidx)
+    ret = X + Y
+
+    tl.store(out_ptr0 + xidx, ret)
 
 
 @triton.jit
@@ -165,42 +182,52 @@ def promote_dtype(x_dtype, y_dtype):
 
 @pytest.mark.parametrize('param_list',
                          [
-                            [(5, 1, 1, 1, 1), (5, 1, 1, 2, 1), 5, 2, 1],
-                            [(2, 1), (2, 4), 2, 4, 2],
-                            [(2, 1, 1), (2, 4, 2), 2, 8, 2],
-                            [(2, 1, 1, 1), (2, 4, 2, 2), 2, 16, 8],
-                            [(2, 1, 1, 1, 1), (2, 4, 2, 2, 2), 2, 32, 16],
+                            [(5, 1, 1, 1, 1), (5, 1, 1, 2, 1)],
+                            [(2, 1), (2, 4)],
+                            [(2, 1, 1), (2, 4, 2)],
+                            [(2, 1, 1, 1), (2, 4, 2, 2)],
+                            [(2, 1, 1, 1, 1), (2, 4, 2, 2, 2)],
+                            [(1, ), (4, )],
+                            [(1, 2, 1), (1, 2, 3)],
+                            [(1, 1, 1, 1), (7, 1, 1, 1)]
                          ]
                          )
 @pytest.mark.parametrize('x_dtype_str', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16', 'bool'])
 @pytest.mark.parametrize('y_dtype_str', ['int8', 'int16', 'int32', 'int64', 'float16', 'float32', 'bfloat16', 'bool'])
 def test_add_broadcast(param_list, x_dtype_str, y_dtype_str):
-    x0_shape, x1_shape, ncore, xblock, xblock_sub = param_list
-    # 获取原始类型
+    x_shape, y_shape = param_list
     x_dtype = eval('torch.' + x_dtype_str)
     y_dtype = eval('torch.' + y_dtype_str)
 
-    x0 = torch.ones(x0_shape, dtype=eval('torch.' + x_dtype_str))
-    x0_temp = x0
-    x0 = x0.npu()
-
-    x1 = test_common.generate_tensor(x1_shape, y_dtype_str)
-    x1_temp = x1
-    x1 = x1.npu()
-
+    x = test_common.generate_tensor(x_shape, x_dtype_str).npu()
+    y = test_common.generate_tensor(y_shape, y_dtype_str).npu()
+    if y.numel() > x.numel():
+        tmp = y
+        y = x
+        x = tmp
+    ans = x + y
+    while x.dim() < 5:
+        x = x.unsqueeze(-1)
+    while y.dim() < 5:
+        y = y.unsqueeze(-1)
+    bf2fpFlag = False
     out_dtype = promote_dtype(x_dtype, y_dtype)
-    if out_dtype == torch.bfloat16:
+    if (x_dtype == torch.bfloat16 and y_dtype == torch.float16) or \
+       (x_dtype == torch.float16 and y_dtype == torch.bfloat16):
         out_dtype = torch.float32
-    out = torch.zeros(x1_shape, dtype=out_dtype)
-    out_temp = out
-    out = out.npu()
+        bf2fpFlag = True
+    out_dtype = str(out_dtype).split('.')[-1]
+    out = test_common.generate_tensor(x.shape, out_dtype).npu()
 
-    out_temp = out_temp + x0_temp + x1_temp
+    triton_add_broadcast[1, 1, 1](x, y, out, *x.shape, *y.shape)
+    while out.dim() > ans.dim():
+        out = out.squeeze(-1)
 
-    triton_add_broadcast[ncore, 1, 1](x0, x1, out, xblock, xblock_sub)
-
-    out = out.cpu()
-    torch.testing.assert_close(out, out_temp)
+    if bf2fpFlag:
+        torch.testing.assert_close(out, ans, rtol=1e-3, atol=1e-3)
+    else:
+        torch.testing.assert_close(out, ans)
+    
 
 
 @triton.jit
