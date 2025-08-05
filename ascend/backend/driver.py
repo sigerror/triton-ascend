@@ -527,7 +527,6 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   // base_ptr offset shape and stride are not used, arbitrarily set for now
   std::string name = "";
   name.append(kernelName);
-  {cpp_msprof_callback}
   {'auto launch_call = [=]()' if enable_taskqueue else ''} {{
     uint32_t blockNum = gridX * gridY * gridZ;
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
@@ -699,6 +698,7 @@ PyMODINIT_FUNC PyInit___triton_launcher(void) {{
     return NULL;
   }}
   PyModule_AddFunctions(m, ModuleMethods);
+  {cpp_msprof_callback}
   return m;
 }}
 """
