@@ -114,7 +114,7 @@ def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, return_m
     assert return_mode in ["min", "max", "mean", "median", "all"]
     import torch
 
-    enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() in ('npu')
+    enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() == 'npu'
     if torch.npu.is_available() and enable_bench_npu:
         avg_time = do_bench_npu(fn, warmup=max(5, warmup), active=max(30, rep))
         return _summarize_statistics(torch.tensor([avg_time], dtype=torch.float), quantiles, return_mode)
