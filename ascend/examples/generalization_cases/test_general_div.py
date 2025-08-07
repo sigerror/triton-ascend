@@ -92,6 +92,9 @@ def test_div(shape, dtype):
             triton_div[1, 1, shape[2]](output, x, y, z, shape[0], shape[1], 1, shape[0], shape[1], shape[2])
     else:
         triton_div[1, 1, 1](output, x, y, z, 1, 1, 1, 1, 1, 1)
+    # change dtype beacuse of triton processing, triton div op will change from int to float
+    if dtype in ['int8', 'int16', 'int32', 'int64']:
+        dtype = 'float32'
     test_common.validate_cmp(dtype, ans, output)
 
 
