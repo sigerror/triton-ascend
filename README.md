@@ -207,6 +207,14 @@ cd triton-ascend/ascend/examples/tutorials
 # take 01-vector-add.py for example
 python3 01-vector-add.py
 ```
+## 精度比对示例
+下面文档介绍了如何进行triton-ascend的精度比对：
+
+[精度比对说明文档](./docs/sources/getting-started/tutorials/08-accuracy-comparison.md)
+
+下面是完整带注释的 Triton 精度比对示例代码，包含了对每种数据类型如何进行精度验证的详细说明，以及关键步骤的解释，便于理解与后续扩展：
+
+[精度比对示例代码](./ascend/examples/tutorials/14-accuracy-comparison.py)
 
 # 5.调试Triton-Ascend
 
