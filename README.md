@@ -27,14 +27,14 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 欢迎广大开发者试用，但在您开始使用之前，建议您先根据您的开发需求浏览下列文档，希望能够帮助您快速上手！如果您在使用过程中遇到了问题，请您提交Issue反馈相关信息，我们将竭尽全力处理，感谢您的支持！
 
 - #### Triton Ascend 安装或编译
-Triton Ascend还在频繁更新。为能使用最新功能特性，建议您拉取代码进行源码安装，我们提供了Docker镜像方便您快速构建编译环境。详细安装步骤请参考 [安装指南](./docs/sources/getting-started/installation.md) 。
+Triton Ascend还在频繁更新。为能使用最新功能特性，建议您拉取代码进行源码安装。详细安装步骤请参考 [安装指南](./docs/sources/getting-started/installation.md) 。
 
 - #### Triton Python API支持情况与约束
 目前Triton Ascend已经使能了85%以上Triton社区官方提供的Python API，详细的功能支持情况（包括数据类型支持度、使用约束等）请参考 [API 支持情况总览](./docs/sources/python-api/outline.md) 。
 
 - #### Triton算子开发指南（入门级）
 在昇腾平台上开发Trtion算子的方式与在GPU平台上基本相同。我们提供了下列算子的示例源码与配套说明来解释如何开发Triton算子的设备侧Kernel函数、主机侧调用代码以及算子功能验证代码。
-此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/08-accuracy-comparison.md) 与 [参考样例Python文件](./docs/sources/getting-started/tutorials/01-vector-add.md)
+此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/08-accuracy-comparison.md) 与 [参考样例Python文件](./docs/sources/getting-started/tutorials/14-accuracy-comparison.py)
 
 | 算子名称 | 开发指南 | 可执行Python文件 |
 |------|------|------|
@@ -50,13 +50,13 @@ Triton Ascend支持Triton原生的Autotune能力。通过对Tile/Block的形状�
 [Autotune性能寻优指南](./docs/sources/getting-started/tutorials/06-autotune.md) 。
 
 - #### 高性能Triton算子编程开发指南（进阶级）
-为能获得更好的执行性能，除了利用Autotune之外，开发者在编写Triton算子时需要结合昇腾平台的软硬件特点进行开发。我们总结梳理了一些通用优化思路与方法，包括Tile/Block切分方式、高效访存方式以及如何与编译器开展协同优化等，详情请参考[高性能Triton算子编程指南](./docs/CodeOptimization.md) 。
+为能获得更好的执行性能，除了利用Autotune之外，开发者在编写Triton算子时需要结合昇腾平台的软硬件特点进行开发。我们总结梳理了一些通用优化思路与方法，包括Tile/Block切分方式、高效访存方式以及如何与编译器开展协同优化等，详情请参考[高性能Triton算子编程指南](./docs/HighPerformanceGuide.md) 。
 
 - #### 非昇腾平台Triton算子快速迁移指南
 目前，许多开源仓已经提供了面向GPU等平台开发的Triton算子。因为昇腾平台在内存大小、运行时接口功能上与GPU等平台存在差异，将这些算子迁移到昇腾平台运行需要完成少量必要的代码修改，具体修改方法请参考[非昇腾平台Triton算子迁移指南](./docs/sources/programming-guide/migration.md) 。
 
 - #### 开源仓Triton算子适配与支持情况
-我们也正逐步将其他开源仓中的GPU Triton算子适配到昇腾平台，当前已适配的开源仓算子请参见 [已适配开源仓算子列表](./docs/OPLIST.md) 。
+我们也正逐步将主流开源仓中的GPU Triton算子适配到昇腾平台，当前已适配的算子请参见 [已适配开源仓算子列表](./docs/OPLIST.md) 。
 
 - #### Triton Ascend调试调优工具使用指南
 关于Triton Ascend调试调优工具使用方法的介绍文档将于近期发布，敬请期待。
