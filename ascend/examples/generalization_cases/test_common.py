@@ -100,6 +100,7 @@ class TestUtils:
     test_shape5d = [(2, 3, 4, 5, 6), (1, 3, 4, 5, 6), (3, 6, 2, 4, 4)]
     test_shape6d = [(2, 3, 5, 6, 3, 2)]
     test_shape7d = [(1, 2, 3, 4, 3, 2, 2)]
+    test_shape_ub_overflow = [(10, 50, 1000)]
     test_shape8d = [(1, 2, 3, 2, 5, 3, 7, 2), (1, 3, 2, 5, 6, 7, 2, 1), (2, 3, 7, 3, 2, 3, 2, 3)]
     full_shape_4_8d = test_shape4d + test_shape5d + test_shape6d + test_shape7d + test_shape8d
 
