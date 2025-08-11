@@ -34,7 +34,7 @@ Triton Ascend还在频繁更新。为能使用最新功能特性，建议您拉�
 
 - #### Triton算子开发指南（入门级）
 在昇腾平台上开发Trtion算子的方式与在GPU平台上基本相同。我们提供了下列算子的示例源码与配套说明来解释如何开发Triton算子的设备侧Kernel函数、主机侧调用代码以及算子功能验证代码。
-此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/08-accuracy-comparison.md) 与 [参考样例Python文件](./docs/sources/getting-started/tutorials/14-accuracy-comparison.py)
+此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/08-accuracy-comparison.md) 与 [参考样例Python文件](./ascend/examples/tutorials/14-accuracy-comparison.py) 。
 
 | 算子名称 | 开发指南 | 可执行Python文件 |
 |------|------|------|
