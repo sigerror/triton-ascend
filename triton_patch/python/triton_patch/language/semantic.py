@@ -577,3 +577,16 @@ def compile_hint(ptr: tl.tensor, hint_name: str, hint_val, builder: ir.builder):
     else:
         raise ValueError(f"Unsupported hint value type: {type(hint_val)}")
     builder.create_annotation(ptr.handle, hint_name, hint_val)
+
+
+def custom_op(builder: ir.builder, op_name: str, **kwargs):
+    if op_name == "sync_block_all":
+        return builder.create_custom_op_for_inter_core_sync(op_name, kwargs["mode"], kwargs["event_id"])
+
+    elif op_name == "sync_block_set":
+        return builder.create_custom_op_for_inter_core_sync(op_name, kwargs["sender"], kwargs["event_id"])
+    
+    elif op_name == "sync_block_wait":
+        return builder.create_custom_op_for_inter_core_sync(op_name, kwargs["sender"], kwargs["event_id"])
+    
+    raise ValueError(f"Unsupported custom op: {op_name}")

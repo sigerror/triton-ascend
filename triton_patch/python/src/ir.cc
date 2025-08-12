@@ -14,6 +14,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/ValueRange.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/Pass.h"
@@ -1661,6 +1662,16 @@ void init_triton_ir(py::module &&m) {
            [](TritonOpBuilder &self, Value &ptr,
               std::vector<Value> &offsets) -> Value {
              return self.create<AdvanceOp>(ptr.getType(), ptr, offsets);
+           })
+      // Add custom op
+      .def("create_custom_op_for_inter_core_sync",
+           [](TritonOpBuilder &self, std::string &op_name,
+              std::string &mode_or_sender, int id) -> void {
+                auto args = self.getBuilder().getArrayAttr(
+                    {self.getBuilder().getStringAttr(mode_or_sender),
+                    self.getBuilder().getI32IntegerAttr(id)}
+                );
+                self.create<CustomOp>(op_name, args, ValueRange());
            })
       // Add an annotation
       .def("create_annotation",

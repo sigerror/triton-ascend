@@ -388,6 +388,42 @@ def multibuffer(src: tensor, size, _builder=None):
     semantic.compile_hint(src, "multi_buffer", buffer_size, _builder)
 
 
+@builtin
+def sync_block_all(mode, event_id, _builder=None):
+    mode = _constexpr_to_value(mode)
+    event_id = _constexpr_to_value(event_id)
+    assert isinstance(mode, str), f"mode: {mode} is not string"
+    assert isinstance(event_id, int) and (event_id >= 0) and (event_id < 16), f"event_id: {event_id} should be 0 ~ 15"
+    assert mode == "all_cube" or mode == "all_vector" or mode == "all", f"ERROR: mode = {mode}, only supports all_cube/all_vector/all"
+    semantic.custom_op(_builder, "sync_block_all", mode=mode, event_id=event_id)
+
+
+@builtin
+def sync_block_set(sender, receiver, event_id, _builder=None):
+    sender = _constexpr_to_value(sender)
+    receiver = _constexpr_to_value(receiver)
+    event_id = _constexpr_to_value(event_id)
+    assert isinstance(sender, str) and (sender == "cube" or sender == "vector"), f"ERROR: sender = {sender}, only supports cube/vector"
+    assert isinstance(receiver, str) and (receiver == "cube" or receiver == "vector"), f"ERROR: receiver = {receiver}, only supports cube/vector"
+    assert isinstance(event_id, int) and (event_id >= 0) and (event_id < 16), f"event_id: {event_id} should be 0 ~ 15"
+    if sender == receiver:
+        raise ValueError(f'Unexpected pair: {sender} -> {receiver}, only supports cube -> vector or vector -> cube')
+    semantic.custom_op(_builder, "sync_block_set", sender=sender, event_id=event_id)
+
+
+@builtin
+def sync_block_wait(sender, receiver, event_id, _builder=None):
+    sender = _constexpr_to_value(sender)
+    receiver = _constexpr_to_value(receiver)
+    event_id = _constexpr_to_value(event_id)
+    assert isinstance(sender, str) and (sender == "cube" or sender == "vector"), f"ERROR: sender = {sender}, only supports cube/vector"
+    assert isinstance(receiver, str) and (receiver == "cube" or receiver == "vector"), f"ERROR: receiver = {receiver}, only supports cube/vector"
+    assert isinstance(event_id, int) and (event_id >= 0) and (event_id < 16), f"event_id: {event_id} should be 0 ~ 15"
+    if sender == receiver:
+        raise ValueError(f'Unexpected pair: {sender} -> {receiver}, only supports cube -> vector or vector -> cube')
+    semantic.custom_op(_builder, "sync_block_wait", sender=sender, event_id=event_id)
+
+
 def dtype_to_ir(self, builder: ir.builder) -> ir.type:
     if self.name.startswith("fp8"):
         raise ValueError(f'unexpected type fp8.')

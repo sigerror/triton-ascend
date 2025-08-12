@@ -6,6 +6,7 @@
 #include "TritonToLinalg/UseAnalysis.h"
 #include "Utils/InterleaveOptimization.h"
 #include "Utils/Utils.h"
+#include "bishengir/Dialect/HIVM/IR/HIVM.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
@@ -352,7 +353,7 @@ void TritonToLinalgPass::addDynamicLegal(
       linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
       cf::ControlFlowDialect, tensor::TensorDialect,
       bufferization::BufferizationDialect, memref::MemRefDialect,
-      annotation::AnnotationDialect>();
+      annotation::AnnotationDialect, hivm::HIVMDialect>();
 
   // add legal dialect on condition
   target.addLegalOp<ModuleOp>();

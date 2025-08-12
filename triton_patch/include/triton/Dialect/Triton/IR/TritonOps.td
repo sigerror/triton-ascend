@@ -1303,4 +1303,21 @@ def TT_AnnotationOp : TT_Op<"annotation", [Pure, MemoryEffects<[MemWrite]>]> {
   }];
 }
 
+//
+// Custom Op
+//
+def TT_CustomOp : TT_Op<"custom",  [Pure, MemoryEffects<[MemWrite]>]> {
+  let summary = "self-defined custom operation";
+  let description = [{
+    `tt.custom` triton custom op is designed to pass self-defined custom operation.
+
+    Example:
+    ```tt.custom {str_args = ["sync_block_wait", "cube"]} loc(#loc12)
+    ```
+  }];
+  let arguments = (ins StrAttr:$op_name, ArrayAttr:$str_args, Variadic<AnyType>:$args);
+
+  let assemblyFormat = "$op_name attr-dict ($args^ `:` type($args))?";
+}
+
 #endif // Triton_OPS

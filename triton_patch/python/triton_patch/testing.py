@@ -625,6 +625,9 @@ from .triton_patch.language.core import (
     parallel,
     compile_hint,
     multibuffer,
+    sync_block_all,
+    sync_block_set,
+    sync_block_wait,
     dtype_to_ir,
 )
 from .triton_patch.language.standard import flip, sigmoid, softmax, isfinited, finitef, rint, atan2
@@ -681,6 +684,9 @@ language.trans = trans
 language.parallel = parallel
 language.compile_hint = compile_hint
 language.multibuffer = multibuffer
+language.sync_block_all = sync_block_all
+language.sync_block_set = sync_block_set
+language.sync_block_wait = sync_block_wait
 
 # from .triton_patch.language.core import dtype, pointer_type, block_type, function_type
 # language.core.dtype = dtype
