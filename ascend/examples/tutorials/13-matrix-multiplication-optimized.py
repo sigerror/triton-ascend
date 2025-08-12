@@ -11,19 +11,32 @@ def get_npu_properties():
     return driver.active.utils.get_device_properties(device)
 
 
+@triton.autotune(
+configs=[
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 4}),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 5}),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 6}),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 7}),
+        triton.Config({"BLOCK_M": 128, "BLOCK_N": 256, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 8}),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 4}),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 5}),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 6}),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 7}),
+        triton.Config({"BLOCK_M": 256, "BLOCK_N": 128, "BLOCK_K": 256, "BLOCK_TRESHHOLD": 8}),
+    ],
+    key=["M", "N", "K"]
+)
 @triton.jit
 def matmul_kernel(
         mat_a, mat_b, mat_c,
         M: tl.constexpr,
         N: tl.constexpr,
         K: tl.constexpr,
-        BLOCK_M: tl.constexpr, 
-        BLOCK_N: tl.constexpr, 
-        BLOCK_K: tl.constexpr,
-        NUM_BLOCKS: tl.constexpr,
-        NUM_BLOCKS_N: tl.constexpr,
-        NUM_BLOCKS_M: tl.constexpr,
         num_cores: tl.constexpr,
+        BLOCK_M: tl.constexpr,
+        BLOCK_N: tl.constexpr,
+        BLOCK_K: tl.constexpr,
+        BLOCK_TRESHHOLD: tl.constexpr,
 ):
     pid = tl.program_id(axis=0)
     task_m_idx = 0
@@ -52,7 +65,7 @@ def matmul_kernel(
       算子执行效率
     此处使用8 * 8对角线分核方式可以按8 * 8的方块沿对角线方向分核计算,可以很大程度优化上面两点。
 
-    
+    此处以8*8对角线分核为例,实际以BLOCK_TRESHHOLD为tune参数选择最优的阈值
     8 * 8 对角线分核方式中,每8 * 8分格内任务块编号如下
     [0,  8,  16, 24, 32, 40, 48, 56]
     [57, 1,  9,  17, 25, 33, 41, 49]
@@ -67,8 +80,10 @@ def matmul_kernel(
     当右矩阵大小超过L2Cache大小时,采取对角线分核可以提升L2Cache利用率
     所以当矩阵在M和N方向均超过8块时使能对角线分核即可有优化,当右矩阵大小超过L2Cache大小时优化效果尤为明显
     '''
+    NUM_BLOCKS_M = triton.cdiv(M, BLOCK_M)
+    NUM_BLOCKS_N = triton.cdiv(N, BLOCK_N)
+    NUM_BLOCKS = NUM_BLOCKS_M * NUM_BLOCKS_N
     #当任务量较多时，可以使能对角线分核策略进行优化
-    BLOCK_TRESHHOLD = 8
     if NUM_BLOCKS_M >= BLOCK_TRESHHOLD and NUM_BLOCKS_N >= BLOCK_TRESHHOLD:
         for block_idx in range (
             pid, NUM_BLOCKS, num_cores
@@ -98,7 +113,7 @@ def matmul_kernel(
                     (k_start + tl.arange(0, BLOCK_K)) < K
                 )[None, :]
                 mat_a_block = tl.load(mat_a + mat_a_offset, mask = mat_a_mask, other = 0.0)
-
+                tl.compile_hint(mat_a_block, "dot_pad_only_k")
                 mat_b_offset = ((k_start + tl.arange(0, BLOCK_K)) * N)[:, None] + ( 
                     n_start + tl.arange(0, BLOCK_N)
                 )[None, :]
@@ -106,6 +121,7 @@ def matmul_kernel(
                     (n_start + tl.arange(0, BLOCK_N)) < N
                 )[None, :]
                 mat_b_block = tl.load(mat_b + mat_b_offset, mask = mat_b_mask, other = 0.0)
+                tl.compile_hint(mat_b_block, "dot_pad_only_k")
                 mat_c_block = tl.dot(mat_a_block, mat_b_block, mat_c_block)
             mat_c_offset = ((m_start + tl.arange(0, BLOCK_M)) * N)[:, None] + (
                 n_start + tl.arange(0, BLOCK_N)
@@ -133,7 +149,7 @@ def matmul_kernel(
                     (k_start + tl.arange(0, BLOCK_K)) < K
                 )[None, :]
                 mat_a_block = tl.load(mat_a + mat_a_offset, mask = mat_a_mask, other = 0.0)
-
+                tl.compile_hint(mat_a_block, "dot_pad_only_k")
                 mat_b_offset = ((k_start + tl.arange(0, BLOCK_K)) * N)[:, None] + ( 
                     n_start + tl.arange(0, BLOCK_N)
                 )[None, :]
@@ -141,6 +157,7 @@ def matmul_kernel(
                     (n_start + tl.arange(0, BLOCK_N)) < N
                 )[None, :]
                 mat_b_block = tl.load(mat_b + mat_b_offset, mask = mat_b_mask, other = 0.0)
+                tl.compile_hint(mat_b_block, "dot_pad_only_k")
                 mat_c_block = tl.dot(mat_a_block, mat_b_block, mat_c_block)
             mat_c_offset = ((m_start + tl.arange(0, BLOCK_M)) * N)[:, None] + (
                 n_start + tl.arange(0, BLOCK_N)
@@ -153,27 +170,20 @@ def matmul_kernel(
 def triton_matmul(
     mat_a,
     mat_b,
-) :
+):
     m = mat_a.shape[0]
     k = mat_a.shape[1]
     n = mat_b.shape[1]
     mat_c = torch.empty(m, n, dtype=mat_a.dtype, device=mat_a.device)
     
     '''
-    NPU芯片更加亲和512B对齐场景,如下分块通用性能较好
+    NPU芯片更加亲和512B对齐场景,如下分块通用性能较好,可以使用autotune选取最优
     BLOCK_M = 128
     BLOCK_N = 256
     BLOCK_K = 256    
     '''
-    BLOCK_M = 128
-    BLOCK_N = 256
-    BLOCK_K = 256
-    
+
     num_cores = get_npu_properties()["num_aicore"]
-    NUM_BLOCKS_N = triton.cdiv(n, BLOCK_N)
-    NUM_BLOCKS_M = triton.cdiv(m, BLOCK_M)
-    
-    NUM_BLOCKS = NUM_BLOCKS_M * NUM_BLOCKS_N
 
     matmul_kernel[(num_cores,)] (
         mat_a,
@@ -182,12 +192,6 @@ def triton_matmul(
         m,
         n,
         k,
-        BLOCK_M,
-        BLOCK_N,
-        BLOCK_K,
-        NUM_BLOCKS,
-        NUM_BLOCKS_N,
-        NUM_BLOCKS_M,
         num_cores
     )
     return mat_c
@@ -209,6 +213,6 @@ if __name__ == "__main__":
     try:
         torch.testing.assert_close(result[mask], golden[mask], atol = tmpatol, rtol = 0)
         torch.testing.assert_close(result[~mask], golden[~mask], atol = 0, rtol = tmprtol)
+        print("run matmul success")
     except:
         print(f"[ERROR] M={M} ,K={K}, N={N}存在精度问题")
-    print("run matmul success")
