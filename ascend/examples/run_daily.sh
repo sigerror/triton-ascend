@@ -10,8 +10,10 @@ export LLVM_BUILD_DIR=/triton_depends/llvm-20-install
 source /usr/local/CANN_8.2.RC1.alpha002/ascend-toolkit/set_env.sh
 export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
-COMPILER_ROOT=/home/shared/bisheng_toolkit_20250628
+COMPILER_ROOT=/home/shared/bisheng_toolkit_20250812
 export PATH=${COMPILER_ROOT}:${COMPILER_ROOT}/8.2.RC1.alpha002/compiler/bishengir/bin:$PATH
+# FIXME: the 20250812 bishengir-compile requires the pairing bisheng compiler
+export BISHENG_INSTALL_PATH=/home/shared/cann_compiler_20250812/compiler/ccec_compiler/bin
 
 # 新增：定义统计文件路径
 SUMMARY_FILE="${WORKSPACE}/ascend/examples/summary.txt"
