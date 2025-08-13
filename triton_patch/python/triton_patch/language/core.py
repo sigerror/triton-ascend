@@ -16,7 +16,7 @@ from triton.language.core import (
     _unwrap_if_constexpr,
     range,
 )
-
+from typing import Optional
 # from triton.language.core import _unwrap_if_constexpr, _unwrap_shape
 from . import semantic
 
@@ -161,6 +161,43 @@ from . import semantic
 #         ir_param_types = [ty.to_ir(builder) for ty in self.param_types]
 #         ret_types = [ret_type.to_ir(builder) for ret_type in self.ret_types]
 #         return builder.get_function_ty(ir_param_types, ret_types)
+
+@_tensor_member_fn
+@builtin
+def cast(input, dtype: real_dtype, fp_downcast_rounding: Optional[str] = None, bitcast: bool = False, overflow_mode: Optional[str] = None, _builder=None):
+    """
+    Casts a tensor to the given :code:`dtype`.
+
+    :param dtype: The target data type.
+    :type dtype: tl.dtype
+    :param fp_downcast_rounding: The rounding mode for downcasting
+        floating-point values. This parameter is only used when self is a
+        floating-point tensor and dtype is a floating-point type with a
+        smaller bitwidth. Supported values are :code:`"rtne"` (round to
+        nearest, ties to even) and :code:`"rtz"` (round towards zero).
+    :type fp_downcast_rounding: str, optional
+    :param bitcast: If true, the tensor is bitcasted to the given
+        :code:`dtype`, instead of being numerically casted.
+    :type bitcast: bool, optional
+    :param overflow_mode: When overflow_mode is not set or is "trunc",
+        truncation (cut-off) will be used to handle overflow. When
+        overflow_mode is "sautrate", the maximum value of the data type
+        will be used to handle overflow.
+    :type overflow_mode: string, optional
+    """
+    overflow_modes = ["trunc", "saturate"]
+    input = semantic.to_tensor(input, _builder)
+    if isinstance(bitcast, constexpr):
+        bitcast = bitcast.value
+    if bitcast:
+        return semantic.bitcast(input, dtype, _builder)
+    ret = semantic.cast(input, dtype, _builder, fp_downcast_rounding)
+    if overflow_mode is not None:
+        if overflow_mode in overflow_modes:
+            semantic.compile_hint(ret, "overflow_mode", overflow_mode, _builder)
+        else:
+            raise ValueError(f"Unknown overflow_mode:{overflow_mode} is found.")
+    return ret
 
 
 @_tensor_member_fn

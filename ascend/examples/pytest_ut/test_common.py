@@ -1,3 +1,4 @@
+from typing import Optional
 import torch
 import torch_npu
 import pytest
@@ -77,9 +78,22 @@ def validate_cal(dtype, y_cal, y_ref):
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 
 # moving and comparison ops require no precision error
-def validate_cmp(dtype, y_cal, y_ref):
+def validate_cmp(dtype, y_cal, y_ref, overflow_mode: Optional[str] = None):
     y_cal=y_cal.npu()
     y_ref=y_ref.npu()
+    if overflow_mode == "saturate":
+        if dtype in ['float32', 'float16']:
+            min_value = -torch.finfo(dtype).min
+            max_value = torch.finfo(dtype).max
+        elif dtype in ['int32', 'int16', 'int8']:
+            min_value = torch.iinfo(dtype).min
+            max_value = torch.iinfo(dtype).max
+        elif dtype == 'bool':
+            min_value = 0
+            max_value = 1
+        else:
+            raise ValueError('Invalid parameter "dtype" is found : {}'.format(dtype))
+        y_ref = torch.clamp(y_ref, min=min_value, max=max_value)
     if dtype == 'float16':
         torch.testing.assert_close(y_ref, y_cal,  rtol=1e-03, atol=1e-03, equal_nan=True)
     elif dtype == 'bfloat16':

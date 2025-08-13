@@ -615,6 +615,7 @@ def get_max_simd_tflops(dtype, clock_rate, device=None):
 
 from .triton_patch.language.core import (
     dot,
+    cast,
     gather,
     insert_slice,
     extract_slice,
@@ -666,6 +667,7 @@ from .triton_patch.language.semantic import (
 )
 from . import language
 
+language.cast = cast
 language.dot = dot
 language.flip = flip
 language.sigmoid = sigmoid
