@@ -61,5 +61,8 @@ support_dtypes = [dtype for dtype in _all_dtypes_no_bool if dtype not in not_sup
 def test_cumsum(dtype, shape, dim, reverse):
     x0 = generate_tensor(shape=shape, dtype=dtype).npu()
     triton_cal = triton_func(x0, dim, reverse)
-    torch_ref = torch_func(x0, dim, reverse)
+    torch_dtype = eval('torch.' + dtype)
+    if torch_dtype == torch.float16 or torch_dtype == torch.float32:
+        x0 = x0.to(torch.float32)
+    torch_ref = torch_func(x0, dim, reverse).to(torch_dtype)
     validate_cmp(dtype, torch_ref, triton_cal)
