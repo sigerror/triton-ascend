@@ -43,7 +43,7 @@ CANN安装完成后，需要配置环境变量才能生效。请用户根据set_
 source ${HOME}/Ascend/ascend-toolkit/set_env.sh
 ```
 
-- 注：如果用户未指定安装路径，则软件会安装到默认路径下，默认安装路径如下。root用户：“/usr/local/Ascend”，非root用户：“${HOME}/Ascend”，${HOME}为当前用户目录。
+- 注：如果用户未指定安装路径，则软件会安装到默认路径下，默认安装路径如下。root用户：`/usr/local/Ascend`，非root用户：`${HOME}/Ascend`，${HOME}为当前用户目录。
 上述环境变量配置只在当前窗口生效，用户可以按需将以上命令写入环境变量配置文件（如.bashrc文件）。
 
 ### 安装python依赖
