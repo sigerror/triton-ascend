@@ -1142,6 +1142,16 @@ void BlockDataParser::rewriteForOp(
       // In current block data layout info, strides and offsets must be dynamic
       // value
       auto castOp = data.createCastOp(resultShape, op.getLoc(), rewriter);
+      if (resultShape.size() > 1) {
+        auto originalOffset = dyn_cast<Value>(data.getOffsetsRef()[0]);
+        for (auto &offsets: newInitArgs) {
+          if (offsets == originalOffset) {
+            offsets = castOp.getOffsets()[0];
+            break;
+          }
+        }
+        data.getOffsetsRef()[0] = castOp.getOffsets()[0];
+      }
 
       LLVM_DEBUG({
         llvm::dbgs() << "new reinterpret_cast with dynamic sizes "
