@@ -648,6 +648,7 @@ from .triton_patch.language.semantic import (
     arange,
     floordiv,
     atom_red_typechecking_impl,
+    atomic_cas,
     atomic_max,
     atomic_min,
     _load_legacy,
@@ -687,6 +688,7 @@ language.multibuffer = multibuffer
 language.semantic.arange = arange
 language.semantic.floordiv = floordiv
 language.semantic.atom_red_typechecking_impl = atom_red_typechecking_impl
+language.semantic.atomic_cas = atomic_cas
 language.semantic.atomic_max = atomic_max
 language.semantic.atomic_min = atomic_min
 language.semantic._load_legacy = _load_legacy

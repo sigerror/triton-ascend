@@ -493,6 +493,12 @@ def atom_red_typechecking_impl(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, 
         raise ValueError("Cannot store to a constant pointer")
     element_ty = ptr.type.scalar.element_ty
     # Add `tl.int64` restriction for NPU
+    if element_ty in [tl.int1, tl.int64, tl.float16, tl.float32, tl.float64, tl.bfloat16] and op in ['or', 'xor']:
+        raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
+                         "All support dtypes are int8, int16, int32")
+    if element_ty in [tl.int1, tl.int64, tl.float64, tl.bfloat16] and op == 'xchg':
+        raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
+                         "All support dtypes are int8, int16, int32, float16, float32")
     if element_ty in [tl.int1, tl.int64, tl.float64]:
         raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
                          "All support dtypes are int8, int16, int32, float16, float32, bfloat16.")
@@ -510,6 +516,17 @@ def atom_red_typechecking_impl(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, 
             mask_ty = tl.block_type(tl.int1, ptr.type.get_block_shapes())
         mask = tl.tensor(mask_ir, mask_ty)
     return ptr, val, mask
+
+
+def atomic_cas(ptr: tl.tensor, cmp: tl.tensor, val: tl.tensor, sem: str, scope: str, builder: ir.builder) -> tl.tensor:
+    sem = _str_to_sem(sem)
+    scope = _str_to_scope(scope)
+    element_ty = ptr.type.scalar.element_ty
+    if element_ty in [tl.int1, tl.int8, tl.float64, tl.bfloat16]:
+        raise ValueError(f"atomic_cas does not support {str(element_ty)}. "
+                         "All support dtypes are int16, int32, int64, float16, float32")
+    return tl.tensor(builder.create_atomic_cas(ptr.handle, cmp.handle, val.handle, sem, scope), val.type)
+
 
 def atomic_max(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, sem: str, scope: str, builder: ir.builder) -> tl.tensor:
     ptr, val, mask = atom_red_typechecking_impl(ptr, val, mask, 'max', builder)
