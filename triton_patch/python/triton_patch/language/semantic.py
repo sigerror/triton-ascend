@@ -495,10 +495,10 @@ def atom_red_typechecking_impl(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, 
     # Add `tl.int64` restriction for NPU
     if element_ty in [tl.int1, tl.int64, tl.float16, tl.float32, tl.float64, tl.bfloat16] and op in ['or', 'xor']:
         raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
-                         "All support dtypes are int8, int16, int32")
+                         "All support dtypes are int8, int16, int32.")
     if element_ty in [tl.int1, tl.int64, tl.float64, tl.bfloat16] and op == 'xchg':
         raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
-                         "All support dtypes are int8, int16, int32, float16, float32")
+                         "All support dtypes are int8, int16, int32, float16, float32.")
     if element_ty in [tl.int1, tl.int64, tl.float64]:
         raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
                          "All support dtypes are int8, int16, int32, float16, float32, bfloat16.")
@@ -524,7 +524,7 @@ def atomic_cas(ptr: tl.tensor, cmp: tl.tensor, val: tl.tensor, sem: str, scope: 
     element_ty = ptr.type.scalar.element_ty
     if element_ty in [tl.int1, tl.int8, tl.float64, tl.bfloat16]:
         raise ValueError(f"atomic_cas does not support {str(element_ty)}. "
-                         "All support dtypes are int16, int32, int64, float16, float32")
+                         "All support dtypes are int16, int32, int64, float16, float32.")
     return tl.tensor(builder.create_atomic_cas(ptr.handle, cmp.handle, val.handle, sem, scope), val.type)
 
 

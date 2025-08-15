@@ -22,6 +22,18 @@ def atomic_xchg(in_ptr0, out_ptr0, n_elements, BLOCK_SIZE: tl.constexpr, BLOCK_N
     tl.atomic_xchg(out_ptr0 + (out_index), tmp0, xmask)
 
 
+@triton.jit
+def atomic_xchg_ndim(x_ptr, out_ptr, NCORE: tl.constexpr, BLOCK_SIZE: tl.constexpr,
+                    DIM0: tl.constexpr, DIM1: tl.constexpr, DIM2: tl.constexpr, DIM3: tl.constexpr, DIM4: tl.constexpr):
+    sub_idx = tl.program_id(1)
+    base_src = tl.program_id(0) * DIM4 + sub_idx * BLOCK_SIZE
+    base_dst = (tl.program_id(0) % (DIM0 * DIM1 * DIM2 * DIM3)) * DIM4 + sub_idx * BLOCK_SIZE
+    offsets_src = tl.arange(0, BLOCK_SIZE) + base_src
+    offsets_dst = tl.arange(0, BLOCK_SIZE) + base_dst
+    mask = tl.arange(0, BLOCK_SIZE) + sub_idx * BLOCK_SIZE < DIM4
+    tmp = tl.load(x_ptr + offsets_src, mask)
+    tl.atomic_xchg(out_ptr + offsets_dst, tmp, mask)
+
 
 @triton.jit
 def atomic_xchg_broadcast(x_ptr, y_ptr, out_ptr, n_elements, BLOCK_SIZE: tl.constexpr):
@@ -147,241 +159,199 @@ def test_atomic_xchg_4d_5d(dtype, shape):
     test_common.validate_cmp(dtype, x1, x1_ref)
 
 
-@triton.jit
-def atomic_xchg_5d(x_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr, NB: tl.constexpr,
-                            XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr, MB1: tl.constexpr, NB1: tl.constexpr):
-    base = tl.program_id(0) * (XB * YB * ZB * MB * NB)
-    offsets = tl.arange(0, XB) * (YB * ZB * MB * NB)
-    offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB * NB)
-    offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB * NB)
-    offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] * NB
-    offsets = offsets[:, :, :, :, None] + tl.arange(0, NB)[None, None, None, None, :]
-
-    offsets1 = tl.arange(0, XB1) * (YB1 * ZB1 * MB1 * NB1)
-    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :] * (ZB1 * MB1 * NB1)
-    offsets1 = offsets1[:, :, None] + tl.arange(0, ZB1)[None, None, :] * (MB1 * NB1)
-    offsets1 = offsets1[:, :, :, None] + tl.arange(0, MB1)[None, None, None, :] * NB1
-    offsets1 = offsets1[:, :, :, :, None] + tl.arange(0, NB1)[None, None, None, None, :]
-    
-    based_offsets = offsets + base
-    
-    tmp0 = tl.load(x_ptr + based_offsets)
-    tl.atomic_xchg(out_ptr + offsets1, tmp0)
-
-
-@pytest.mark.parametrize('param_list',
+@pytest.mark.parametrize('shaape',
     [
-        [(1, 1, 2, 1, 1), (1, 1, 2, 1, 2)],
+        (1, 1, 1, 1, 2),
+        (10, 1, 15, 1, 7),
+        (1, 1, 1, 1, 257),
     ]
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
-def test_atomic_xchg_5d(x_dtype_str, param_list):
-    x0_shape, y_shape = param_list
+def test_atomic_xchg_5d(x_dtype_str, shaape):
+    shape = shaape
 
     # 获取原始类型
     x_dtype = eval('torch.' + x_dtype_str)
-    x_shape = list(x0_shape[:])
+    x_shape = list(shape[:])
     x_shape[0] *= 2
     x = torch.randint(low=0, high=100, size=x_shape, dtype=x_dtype).npu()
 
-    out = torch.full(y_shape, 0, dtype=x_dtype).npu()
+    out = torch.full(shape, 0, dtype=x_dtype).npu()
 
     x_temp = x.clone()
     out_temp = out.clone()
 
-    triton_shape = [*x0_shape]
+    triton_shape = [*shape]
     while len(triton_shape) < 5:
         triton_shape.append(1)
     XB, YB, ZB, MB, NB = triton_shape
+    BLOCK_SIZE = 256
+    ncore = (NB + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-    triton_shape1 = [*y_shape]
-    while len(triton_shape1) < 5:
-        triton_shape1.append(1)
-    XB1, YB1, ZB1, MB1, NB1 = triton_shape1
-
-    atomic_xchg_5d[(2, )](
+    atomic_xchg_ndim[(2 * XB * YB * ZB * MB, ncore)](
         x_ptr=x,
-        out_ptr=out, 
-        XB=XB, YB=YB, ZB=ZB, MB=MB, NB=NB,
-        XB1=XB1, YB1=YB1, ZB1=ZB1, MB1=MB1, NB1=NB1,
+        out_ptr=out,
+        NCORE=ncore,
+        BLOCK_SIZE=BLOCK_SIZE,
+        DIM0=XB, DIM1=YB, DIM2=ZB, DIM3=MB, DIM4=NB,
         )
     
-    expected = x_temp[x0_shape[0]:x_shape[0]].expand(out_temp.shape)
+    expected = x_temp[shape[0]:x_shape[0]].expand(out_temp.shape)
     torch.testing.assert_close(out, expected)
 
 
-@triton.jit
-def atomic_xchg_4d(x_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr, MB: tl.constexpr,
-                            XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr, MB1: tl.constexpr):
-    base = tl.program_id(0) * (XB * YB * ZB * MB)
-    offsets = tl.arange(0, XB) * (YB * ZB * MB)
-    offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB * MB)
-    offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :] * (MB)
-    offsets = offsets[:, :, :, None] + tl.arange(0, MB)[None, None, None, :] 
-
-    offsets1 = tl.arange(0, XB1) * (YB1 * ZB1 * MB1)
-    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :] * (ZB1 * MB1)
-    offsets1 = offsets1[:, :, None] + tl.arange(0, ZB1)[None, None, :] * (MB1)
-    offsets1 = offsets1[:, :, :, None] + tl.arange(0, MB1)[None, None, None, :]
-    
-    based_offsets = offsets + base
-
-    tmp0 = tl.load(x_ptr + based_offsets)
-    tl.atomic_xchg(out_ptr + offsets1, tmp0)
-
-
-@pytest.mark.parametrize('param_list',
+@pytest.mark.parametrize('shaape',
     [
-        [(1, 1, 2, 1), (1, 1, 2, 2)],
-        [(1, 1, 1, 1), (1, 1, 2, 2)],
+        (1, 1, 1, 1),
+        (1, 1, 2, 2),
+        (1, 3, 2, 7),
+        (1, 3, 2, 651),
     ]
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
-def test_atomic_xchg_4d(x_dtype_str, param_list):
-    x0_shape, y_shape = param_list
+def test_atomic_xchg_4d(x_dtype_str, shaape):
+    shape = shaape
 
     # 获取原始类型
     x_dtype = eval('torch.' + x_dtype_str)
-    x_shape = list(x0_shape[:])
+    x_shape = list(shape[:])
     x_shape[0] *= 2
     x = torch.randint(low=0, high=100, size=x_shape, dtype=x_dtype).npu()
-    out = torch.full(y_shape, 0, dtype=x_dtype).npu()
+    out = torch.full(shape, 0, dtype=x_dtype).npu()
 
     x_temp = x.clone()
     out_temp = out.clone()
 
-    triton_shape = [*x0_shape]
+    triton_shape = [*shape]
     while len(triton_shape) < 4:
         triton_shape.append(1)
     XB, YB, ZB, MB = triton_shape
 
-    triton_shape1 = [*y_shape]
-    while len(triton_shape1) < 4:
-        triton_shape1.append(1)
-    XB1, YB1, ZB1, MB1 = triton_shape1
+    BLOCK_SIZE = 256
+    ncore = (MB + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-    atomic_xchg_4d[(2, )](
+    atomic_xchg_ndim[(2 * XB * YB * ZB, ncore)](
         x_ptr=x,
         out_ptr=out, 
-        XB=XB, YB=YB, ZB=ZB, MB=MB,
-        XB1=XB1, YB1=YB1, ZB1=ZB1, MB1=MB1,
+        NCORE=ncore,
+        BLOCK_SIZE=BLOCK_SIZE,
+        DIM0=1, DIM1=XB, DIM2=YB, DIM3=ZB, DIM4=MB,
         )
     
-    expected = x_temp[x0_shape[0]:x_shape[0]].expand(out_temp.shape)
+    expected = x_temp[shape[0]:x_shape[0]].expand(out_temp.shape)
     torch.testing.assert_close(out, expected)
 
 
-@triton.jit
-def atomic_xchg_3d(x_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr,
-                            XB1: tl.constexpr, YB1: tl.constexpr, ZB1: tl.constexpr):
-    base = tl.program_id(0) * (XB * YB * ZB)
-    offsets = tl.arange(0, XB) * (YB * ZB)
-    offsets = offsets[:, None] + tl.arange(0, YB)[None, :] * (ZB)
-    offsets = offsets[:, :, None] + tl.arange(0, ZB)[None, None, :]
-
-    offsets1 = tl.arange(0, XB1) * (YB1 * ZB1)
-    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :] * (ZB1)
-    offsets1 = offsets1[:, :, None] + tl.arange(0, ZB1)[None, None, :]
-    
-    based_offsets = offsets + base
-
-    tmp0 = tl.load(x_ptr + based_offsets)
-    tl.atomic_xchg(out_ptr + offsets1, tmp0)
-
-
-@pytest.mark.parametrize('param_list',
+@pytest.mark.parametrize('shaape',
     [
-        [(1, 1, 1), (1, 1, 2)],
-        [(1, 1, 2), (1, 2, 2)],
+        (1, 1, 1),
+        (1, 1, 2),
+        (1, 31, 275),
     ]
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
-def test_atomic_xchg_3d_2(x_dtype_str, param_list):
-    x0_shape, y_shape = param_list
+def test_atomic_xchg_3d_2(x_dtype_str, shaape):
+    shape = shaape
 
     # 获取原始类型
     x_dtype = eval('torch.' + x_dtype_str)
-    x_shape = list(x0_shape[:])
+    x_shape = list(shape[:])
     x_shape[0] *= 2
     x = torch.randint(low=0, high=100, size=x_shape, dtype=x_dtype).npu()
-    out = torch.full(y_shape, 0, dtype=x_dtype).npu()
+    out = torch.full(shape, 0, dtype=x_dtype).npu()
 
     x_temp = x.clone()
     out_temp = out.clone()
 
-    triton_shape = [*x0_shape]
+    triton_shape = [*shape]
     while len(triton_shape) < 3:
         triton_shape.append(1)
     XB, YB, ZB = triton_shape
+    BLOCK_SIZE = 256
+    ncore = (ZB + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-    triton_shape1 = [*y_shape]
-    while len(triton_shape1) < 3:
-        triton_shape1.append(1)
-    XB1, YB1, ZB1 = triton_shape1
-
-    atomic_xchg_3d[(2, )](
+    atomic_xchg_ndim[(2 * XB * YB, ncore)](
         x_ptr=x,
         out_ptr=out, 
-        XB=XB, YB=YB, ZB=ZB,
-        XB1=XB1, YB1=YB1, ZB1=ZB1,
+        NCORE=ncore,
+        BLOCK_SIZE=BLOCK_SIZE,
+        DIM0=1, DIM1=1, DIM2=XB, DIM3=YB, DIM4=ZB,
         )
     
-    expected = x_temp[x0_shape[0]:x_shape[0]].expand(out_temp.shape)
+    expected = x_temp[shape[0]:x_shape[0]].expand(out_temp.shape)
     torch.testing.assert_close(out, expected)
 
 
-@triton.jit
-def atomic_xchg_2d(x_ptr, out_ptr, XB: tl.constexpr, YB: tl.constexpr,
-                            XB1: tl.constexpr, YB1: tl.constexpr):
-    base = tl.program_id(0) * (XB * YB)
-    offsets = tl.arange(0, XB) * (YB)
-    offsets = offsets[:, None] + tl.arange(0, YB)[None, :]
-
-    offsets1 = tl.arange(0, XB1) * (YB1)
-    offsets1 = offsets1[:, None] + tl.arange(0, YB1)[None, :]
-    
-    based_offsets = offsets + base
-
-    tmp0 = tl.load(x_ptr + based_offsets)
-    tl.atomic_xchg(out_ptr + offsets1, tmp0)
-
-
-@pytest.mark.parametrize('param_list',
+@pytest.mark.parametrize('shaape',
     [
-        [(1, 2), (2, 2)],
-         [(1, 1), (2, 2)],
+        (1, 2),
+        (1, 1),
+        (257, 1),
+        (257, 2),
     ]
     )
 @pytest.mark.parametrize('x_dtype_str', filtered_dtype)
-def test_atomic_xchg_2d(x_dtype_str, param_list):
-    x0_shape, y_shape = param_list
+def test_atomic_xchg_2d(x_dtype_str, shaape):
+    shape = shaape
 
     # 获取原始类型
     x_dtype = eval('torch.' + x_dtype_str)
-    x_shape = list(x0_shape[:])
+    x_shape = list(shape[:])
     x_shape[0] *= 2
     x = torch.randint(low=0, high=100, size=x_shape, dtype=x_dtype).npu()
-    out = torch.full(y_shape, 0, dtype=x_dtype).npu()
+    out = torch.full(shape, 0, dtype=x_dtype).npu()
 
     x_temp = x.clone()
     out_temp = out.clone()
 
-    triton_shape = [*x0_shape]
+    triton_shape = [*shape]
     while len(triton_shape) < 2:
         triton_shape.append(1)
     XB, YB = triton_shape
+    BLOCK_SIZE = 256
+    ncore = (YB + BLOCK_SIZE - 1) // BLOCK_SIZE
 
-    triton_shape1 = [*y_shape]
-    while len(triton_shape1) < 2:
-        triton_shape1.append(1)
-    XB1, YB1 = triton_shape1
-
-    atomic_xchg_2d[(2, )](
+    atomic_xchg_ndim[(2 * XB, ncore)](
         x_ptr=x,
         out_ptr=out, 
-        XB=XB, YB=YB,
-        XB1=XB1, YB1=YB1,
+        NCORE=ncore,
+        BLOCK_SIZE=BLOCK_SIZE,
+        DIM0=1, DIM1=1, DIM2=1, DIM3=XB, DIM4=YB,
         )
-    
-    expected = x_temp[x0_shape[0]:x_shape[0]].expand(out_temp.shape)
+
+    expected = x_temp[shape[0]:x_shape[0]].expand(out_temp.shape)
+    torch.testing.assert_close(out, expected)
+
+
+@pytest.mark.parametrize('shaape', [(1,), (9,), (256,), (257,), (65535,), (65536,)])
+@pytest.mark.parametrize('x_dtype_str', filtered_dtype)
+def test_atomic_xchg_1d(x_dtype_str, shaape):
+    shape = shaape
+
+    # 获取原始类型
+    x_dtype = eval('torch.' + x_dtype_str)
+    x_shape = list(shape[:])
+    x_shape[0] *= 2
+    x = torch.randint(low=0, high=100, size=x_shape, dtype=x_dtype).npu()
+    out = torch.full(shape, 0, dtype=x_dtype).npu()
+
+    x_temp = x.clone()
+    out_temp = out.clone()
+
+    triton_shape = [*shape]
+    while len(triton_shape) < 2:
+        triton_shape.append(1)
+    XB = triton_shape[0]
+    BLOCK_SIZE = 256
+    ncore = (XB + BLOCK_SIZE - 1) // BLOCK_SIZE
+
+    atomic_xchg_ndim[(2, ncore)](
+        x_ptr=x,
+        out_ptr=out, 
+        NCORE=ncore,
+        BLOCK_SIZE=BLOCK_SIZE,
+        DIM0=1, DIM1=1, DIM2=1, DIM3=1, DIM4=XB,
+        )
+
+    expected = x_temp[shape[0]:x_shape[0]].expand(out_temp.shape)
     torch.testing.assert_close(out, expected)
