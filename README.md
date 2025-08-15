@@ -59,7 +59,7 @@ Triton Ascend支持Triton原生的Autotune能力。通过对Tile/Block的形状�
 我们也正逐步将主流开源仓中的GPU Triton算子适配到昇腾平台，当前已适配的算子请参见 [已适配开源仓算子列表](./docs/OPLIST.md) 。
 
 - #### Triton Ascend调试调优工具使用指南
-[MindStudio 算子异常检测工具使用参考](./docs/sources/mindstudio-guide/02-msSanitizer.md)
+[MindStudio 算子异常检测工具使用参考](./docs/sources/mindstudio-guide/02-msSanitizer.md)  
 [MindStudio 算子性能调优工具使用参考](./docs/sources/mindstudio-guide/01-msProf_op.md)
 
 - #### Triton Ascend环境变量

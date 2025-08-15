@@ -4,7 +4,7 @@ msSanitizer工具是基于昇腾AI处理器的一个异常检测工具，包含�
 
 ## 1.环境准备
 
-工具使用前，需完成环境准备，详细参考[Readme.MD](../../README.md), 配置triton环境
+工具使用前，需完成环境准备，详细参考[Readme.MD](../getting-started/installation.md), 配置triton环境
 其他配置：
   - 关闭内存池  
     Triton场景会使用PyTorch创建Tensor，PyTorch框架内默认使用内存池的方式管理GM内存，会对内存检测产生干扰。因此，在检测前需要额外设置如下环境变量关闭内存池，以保证检测结果准确。  
