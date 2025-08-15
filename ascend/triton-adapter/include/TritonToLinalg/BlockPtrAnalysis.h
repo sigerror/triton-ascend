@@ -197,6 +197,11 @@ public:
                           ConversionPatternRewriter &rewriter,
                           const llvm::SmallDenseMap<Value, BlockData> &known);
 
+  static void parseExtractSlice(tensor::ExtractSliceOp op, BlockData &data,
+                            const Location &loc,
+                            ConversionPatternRewriter &rewriter,
+                            const llvm::SmallDenseMap<Value, BlockData> &known);
+
   static void
   parseReinterpretCast(memref::ReinterpretCastOp op, BlockData &data,
                        const Location &loc, ConversionPatternRewriter &rewriter,

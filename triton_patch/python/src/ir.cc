@@ -1341,6 +1341,22 @@ void init_triton_ir(py::module &&m) {
              auto op = self.create<SplitOp>(a);
              return std::vector<Value>(op->result_begin(), op->result_end());
            })
+      .def("create_extract_scalar",
+           [](TritonOpBuilder &self, Value &src, std::vector<Value> &indices) -> Value {
+              llvm::SmallVector<Value> arg_indices;
+             for (const auto &i : indices) {
+               auto iTy = i.getType();
+               if (!iTy.isIndex()) {
+                 auto v = self.create<arith::IndexCastOp>(
+                     self.getBuilder().getIndexType(), i);
+                 arg_indices.push_back(v);
+               } else {
+                 arg_indices.push_back(i);
+               }
+             }
+              auto ret = self.create<tensor::ExtractOp>(src, arg_indices);
+              return ret;
+            })
       .def("create_extract_slice",
            [](TritonOpBuilder &self, Value &ful, std::vector<Value> &offs_vec,
               std::vector<int> &sizs_vec, std::vector<int> &strd_vec) -> Value {
@@ -1370,9 +1386,9 @@ void init_triton_ir(py::module &&m) {
              auto retTy = RankedTensorType::get(
                  retSizes,
                  cast<RankedTensorType>(ful.getType()).getElementType());
-             auto ret = self.create<tensor::ExtractSliceOp>(retTy, ful, offsets,
+                 
+             return self.create<tensor::ExtractSliceOp>(retTy, ful, offsets,
                                                             sizes, strides);
-             return ret;
            })
       .def("create_insert_slice",
            [](TritonOpBuilder &self, Value &ful, Value &sub,

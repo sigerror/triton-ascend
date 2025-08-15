@@ -617,6 +617,7 @@ from .triton_patch.language.core import (
     dot,
     cast,
     gather,
+    get_element,
     insert_slice,
     extract_slice,
     trans,
@@ -679,6 +680,7 @@ language.softmax = softmax
 language.gather = gather
 language.insert_slice = insert_slice
 language.extract_slice = extract_slice
+language.get_element = get_element
 language.tensor.__lshift__ = __lshift__
 language.tensor.__rshift__ = __rshift__
 language.trans = trans

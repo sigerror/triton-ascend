@@ -485,6 +485,14 @@ def extract_slice(ful: tl.tensor, offsets: List[tl.tensor], sizes: List[int], st
     out = builder.create_extract_slice(ful.handle, new_offsets, sizes, strides)
     return tl.tensor(out, ret_type)
 
+def get_element(src: tl.tensor, indice: List[tl.tensor], builder: ir.builder):
+    if len(src.shape) != len(indice):
+        raise ValueError("Indice's rank must be equal to src tensor's rank")
+
+    new_indice = [i.handle for i in indice]
+    result = builder.create_extract_scalar(src.handle, new_indice)
+    return wrap_tensor(result, src.type.scalar, None)
+
 def atom_red_typechecking_impl(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, op: str,
                                builder: ir.builder) -> Tuple[tl.tensor, tl.tensor, tl.tensor]:
     if not ptr.type.scalar.is_ptr():

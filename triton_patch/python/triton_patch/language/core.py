@@ -331,6 +331,25 @@ def extract_slice(ful, offsets, sizes, strides, _builder=None, _generator=None) 
     sub = semantic.extract_slice(ful, new_offsets, sizes, strides, _builder)
     return sub
 
+@_tensor_member_fn
+@builtin
+def get_element(src, indice, _builder=None, _generator=None):
+    """
+    get_element op reads a ranked tensor and returns one element as specified by the given indices.
+    The result of the op is a value with the same type as the elements of the tensor.
+    The arity of indices must match the rank of the accessed value.
+
+    :param src: The tensor to be accessed.
+    :type src: Tensor
+    :param indice:
+    :type indice: tuple of ints
+    """
+    assert len(src.shape) > 0
+    new_indice = [
+        real_semantic.to_tensor(i, _builder) if isinstance(i, constexpr) else i
+        for i in indice
+    ]
+    return semantic.get_element(src, new_indice, _builder)
 
 @builtin
 def __lshift__(self, other, _builder=None):
