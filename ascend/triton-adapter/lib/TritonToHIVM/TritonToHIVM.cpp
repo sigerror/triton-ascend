@@ -26,6 +26,12 @@ using namespace hivm;
 
 namespace {
 
+struct CoreAndPipes {
+  TCoreTypeAttr core;
+  PipeAttr producer;
+  PipeAttr consumer;
+};
+
 static LogicalResult EmitUnknownOpError(Operation *op,
                                         llvm::StringRef opName) {
   op->emitError("Unknown custom operation: ") << opName;
@@ -43,18 +49,34 @@ static void CreateSyncBlock(PatternRewriter &rewriter, Location loc,
   rewriter.replaceOp(op, newOp);
 }
 
-static std::tuple<TCoreTypeAttr, PipeAttr, PipeAttr>
-GetCoreAndPipes(MLIRContext *ctx, llvm::StringRef sender) {
+static CoreAndPipes GetCoreAndPipes(MLIRContext *ctx,
+                                    llvm::StringRef opName,
+                                    llvm::StringRef sender) {
+  // Step 1: Decide pipes
+  PipeAttr producer;
+  PipeAttr consumer = PipeAttr::get(ctx, PIPE::PIPE_MTE2);
+
   if (sender == "cube") {
-    return std::tuple{
-        TCoreTypeAttr::get(ctx, TCoreType::CUBE),
-        PipeAttr::get(ctx, PIPE::PIPE_FIX),
-        PipeAttr::get(ctx, PIPE::PIPE_MTE2)};
+    producer = PipeAttr::get(ctx, PIPE::PIPE_FIX);
+  } else {
+    producer = PipeAttr::get(ctx, PIPE::PIPE_MTE3);
   }
-  return std::tuple{
-      TCoreTypeAttr::get(ctx, TCoreType::VECTOR),
-      PipeAttr::get(ctx, PIPE::PIPE_MTE3),
-      PipeAttr::get(ctx, PIPE::PIPE_MTE2)};
+
+  // Step 2: Decide core type
+  TCoreTypeAttr core;
+  if (sender == "cube") {
+    if (opName == "sync_block_set")
+      core = TCoreTypeAttr::get(ctx, TCoreType::CUBE);
+    else
+      core = TCoreTypeAttr::get(ctx, TCoreType::VECTOR);
+  } else {
+    if (opName == "sync_block_set")
+      core = TCoreTypeAttr::get(ctx, TCoreType::VECTOR);
+    else
+      core = TCoreTypeAttr::get(ctx, TCoreType::CUBE);
+  }
+
+  return {core, producer, consumer};
 }
 
 } // end anonymous namespace
@@ -103,7 +125,7 @@ LogicalResult matchAndRewrite(triton::CustomOp op,
   }
 
   if (opName == "sync_block_set") {
-    auto [coreAttr, prodPipe, consPipe] = GetCoreAndPipes(ctx, arg);
+    auto [coreAttr, prodPipe, consPipe] = GetCoreAndPipes(ctx, opName, arg);
     rewriter.replaceOp(op, rewriter.create<hivm::SyncBlockSetOp>(
                                 loc, coreAttr, prodPipe, consPipe,
                                 rewriter.getIndexAttr(id)));
@@ -111,7 +133,7 @@ LogicalResult matchAndRewrite(triton::CustomOp op,
   }
 
   if (opName == "sync_block_wait") {
-    auto [coreAttr, prodPipe, consPipe] = GetCoreAndPipes(ctx, arg);
+    auto [coreAttr, prodPipe, consPipe] = GetCoreAndPipes(ctx, opName, arg);
     rewriter.replaceOp(op, rewriter.create<hivm::SyncBlockWaitOp>(
                                 loc, coreAttr, prodPipe, consPipe,
                                 rewriter.getIndexAttr(id)));

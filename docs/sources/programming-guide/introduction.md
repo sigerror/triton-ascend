@@ -353,5 +353,9 @@ rm -rf ~/.triton/dump
 在开源triton的基础上，额外添加一些triton的语法，帮助使用者通过triton代码，跳过编译器的自动优化，
 手动影响后续的编译过程, 用于极致的性能调优。
 
-1. triton.language.multibuffer(tensor, buffer_size): 使用该接口后，可以对这个tensor同时进行读取和写入，增强计算的性能，但内存占用翻倍。
-2. triton.language.get_element(src: tl.tensor, indice: tuple(int)): 接受一个tensor和一个合法坐标，将tensor中该坐标位置的元素作为标量提取出来。
+1. `triton.language.multibuffer(tensor, buffer_size)`: 使用该接口后，可以对这个tensor同时进行读取和写入，增强计算的性能，但内存占用翻倍。
+2. 显式核间同步指令: 使用该接口，可以手动插入核间同步指令，用于性能调优，需谨慎使用。
+    * `triton.language.sync_block_all(mode)`
+    * `triton.language.sync_block_set(sender_core, receiver_core, id)` 
+    * `triton.language.sync_block_wait(sender_core, receiver_core, id)`
+3. `triton.language.get_element(src: tl.tensor, indice: tuple(int))`: 接受一个tensor和一个合法坐标，将tensor中该坐标位置的元素作为标量提取出来。
