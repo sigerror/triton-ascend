@@ -385,7 +385,7 @@ void BlockDataParser::parse(
     parseIndirectLoad<triton::LoadOp>(loadOp, data, loc, rewriter, known);
   } else if (auto castOp = operand.getDefiningOp<arith::FPToSIOp>()) {
     parseIndirectLoad<arith::FPToSIOp>(castOp, data, loc, rewriter, known);
-  } else if(auto extractSliceOp = operand.getDefiningOp<tensor::ExtractSliceOp>()){
+  } else if (auto extractSliceOp = operand.getDefiningOp<tensor::ExtractSliceOp>()) {
     parseExtractSlice(extractSliceOp, data, loc, rewriter, known);
   } else {
     operand.dump();
@@ -473,13 +473,13 @@ void BlockDataParser::parseExpandDims(
 }
 
 void BlockDataParser::parseExtractSlice(tensor::ExtractSliceOp op, BlockData &data,
-                            const Location &loc,
-                            ConversionPatternRewriter &rewriter,
-                            const llvm::SmallDenseMap<Value, BlockData> &known){
+    const Location &loc,
+    ConversionPatternRewriter &rewriter,
+    const llvm::SmallDenseMap<Value, BlockData> &known) {
   const std::string scenarioMessages =
       "PtsAnalysis supports indirectly block load in the following scenario\n"
       "B = tl.load(Aptr + Aoffset) # B is 1D tensor\n"
-      "s = tl.extract_slice(indices, offsets=(i,), sizes=(1,), strides=(1,)) # s is a tensor<1x$dtype>\n" 
+      "s = tl.extract_slice(indices, offsets= (i,), sizes= (1,), strides= (1,)) # s is a tensor<1x$dtype>\n" 
       "D = tl.load(Cptr + s + Coffset) # s is used as the scalar offset\n"; // tensor<2x$dtype> will be support soon
 
   auto extract_src = op->getOperand(0);
@@ -496,7 +496,7 @@ void BlockDataParser::parseExtractSlice(tensor::ExtractSliceOp op, BlockData &da
   auto shaped_ty = dyn_cast<RankedTensorType>(extract_result.getType());
   auto shape = shaped_ty.getShape();
 
-  if(shape.size() > 1 || shape[0] > 1){
+  if(shape.size() > 1 || shape[0] > 1) {
     llvm_unreachable(scenarioMessages.c_str());
   }
 
@@ -511,7 +511,6 @@ void BlockDataParser::parseExtractSlice(tensor::ExtractSliceOp op, BlockData &da
   } else {
     llvm_unreachable("parseExtractSlice with offset already setup not yet supported");
   }
-
 }
 
 
