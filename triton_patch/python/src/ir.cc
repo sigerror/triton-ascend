@@ -1358,38 +1358,36 @@ void init_triton_ir(py::module &&m) {
             return ret;
         })
       .def("create_extract_slice",
-           [](TritonOpBuilder &self, Value &ful, std::vector<Value> &offs_vec,
-              std::vector<int> &sizs_vec, std::vector<int> &strd_vec) -> Value {
-             llvm::SmallVector<Value> offsets;
-             for (const auto &o : offs_vec) {
-               auto oTy = o.getType();
-               if (!oTy.isIndex()) {
-                 auto v = self.create<arith::IndexCastOp>(
-                     self.getBuilder().getIndexType(), o);
-                 offsets.push_back(v);
-               } else {
-                 offsets.push_back(o);
-               }
-             }
-             llvm::SmallVector<Value> sizes;
-             llvm::SmallVector<int64_t> retSizes;
-             for (const auto &s : sizs_vec) {
-               auto v = self.create<arith::ConstantIndexOp>(s);
-               sizes.push_back(v);
-               retSizes.push_back(s);
-             }
-             llvm::SmallVector<Value> strides;
-             for (const auto &s : strd_vec) {
-               auto v = self.create<arith::ConstantIndexOp>(s);
-               strides.push_back(v);
-             }
-             auto retTy = RankedTensorType::get(
-                 retSizes,
-                 cast<RankedTensorType>(ful.getType()).getElementType());
-                 
-             return self.create<tensor::ExtractSliceOp>(retTy, ful, offsets,
-                        sizes, strides);
-           })
+        [](TritonOpBuilder &self, Value &ful, std::vector<Value> &offs_vec,
+            std::vector<int> &sizs_vec, std::vector<int> &strd_vec) -> Value {
+            llvm::SmallVector<Value> offsets;
+            for (const auto &o : offs_vec) {
+                auto oTy = o.getType();
+                if (!oTy.isIndex()) {
+                    auto v = self.create<arith::IndexCastOp>(
+                        self.getBuilder().getIndexType(), o);
+                    offsets.push_back(v);
+                } else {
+                    offsets.push_back(o);
+                }
+            }
+            llvm::SmallVector<Value> sizes;
+            llvm::SmallVector<int64_t> retSizes;
+            for (const auto &s : sizs_vec) {
+                auto v = self.create<arith::ConstantIndexOp>(s);
+                sizes.push_back(v);
+                retSizes.push_back(s);
+            }
+            llvm::SmallVector<Value> strides;
+            for (const auto &s : strd_vec) {
+                auto v = self.create<arith::ConstantIndexOp>(s);
+                strides.push_back(v);
+            }
+            auto retTy = RankedTensorType::get(retSizes,
+                cast<RankedTensorType>(ful.getType()).getElementType());
+  
+            return self.create<tensor::ExtractSliceOp>(retTy, ful, offsets, sizes, strides);
+        })
       .def("create_insert_slice",
            [](TritonOpBuilder &self, Value &ful, Value &sub,
               std::vector<Value> &offs_vec, std::vector<int> &sizs_vec,
