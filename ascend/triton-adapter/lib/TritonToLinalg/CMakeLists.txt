@@ -3,6 +3,7 @@ add_triton_library(TritonToLinalg
         LoadStoreConverter.cpp
         FunctionConverter.cpp
         ArgMinMaxConverter.cpp
+        DescriptorConverter.cpp
         TritonOpConverter.cpp
         BlockPtrAnalysis.cpp
         MaskAnalysis.cpp

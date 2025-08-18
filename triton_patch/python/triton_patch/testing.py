@@ -612,6 +612,10 @@ def get_max_simd_tflops(dtype, clock_rate, device=None):
 
 # Patch the triton language API here because triton's __init__.py
 # import testing in the last stages.
+from .triton_patch.language.tensor_descriptor import (
+    tensor_descriptor,
+    tensor_descriptor_type,
+)
 
 from .triton_patch.language.core import (
     dot,
@@ -625,6 +629,9 @@ from .triton_patch.language.core import (
     __rshift__,
     parallel,
     compile_hint,
+    make_tensor_descriptor,
+    load_tensor_descriptor,
+    store_tensor_descriptor,
     multibuffer,
     sync_block_all,
     sync_block_set,
@@ -692,6 +699,12 @@ language.multibuffer = multibuffer
 language.sync_block_all = sync_block_all
 language.sync_block_set = sync_block_set
 language.sync_block_wait = sync_block_wait
+language.make_tensor_descriptor = make_tensor_descriptor
+language.tensor_descriptor = tensor_descriptor
+language.tensor_descriptor_type = tensor_descriptor_type
+language.load_tensor_descriptor = load_tensor_descriptor
+language.store_tensor_descriptor = store_tensor_descriptor
+
 
 # from .triton_patch.language.core import dtype, pointer_type, block_type, function_type
 # language.core.dtype = dtype

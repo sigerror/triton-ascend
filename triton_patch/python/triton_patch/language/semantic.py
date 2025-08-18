@@ -8,6 +8,13 @@ from triton.language.semantic import wrap_tensor, _str_to_rounding_mode, not_equ
 import triton.language.math as math
 import triton.language.core as core
 
+from .tensor_descriptor import (
+    _unwrap_if_constexpr,
+    _unwrap_shape,
+    block_type,
+    tensor_descriptor
+)
+
 
 def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
     if not isinstance(start, int) or not isinstance(end, int):
@@ -28,6 +35,10 @@ def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
 def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
          fp_downcast_rounding: Optional[str] = None) -> tl.tensor:
     src_ty = input.type
+    src_sca_ty = src_ty.scalar
+    dst_sca_ty = dst_ty.scalar
+    if src_sca_ty == dst_sca_ty:
+        return input
     if isinstance(dst_ty, tl.constexpr):
         dst_ty = dst_ty.value
     if isinstance(fp_downcast_rounding, tl.constexpr):
@@ -36,9 +47,6 @@ def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
         dst_ty = tl.block_type(dst_ty.scalar, input.type.get_block_shapes())
     if src_ty == dst_ty:
         return input
-
-    src_sca_ty = src_ty.scalar
-    dst_sca_ty = dst_ty.scalar
 
     # For fp downcasting default rounding mode should be RTNE, for all other conversions it should
     # not be set
@@ -735,3 +743,63 @@ def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.te
         builder.create_dot_scaled(lhs.handle, lhs_scale.handle, lhs_format_enum, rhs.handle, rhs_scale_handle,
                                   rhs_format_enum, acc_handle), ret_ty)
 
+
+
+
+def scalar_constant(value, dtype: tl.dtype, builder: ir.builder) -> tl.tensor:
+    if dtype is None:
+        raise ValueError("dtype must be specified when value is not a tensor")
+    if value == 0:
+        value = builder.get_null_value(dtype.to_ir(builder))
+    else:
+        get_value_fn = getattr(builder, f"get_{dtype.name}")
+        value = get_value_fn(value)
+    return tl.tensor(value, dtype)
+
+
+def make_scalar(value, dtype: tl.dtype, builder: ir.builder) -> tl.tensor:
+    if isinstance(value, tl.tensor):
+        assert value.numel.value == 1, "only accepts size-1 tensor"
+        return cast(value, dtype, builder)
+    return scalar_constant(value, dtype, builder)
+
+
+def make_tensor_descriptor(
+    base: tl.tensor,
+    shape: List[tl.tensor],
+    strides: List[tl.tensor],
+    block_shape: List[tl.constexpr],
+    builder: ir.builder
+) -> tensor_descriptor:
+    ndim = len(shape)
+    if not (1 <= ndim <= 5):
+        raise ValueError(f"Expected 1 <= ndim <= 5 but got {ndim} dimensions")
+    if len(strides) != ndim:
+        raise ValueError(f"Expected {ndim} strides but got {len(strides)}")
+    if len(block_shape) != ndim:
+        raise ValueError(f"Expected block_shape to have {ndim} dimensions but got {len(strides)}")
+    assert isinstance(base.dtype, tl.pointer_type)
+    elem_size = base.dtype.element_ty.primitive_bitwidth // 8
+    contig_dim_size = _unwrap_if_constexpr(block_shape[-1])
+    if contig_dim_size * elem_size < 16:
+        raise ValueError(
+            f"Descriptor block shape must have at least 16 bytes in the last dimension, but got {contig_dim_size} * {elem_size} = {contig_dim_size * elem_size} bytes"
+        )
+
+    strides[-1] = _unwrap_if_constexpr(strides[-1])
+    if strides[-1] != 1:
+        raise ValueError(f"Tensor descriptor last dim must be 1 but got {strides[-1]}")
+    
+    shape = [make_scalar(x, tl.int32, builder) for x in shape]
+    strides = [make_scalar(x, tl.int64, builder) for x in strides]
+
+    block_shape = _unwrap_shape(block_shape)
+
+    assert isinstance(base.type, tl.pointer_type)
+    desc_block_type = block_type(base.type.element_ty, block_shape)
+    base_handle = base.handle
+    is_signed_int = base.type.element_ty.is_int_signed()
+
+    handle = builder.create_make_tensor_descriptor(base_handle, [s.handle for s in shape],
+                                                    [s.handle for s in strides], block_shape, is_signed_int)
+    return tensor_descriptor(handle, shape, strides, desc_block_type)

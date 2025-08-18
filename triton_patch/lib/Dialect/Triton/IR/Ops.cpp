@@ -817,7 +817,8 @@ LogicalResult BroadcastOp::verify() {
 void MakeTensorPtrOp::build(OpBuilder &builder, OperationState &state,
                             Value base, ValueRange shape, ValueRange strides,
                             ValueRange offsets, ArrayRef<int32_t> tensorShape,
-                            ArrayRef<int32_t> order) {
+                            ArrayRef<int32_t> order)
+{
   // Get pointer type from `base`
   auto pointerType = cast<PointerType>(base.getType());
   assert(pointerType != nullptr);
@@ -843,6 +844,61 @@ OpFoldResult AdvanceOp::fold(FoldAdaptor adaptor) {
     if (offset != 0)
       return {};
   return getPtr();
+}
+
+//-- MakeTensorDescOp --
+void MakeTensorDescOp::build(OpBuilder &builder, OperationState &state,
+                             Value base, ValueRange shape, ValueRange strides,
+                             ArrayRef<int32_t> blockShape,
+                             bool isSignedInteger)
+{
+  auto ptrTy = dyn_cast<triton::PointerType>(base.getType());
+  if (!ptrTy) {
+    llvm::report_fatal_error("Expected pointer type");
+  }
+  auto elemTy = ptrTy.getPointeeType();
+  SmallVector<int64_t> blockShape64(blockShape);
+  auto blockTy = RankedTensorType::get(blockShape64, elemTy);
+  auto descTy =
+      TensorDescType::get(builder.getContext(), blockTy, isSignedInteger);
+  return build(builder, state, descTy, base, shape, strides);
+}
+
+// -- DescriptorLoadOp --
+static LogicalResult verifyDescriptorLoadStoreType(Operation *op,
+                                                   TensorDescType desc,
+                                                   RankedTensorType tensor)
+{
+  RankedTensorType block = desc.getSignlessBlockType();
+  ArrayRef<int64_t> blockShape = block.getShape();
+  ArrayRef<int64_t> tensorShape = tensor.getShape();
+  if (blockShape.size() > tensorShape.size()) {
+    // Allow ranked reduced load if the leading dimensions are all 1s.
+    for (int i = 0; i < blockShape.size() - tensorShape.size(); ++i) {
+      if (blockShape[i] != 1)
+        return op->emitOpError(
+            "ranked reduce load only allowed for unit dimension leading dim.");
+    }
+    blockShape = blockShape.take_back(tensorShape.size());
+  }
+
+  if (blockShape == tensorShape &&
+      block.getElementType() == tensor.getElementType()) {
+        return success();
+      }
+  return op->emitOpError("tensor descriptor block and tensor types must match");
+}
+
+LogicalResult DescriptorLoadOp::verify()
+{
+  return verifyDescriptorLoadStoreType(*this, getDesc().getType(), getType());
+}
+
+// -- DescriptorStoreOp --
+LogicalResult DescriptorStoreOp::verify()
+{
+  return verifyDescriptorLoadStoreType(*this, getDesc().getType(),
+                                       getSrc().getType());
 }
 
 // The following ops, including `call`, `func`, and `return` are copied and

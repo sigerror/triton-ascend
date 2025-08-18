@@ -6,7 +6,7 @@ fusion_result.json
 kernel_meta/
 
 # compilation
-triton/
+/triton/
 build/
 compile_commands.json
 

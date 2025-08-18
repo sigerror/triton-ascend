@@ -72,6 +72,8 @@ private:
                                                 RewritePatternSet &patterns,
                                                 unsigned int launchGridRank);
 
+  LogicalResult processDescriptorOperations(ModuleOp moduleOp);
+
 public:
   void getDependentDialects(DialectRegistry &registry) const override;
 

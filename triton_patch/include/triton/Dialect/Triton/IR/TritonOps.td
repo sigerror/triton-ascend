@@ -18,6 +18,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td" // Pure
 include "mlir/Interfaces/CastInterfaces.td" // CastOpInterface
 include "mlir/Interfaces/CallInterfaces.td" // CallOpInterface
 include "triton/Dialect/Triton/IR/TritonTypeInterfaces.td"
+include "triton/Dialect/Triton/IR/TritonOpInterfaces.td"
 
 
 //
@@ -994,6 +995,89 @@ def TT_MakeTensorPtrOp : TT_Op<"make_tensor_ptr",
         "ArrayRef<int32_t>":$order
     )>
   ];
+}
+
+//
+// Make Tensor Descriptor Op
+//
+def TT_MakeTensorDescOp : TT_Op<"make_tensor_descriptor", [
+    Pure,
+    SameVariadicOperandSize,
+]> {
+  let summary = "Make a tensor descriptor type with meta information of the parent tensor and block size";
+
+  let description = [{
+      `tt.make_tensor_descriptor` takes both meta information of the parent tensor and the block size,
+      and returns a descriptor object which can be used to load/store from the tensor in global memory.
+  }];
+
+  let arguments = (ins
+    TT_Ptr:$base,
+    Variadic<I32>:$shape,
+    Variadic<I64>:$strides
+  );
+
+  let results = (outs TT_TensorDescType:$result);
+
+  let assemblyFormat = "$base `,` `[` $shape `]` `,` `[` $strides `]` attr-dict `:` type($base) `,` type($result)";
+
+  let builders = [
+    OpBuilder<(ins "Value":$base, "ValueRange":$shape, "ValueRange":$strides, "ArrayRef<int32_t>":$blockShape, "bool":$isSignedInteger)>
+  ];
+
+  let extraClassDeclaration = [{
+    ArrayRef<int64_t> getTensorShape() {
+      return getType().getBlockType().getShape();
+    }
+  }];
+}
+
+def TT_DescriptorLoadOp : TT_Op<"descriptor_load", [TT_DescriptorOpInterface]> {
+  let summary = "Load from descriptor";
+  let description = [{
+    This operation will be lowered to Nvidia TMA load operation on targets supporting it.
+    `desc` is a tensor descriptor object.
+    The destination tensor type and shape must match the descriptor otherwise the result is undefined.
+  }];
+  let arguments = (ins
+    Arg<TT_TensorDescType, "", [MemRead<GlobalMemory>]>:$desc,
+    Variadic<I32>:$indices,
+    DefaultValuedAttr<TT_CacheModifierAttr, "::mlir::triton::CacheModifier::NONE">:$cache,
+    DefaultValuedAttr<TT_EvictionPolicyAttr, "::mlir::triton::EvictionPolicy::NORMAL">:$evict
+  );
+
+  let results = (outs TT_Tensor:$result);
+
+  let assemblyFormat = [{
+    $desc `[` $indices `]`
+    oilist(
+      `cacheModifier` `=` $cache |
+      `evictionPolicy` `=` $evict
+    )
+    attr-dict `:` qualified(type($desc)) `->` type($result)
+  }];
+
+  let hasVerifier = 1;
+}
+
+def TT_DescriptorStoreOp : TT_Op<"descriptor_store", [TT_DescriptorStoreLikeOpInterface]> {
+  let summary = "store value based on descriptor";
+  let description = [{
+    This operation will be lowered to Nvidia TMA store operation on targets supporting it.
+    `desc` is a tensor descriptor object.
+    The shape and types of `src` must match the descriptor otherwise the result is undefined.
+  }];
+  let arguments = (ins
+    Arg<TT_TensorDescType, "", [MemRead<GlobalMemory>, MemWrite<GlobalMemory>]>:$desc,
+    TT_Tensor:$src,
+    Variadic<I32>:$indices
+  );
+
+  let assemblyFormat = [{
+    $desc `[` $indices `]` `,` $src
+    attr-dict `:` qualified(type($desc)) `,` type($src)
+  }];
+  let hasVerifier = 1;
 }
 
 // The following ops, including `call`, `func`, and `return` are copied and modified from

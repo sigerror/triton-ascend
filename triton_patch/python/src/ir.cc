@@ -1273,19 +1273,21 @@ void init_triton_ir(py::module &&m) {
              self.create<StoreOp>(ptrs, val, mask, cacheModifier,
                                   evictionPolicy);
            })
+      .def("create_tensor_descriptor_type",
+           [](TritonOpBuilder &self, Type blockTy, bool isSigned) -> Type {
+               auto ctx = self.getBuilder().getContext();
+               return triton::TensorDescType::get(ctx, cast<RankedTensorType>(blockTy), isSigned);
+           })
       .def("create_descriptor_load",
-           [](TritonOpBuilder &self, Value desc_ptr,
-              std::vector<Value> &indices, Type type,
-              CacheModifier cacheModifier,
+           [](TritonOpBuilder &self, Value desc, std::vector<Value> &indices, CacheModifier cacheModifier,
               EvictionPolicy evictionPolicy) -> Value {
-             return self.create<ExperimentalDescriptorLoadOp>(
-                 type, desc_ptr, indices, cacheModifier, evictionPolicy);
+                auto descTy = cast<triton::TensorDescType>(desc.getType());
+                auto resTy = descTy.getSignlessBlockType();
+                return self.create<DescriptorLoadOp>(resTy, desc, indices, cacheModifier, evictionPolicy);
            })
       .def("create_descriptor_store",
-           [](TritonOpBuilder &self, Value desc_ptr, Value value,
-              std::vector<Value> &indices) -> void {
-             self.create<ExperimentalDescriptorStoreOp>(desc_ptr, value,
-                                                        indices);
+           [](TritonOpBuilder &self, Value desc, Value value, std::vector<Value> &indices) -> void {
+               self.create<DescriptorStoreOp>(desc, value, indices);
            })
       .def("create_tensormap_create",
            [](TritonOpBuilder &self, Value desc_ptr, Value global_address,
@@ -1688,6 +1690,12 @@ void init_triton_ir(py::module &&m) {
                     self.getBuilder().getI32IntegerAttr(id)}
                 );
                 self.create<CustomOp>(op_name, args, ValueRange());
+           })
+      // Make a tensor descriptor
+      .def("create_make_tensor_descriptor",
+           [](TritonOpBuilder &self, Value &base, std::vector<Value> &shape, std::vector<Value> &strides,
+              std::vector<int32_t> &tensorShape, bool isSignedInteger) -> Value {
+                return self.create<MakeTensorDescOp>(base, shape, strides, tensorShape, isSignedInteger);
            })
       // Add an annotation
       .def("create_annotation",

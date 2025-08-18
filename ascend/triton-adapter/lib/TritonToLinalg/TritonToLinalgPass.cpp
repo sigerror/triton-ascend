@@ -3,6 +3,7 @@
 #include "TritonToLinalg/FunctionConverter.h"
 #include "TritonToLinalg/LoadStoreConverter.h"
 #include "TritonToLinalg/TritonOpConverter.h"
+#include "TritonToLinalg/DescriptorConverter.h"
 #include "TritonToLinalg/UseAnalysis.h"
 #include "Utils/InterleaveOptimization.h"
 #include "Utils/Utils.h"
@@ -543,6 +544,40 @@ void TritonToLinalgPass::getDependentDialects(DialectRegistry &registry) const {
                   memref::MemRefDialect>();
 }
 
+LogicalResult TritonToLinalgPass::processDescriptorOperations(ModuleOp moduleOp)
+{
+    // --- ConversionTarget: 动态合法性判断 ---
+    mlir::ConversionTarget target(getContext());
+
+    // Dialect-level dynamic legality: 这些 dialect 在操作的 operand/result 中不包含 TensorDescType 时为合法
+    target.addDynamicallyLegalDialect<mlir::arith::ArithDialect, mlir::scf::SCFDialect, triton::TritonDialect>(
+        [](mlir::Operation *op) {
+            return !DescriptorConverter::hasATensorDescriptorType(op->getOperandTypes()) &&
+                   !DescriptorConverter::hasATensorDescriptorType(op->getResultTypes());
+        });
+    // 函数签名合法性：triton::FuncOp 的输入/输出 不含 TensorDescType 则合法
+    target.addDynamicallyLegalOp<triton::FuncOp>([](triton::FuncOp funcOp) {
+        return !DescriptorConverter::hasATensorDescriptorType(funcOp.getFunctionType().getInputs()) &&
+               !DescriptorConverter::hasATensorDescriptorType(funcOp.getFunctionType().getResults());
+    });
+    target.addLegalOp<triton::MakeTensorDescOp>();
+    target.addIllegalOp<triton::DescriptorLoadOp, triton::DescriptorStoreOp>();
+
+    // --- Patterns ---
+    mlir::RewritePatternSet patterns(&getContext());
+    patterns.add<DescriptorConverter::DescriptorLoadConverter>(patterns.getContext());
+    patterns.add<DescriptorConverter::DescriptorStoreConverter>(patterns.getContext());
+
+    mlir::ConversionConfig config;
+    config.buildMaterializations = true;
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns), config))) {
+        moduleOp->emitError("failed to convert tensor descriptor operations");
+        return failure();
+    }
+
+    return success();
+}
+
 void TritonToLinalgPass::runOnOperation() {
   auto moduleOp = getOperation();
 
@@ -559,6 +594,11 @@ void TritonToLinalgPass::runOnOperation() {
     });
 
   RewritePatternSet canonicalizerPatterns(&getContext());
+
+  // 0. 首先执行 tensor descriptor 操作转换
+  if (failed(processDescriptorOperations(moduleOp))) {
+    signalPassFailure();
+  }
 
   // 遍历所有的triton::FuncOp，添加tensor_kind属性
   moduleOp.walk([&](triton::FuncOp func) {

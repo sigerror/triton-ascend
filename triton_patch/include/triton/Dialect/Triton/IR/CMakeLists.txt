@@ -17,7 +17,9 @@ mlir_tablegen(Dialect.h.inc -gen-dialect-decls)
 mlir_tablegen(Dialect.cpp.inc -gen-dialect-defs)
 # add_mlir_doc(TritonDialect TritonDialect dialects/ -gen-dialect-doc)
 
-set(LLVM_TARGET_DEFINITIONS ${triton_abs_dir}/TritonTypes.td)
+# TODO: When upgrading to Triton 3.4.0, enable the commented line below and remove the current line.
+# set(LLVM_TARGET_DEFINITIONS ${triton_abs_dir}/TritonTypes.td)
+set(LLVM_TARGET_DEFINITIONS TritonTypes.td)
 mlir_tablegen(Types.h.inc -gen-typedef-decls)
 mlir_tablegen(Types.cpp.inc -gen-typedef-defs)
 
@@ -28,5 +30,11 @@ mlir_tablegen(AttrInterfaces.cpp.inc -gen-attr-interface-defs)
 set(LLVM_TARGET_DEFINITIONS ${triton_abs_dir}/TritonTypeInterfaces.td)
 mlir_tablegen(TritonTypeInterfaces.h.inc -gen-type-interface-decls)
 mlir_tablegen(TritonTypeInterfaces.cpp.inc -gen-type-interface-defs)
+
+# TODO: When upgrading to Triton 3.4.0, enable the commented line below and remove the current line.
+# set(LLVM_TARGET_DEFINITIONS ${triton_abs_dir}/TritonOpInterfaces.td)
+set(LLVM_TARGET_DEFINITIONS TritonOpInterfaces.td)
+mlir_tablegen(OpInterfaces.h.inc -gen-op-interface-decls)
+mlir_tablegen(OpInterfaces.cpp.inc -gen-op-interface-defs)
 
 add_public_tablegen_target(Patched_TritonTableGen)
