@@ -495,11 +495,9 @@ void BlockDataParser::parseExtractSlice(tensor::ExtractSliceOp op, BlockData &da
   auto extract_result = op->getResult(0);
   auto shaped_ty = dyn_cast<RankedTensorType>(extract_result.getType());
   auto shape = shaped_ty.getShape();
-
-  if(shape.size() > 1 || shape[0] > 1) {
+  if (shape.size() > 1 || shape[0] > 1) {
     llvm_unreachable(scenarioMessages.c_str());
   }
-
   auto castOp = rewriter.create<arith::IndexCastOp>(
       loc, RankedTensorType::get(shape, rewriter.getIndexType()),
       extract_result);
