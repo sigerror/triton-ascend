@@ -1388,7 +1388,7 @@ void init_triton_ir(py::module &&m) {
                  cast<RankedTensorType>(ful.getType()).getElementType());
                  
              return self.create<tensor::ExtractSliceOp>(retTy, ful, offsets,
-                                                            sizes, strides);
+                        sizes, strides);
            })
       .def("create_insert_slice",
            [](TritonOpBuilder &self, Value &ful, Value &sub,
