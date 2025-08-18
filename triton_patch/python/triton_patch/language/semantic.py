@@ -590,3 +590,65 @@ def custom_op(builder: ir.builder, op_name: str, **kwargs):
         return builder.create_custom_op_for_inter_core_sync(op_name, kwargs["sender"], kwargs["event_id"])
     
     raise ValueError(f"Unsupported custom op: {op_name}")
+
+
+def sort(ptr: tl.tensor, dim: int, descending, builder: ir.builder):
+    """
+    Triton sort 操作
+
+    参数：
+        ptr: tl.tensor，输入张量
+        dim: int，排序维度，必须是尾轴（最后一维）
+        descending: bool 或 constexpr，是否降序
+        builder: ir.builder，底层 IR 构建器
+    返回：
+        values: tl.tensor，排序后的值（类型与输入一致）
+    """
+
+    allowed_types = {tl.int8, tl.int16, tl.bfloat16, tl.float16, tl.float32}
+    base_ty = ptr.type.scalar if hasattr(ptr.type, "scalar") else ptr.type
+    if base_ty not in allowed_types:
+        raise TypeError(
+            f"tt.sort only supports int8, int16, bfloat16, float16, float32, "
+            f"but got {ptr.type}"
+        )
+
+    shape = getattr(ptr, "shape", None)
+    if shape is None or shape == ():
+        shape = getattr(getattr(ptr, "type", None), "shape", None)
+
+    rank = None
+    if shape is not None:
+        try:
+            rank = len(shape)
+        except Exception:
+            rank = len(list(shape))
+
+    if rank is not None:
+        if rank < 1:
+            raise ValueError("tt.sort requires tensor rank >= 1")
+        last_dim = rank - 1
+        norm_dim = dim if dim >= 0 else dim + rank
+        if norm_dim != last_dim:
+            raise ValueError(
+                f"tt.sort only supports sorting along the last dimension "
+                f"(dim={last_dim} or -1) for shape {tuple(shape)}, but got dim={dim}"
+            )
+        dim = last_dim
+    else:
+        if dim != -1:
+            raise ValueError(
+                "tt.sort only supports the last dimension; when rank is unknown "
+                "you must pass dim=-1"
+            )
+
+    if hasattr(descending, "value"):
+        descending = bool(descending.value)
+    else:
+        descending = bool(descending)
+
+    sorted_vals = builder.create_sort(ptr.handle, dim, descending)
+
+    values = tl.tensor(sorted_vals, type=ptr.type)
+
+    return values

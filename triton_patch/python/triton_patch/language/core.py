@@ -375,6 +375,33 @@ def compile_hint(ptr, hint_name, hint_val=None, _builder=None):
     hint_val = _unwrap_if_constexpr(hint_val) if hint_val else hint_val
     semantic.compile_hint(ptr, hint_name, hint_val, _builder)
 
+
+@builtin
+def sort(ptr, dim=-1, descending=False, _builder=None):
+    """
+    Triton sort 前端接口
+
+    参数：
+        ptr: tl.tensor，输入张量
+        dim: int 或 tl.constexpr[int]，排序维度
+        descending: bool 或 tl.constexpr[bool]，是否降序
+        _builder: ir.builder，底层 IR 构建器
+    返回：
+        values: tl.tensor，排序后的值（类型与输入一致）
+    """
+
+    try:
+        dim = int(dim.value) if hasattr(dim, "value") else int(dim)
+    except Exception as e:
+        raise TypeError(f"dim must be an integer (or tl.constexpr int), got {dim!r}. Error: {str(e)}") from e
+
+    if hasattr(descending, "value"):
+        descending = bool(descending.value)
+    else:
+        descending = bool(descending)
+
+    return semantic.sort(ptr, dim, descending, _builder)
+
     
 @builtin
 def multibuffer(src: tensor, size, _builder=None):

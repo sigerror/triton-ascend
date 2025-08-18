@@ -235,6 +235,36 @@ LogicalResult TransOp::inferReturnTypes(
   return success();
 }
 
+//-- SortOp --
+LogicalResult SortOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location, ValueRange operands,
+    DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
+    SmallVectorImpl<Type> &inferredReturnTypes)
+    {
+    if (operands.size() != 1) {
+        return emitOptionalError(location, "expected exactly one operand for SortOp");
+    }
+
+    if (!isa<RankedTensorType>(operands[0].getType())) {
+        return emitOptionalError(location, "operand must be a ranked tensor type for SortOp");
+    }
+
+    Value src = operands[0];
+    auto srcTy = cast<RankedTensorType>(src.getType());
+    auto srcShape = srcTy.getShape();
+    auto srcEnc = srcTy.getEncoding();
+
+    if (srcShape.empty()) {
+    return emitOptionalError(location, "input tensor must have rank >= 1");
+    }
+
+    Type sortedTy = RankedTensorType::get(srcShape, srcTy.getElementType(), srcEnc);
+
+    inferredReturnTypes.push_back(sortedTy);
+
+    return success();
+}
+
 LogicalResult TransOp::verify() {
   // Check that the op's `order` attribute is a permutation of the right length.
   auto srcTy = getSrc().getType();

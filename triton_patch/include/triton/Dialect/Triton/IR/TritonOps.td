@@ -541,6 +541,30 @@ def TT_SplitOp : TT_Op<"split", [
     let assemblyFormat = "$src attr-dict `:` type($src) `->` type($outLHS)";
 }
 
+def TT_SortOp : TT_Op<"sort", [
+  NoMemoryEffect,
+  DeclareOpInterfaceMethods<InferTypeOpInterface>
+]> {
+  let summary = "Sorts a tensor along a given dimension and returns sorted values.";
+  let description = [{
+    Sorts the elements of the input tensor along the specified dimension.
+    Returns one tensor:
+    The sorted tensor (same shape and element type as input).
+  }];
+
+  let arguments = (ins
+    TT_Tensor:$src,       // Input tensor
+    I64Attr:$dim,         // Dimension to sort along
+    BoolAttr:$descending  // Sort order
+  );
+
+  let results = (outs
+    TT_Tensor:$sorted    // Sorted values
+  );
+
+  let assemblyFormat = "$src `,` $dim `,` $descending attr-dict `:` type($src) `->` type($sorted)";
+}
+
 def TT_TransOp : TT_Op<"trans", [Pure,
                                  DeclareOpInterfaceMethods<InferTypeOpInterface>,
                                  SameOperandsAndResultElementType]> {

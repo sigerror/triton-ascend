@@ -1680,7 +1680,20 @@ void init_triton_ir(py::module &&m) {
              auto annotationOp = self.create<AnnotationOp>(ptr);
              annotationOp->setAttr(self.getBuilder().getStringAttr(attrKey),
                                    attrVal);
-           });
+           })
+      // Add sort
+      .def("create_sort",
+           [](TritonOpBuilder &self, Value src, int64_t dim, bool descending) -> Value {
+               auto &builder = self.getBuilder();
+               auto loc = self.getLastLoc();
+
+               auto dimAttr = builder.getI64IntegerAttr(dim);
+               auto descendingAttr = builder.getBoolAttr(descending);
+
+               auto op = builder.create<triton::SortOp>(loc, src, dimAttr, descendingAttr);
+
+               return op->getResult(0);
+            });
 
   py::class_<PassManager>(m, "pass_manager", py::module_local())
       .def(py::init<MLIRContext *>())

@@ -519,6 +519,13 @@ struct MatmulConverter : public OpConversionPattern<triton::DotOp> {
                   ConversionPatternRewriter &rewriter) const override;
 };
 
+struct SortOpConverter : public OpConversionPattern<triton::SortOp> {
+    using OpConversionPattern<triton::SortOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(triton::SortOp op, OpAdaptor adaptor,
+                                ConversionPatternRewriter &rewriter) const override;
+};
+
 } // end of namespace TTOpConverters
 
 #endif

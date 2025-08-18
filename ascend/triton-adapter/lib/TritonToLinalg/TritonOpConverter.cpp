@@ -1362,4 +1362,89 @@ MatmulConverter::matchAndRewrite(triton::DotOp op, OpAdaptor adaptor,
   }
   return success();
 }
+
+LogicalResult SortOpConverter::matchAndRewrite(
+    triton::SortOp op, OpAdaptor adaptor,
+    ConversionPatternRewriter &rewriter) const
+    {
+  Value src = adaptor.getSrc();
+  auto rankedSrcTy = cast<RankedTensorType>(src.getType());
+  auto srcElemTy = rankedSrcTy.getElementType();
+  auto srcShape = rankedSrcTy.getShape();
+  auto srcEnc = rankedSrcTy.getEncoding();
+
+  MLIRContext *ctx = rewriter.getContext();
+
+  Type backendElemTy = srcElemTy;
+  if (srcElemTy.isInteger(8)) {
+    backendElemTy = Float16Type::get(ctx);   // i8 -> f16
+  } else if (srcElemTy.isInteger(16)) {
+    backendElemTy = Float32Type::get(ctx);   // i16 -> f32
+  }
+  Type backendTensorTy = RankedTensorType::get(srcShape, backendElemTy, srcEnc);
+
+  Type valuesTy = src.getType();
+
+  Location loc = op.getLoc();
+  auto dimAttr = op->getAttrOfType<IntegerAttr>("dim");
+  auto descAttr = op->getAttrOfType<BoolAttr>("descending");
+  if (!dimAttr || !descAttr) {
+    op->emitError("missing 'dim' or 'descending' attribute");
+    return failure();
+  }
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  if (!moduleOp) {
+    op->emitError("must be inside a module");
+    return failure();
+  }
+
+  llvm::SmallString<64> baseName("triton_sort");
+  llvm::SmallString<64> funcName = baseName;
+  int uniqueId = 0;
+  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
+    funcName = baseName;
+    funcName += ("_" + std::to_string(uniqueId++));
+  }
+
+  auto i64Ty = IntegerType::get(ctx, 64);
+  auto i1Ty  = IntegerType::get(ctx, 1);
+  auto libFnType = rewriter.getFunctionType(
+      {backendTensorTy, i64Ty, i1Ty},
+      {backendTensorTy});
+
+  auto moduleIP = rewriter.saveInsertionPoint();
+  rewriter.setInsertionPointToEnd(moduleOp.getBody());
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+  rewriter.restoreInsertionPoint(moduleIP);
+
+  Value srcForCall = src;
+  if (backendElemTy != srcElemTy) {
+    srcForCall = rewriter.create<arith::SIToFPOp>(loc, backendTensorTy, src);
+  }
+
+  Value dimVal = rewriter.create<arith::ConstantIntOp>(loc, dimAttr.getInt(), 64);
+  Value descVal = rewriter.create<arith::ConstantIntOp>(loc, descAttr.getValue() ? 1 : 0, 1);
+
+  auto callee = SymbolRefAttr::get(ctx, funcOp.getSymName());
+  auto callOp = rewriter.create<func::CallOp>(
+      loc,
+      TypeRange({backendTensorTy}),
+      callee,
+      ValueRange({srcForCall, dimVal, descVal})
+  );
+
+  Value valuesFloat = callOp.getResult(0);   // tensor<f16/f32>
+
+  Value finalValues = valuesFloat;
+  if (backendElemTy != srcElemTy) {
+    finalValues = rewriter.create<arith::FPToSIOp>(loc, valuesTy, valuesFloat);
+  }
+
+  rewriter.replaceOp(op, {finalValues});
+
+  return success();
+}
+
 } // namespace TTOpConverters
