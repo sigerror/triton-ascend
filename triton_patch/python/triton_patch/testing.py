@@ -669,6 +669,7 @@ from .triton_patch.language.semantic import (
     or_,
     xor_,
     minus,
+    dot_scaled,
 )
 from . import language
 
@@ -715,6 +716,7 @@ language.semantic.and_ = and_
 language.semantic.or_ = or_
 language.semantic.xor_ = xor_
 language.semantic.minus = minus
+language.semantic.dot_scaled = dot_scaled
 
 language.umulhi = umulhi
 language.exp = exp

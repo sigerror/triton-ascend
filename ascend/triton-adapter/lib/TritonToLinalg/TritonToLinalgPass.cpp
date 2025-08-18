@@ -529,6 +529,7 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::DevicePrintConverter>(patterns.getContext());
   patterns.add<TTOpConverters::MatmulConverter>(patterns.getContext());
   patterns.add<TTOpConverters::SortOpConverter>(patterns.getContext());
+  patterns.add<TTOpConverters::DotScaledConverter>(patterns.getContext());
 
   if (!this->namedOps) {
     linalg::populateElementwiseToLinalgConversionPatterns(patterns);
@@ -552,6 +553,10 @@ void TritonToLinalgPass::runOnOperation() {
     existDot = true;
     return WalkResult::interrupt();
   });
+    moduleOp.walk([&](triton::DotScaledOp dotScaledOp) {
+        existDot = true;
+        return WalkResult::interrupt();
+    });
 
   RewritePatternSet canonicalizerPatterns(&getContext());
 

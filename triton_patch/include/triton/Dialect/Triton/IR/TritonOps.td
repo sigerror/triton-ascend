@@ -711,8 +711,8 @@ def TT_DotScaledOp : TT_Op<"dot_scaled", [Pure,
       ins
       // inputs are integer types as they are packed types and we currently
       // don't have a representation for those.
-      TT_IntTensor:$lhs,
-      TT_IntTensor:$rhs,
+      TT_FpIntTensor:$lhs,
+      TT_FpIntTensor:$rhs,
       TT_FloatTensor:$c,
       TT_IntTensor:$lhs_scale,
       Optional<TT_IntTensor>:$rhs_scale,
@@ -724,8 +724,9 @@ def TT_DotScaledOp : TT_Op<"dot_scaled", [Pure,
 
     // Not sure why I need to fully specify the optional group, but otherwise it complains when loading the mlir file
     let assemblyFormat = [{
-      $lhs `,` $lhs_scale `,` $rhs (`,`) : (`,` $rhs_scale^ `,`)? $c `lhs` `=` $lhs_type `rhs` `=` $rhs_type attr-dict
-      `:` type($lhs) `,` type($lhs_scale) `*` type($rhs) (`,` type($rhs_scale)^)? `->` type($d)
+      $lhs `,` $rhs `,` $c `,` $lhs_scale (`,` $rhs_scale^)?
+      `lhs` `=` $lhs_type `rhs` `=` $rhs_type attr-dict
+      `:` type($lhs) `,` type($rhs) `,` type($c) `,` type($lhs_scale) (`,` type($rhs_scale)^)? `->` type($d)
     }];
 }
 

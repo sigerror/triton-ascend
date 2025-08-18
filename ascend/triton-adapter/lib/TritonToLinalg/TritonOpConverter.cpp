@@ -1390,6 +1390,7 @@ MatmulConverter::matchAndRewrite(triton::DotOp op, OpAdaptor adaptor,
   return success();
 }
 
+
 LogicalResult SortOpConverter::matchAndRewrite(
     triton::SortOp op, OpAdaptor adaptor,
     ConversionPatternRewriter &rewriter) const
@@ -1471,6 +1472,164 @@ LogicalResult SortOpConverter::matchAndRewrite(
 
   rewriter.replaceOp(op, {finalValues});
 
+  return success();
+}
+
+
+LogicalResult
+DotScaledConverter::matchAndRewrite(triton::DotScaledOp op, OpAdaptor adaptor,
+                                    ConversionPatternRewriter &rewriter) const
+                                    {
+  Value lhs = adaptor.getLhs();
+  Value lhsScale = adaptor.getLhsScale();
+  Value rhsScale = adaptor.getRhsScale();
+  Value rhs = adaptor.getRhs();
+  Value c = adaptor.getC();
+  RankedTensorType dstType = cast<RankedTensorType>(op.getType());
+
+  RankedTensorType lhsTy = cast<RankedTensorType>(lhs.getType());
+  RankedTensorType lhsScaleTy = cast<RankedTensorType>(lhsScale.getType());
+  RankedTensorType rhsScaleTy = rhsScale ? cast<RankedTensorType>(rhsScale.getType()) : nullptr;
+  RankedTensorType rhsTy = cast<RankedTensorType>(rhs.getType());
+
+  Type fp32Ty = rewriter.getF32Type();
+  RankedTensorType lhsF32Ty = RankedTensorType::get(lhsTy.getShape(), fp32Ty);
+  RankedTensorType rhsF32Ty = RankedTensorType::get(rhsTy.getShape(), fp32Ty);
+
+  Value lhsF32 = rewriter.create<arith::ExtFOp>(op.getLoc(), lhsF32Ty, lhs);
+  Value rhsF32 = rewriter.create<arith::ExtFOp>(op.getLoc(), rhsF32Ty, rhs);
+
+  Value lhsScaleF32;
+  Value rhsScaleF32;
+  Value c127 = rewriter.create<arith::ConstantOp>(
+    op.getLoc(),
+    rewriter.getI16Type(),
+    rewriter.getI16IntegerAttr(127)
+    );
+  Value c7 = rewriter.create<arith::ConstantOp>(
+    op.getLoc(),
+    rewriter.getI16Type(),
+    rewriter.getI16IntegerAttr(7)
+  );
+  Type i16Ty = rewriter.getI16Type();
+  Type bf16Ty = rewriter.getBF16Type();
+
+  if (lhsScaleTy.getElementType().isIntOrIndex()) {
+    RankedTensorType lhsScaleI16Ty = RankedTensorType::get(lhsScaleTy.getShape(), i16Ty);
+    Value lhsScaleI16 = rewriter.create<arith::ExtUIOp>(
+      op.getLoc(),
+      lhsScaleI16Ty,
+      lhsScale
+    );
+
+    Value lhsShift127Empty = rewriter.create<tensor::EmptyOp>(
+      op.getLoc(),
+      lhsScaleI16Ty.getShape(),
+      i16Ty
+    );
+    Value lhsShift127 = rewriter.create<linalg::FillOp>(
+      op.getLoc(),
+      ValueRange{c127},
+      ValueRange{lhsShift127Empty}
+    ).getResult(0);
+
+    Value lhsScaleI16Add127 = rewriter.create<arith::AddIOp>(
+      op.getLoc(),
+      lhsScaleI16,
+      lhsShift127
+    );
+
+    Value lhsShift7Empty = rewriter.create<tensor::EmptyOp>(
+      op.getLoc(),
+      lhsScaleI16Ty.getShape(),
+      i16Ty
+    );
+    Value lhsShift7 = rewriter.create<linalg::FillOp>(
+      op.getLoc(),
+      ValueRange{c7},
+      ValueRange{lhsShift7Empty}
+    ).getResult(0);
+    Value lhsScaleI16Shifted = rewriter.create<arith::ShLIOp>(
+      op.getLoc(),
+      lhsScaleI16Add127,
+      lhsShift7
+    );
+
+    RankedTensorType lhsScaleBF16Ty = RankedTensorType::get(lhsScaleTy.getShape(), bf16Ty);
+    Value lhsScaleBF16 = rewriter.create<arith::BitcastOp>(
+      op.getLoc(),
+      lhsScaleBF16Ty,
+      lhsScaleI16Shifted
+    );
+
+    lhsScaleF32 = rewriter.create<arith::ExtFOp>(
+      op.getLoc(),
+      RankedTensorType::get(lhsScaleTy.getShape(), fp32Ty),
+      lhsScaleBF16
+    );
+  } else {
+      lhsScaleF32 = rewriter.create<arith::ExtFOp>(
+      op.getLoc(),
+      RankedTensorType::get(lhsScaleTy.getShape(), fp32Ty),
+      lhsScale
+    ).getResult();
+  }
+
+  int64_t D0 = lhsScaleTy.getShape()[0];
+  int64_t D1 = lhsScaleTy.getShape()[1];
+  SmallVector<int64_t> expandedShape1 = {D0, D1, 1};
+  RankedTensorType expandedTy1 = RankedTensorType::get(expandedShape1, fp32Ty);
+  Value expanded1 = rewriter.create<triton::ExpandDimsOp>(
+    op.getLoc(),
+    expandedTy1,
+    lhsScaleF32,
+    rewriter.getI32IntegerAttr(2)
+  ).getResult();
+
+  int64_t lhsDim1 = lhsTy.getShape()[1];
+  if (lhsDim1 % D1 != 0) {
+    return op.emitError("lhs dim1 must be an integer multiple of lhsScale dim1");
+  }
+  int64_t D2 = lhsDim1 / D1;
+  SmallVector<int64_t> broadcastShape = {D0, D1, D2};
+  RankedTensorType broadcastTy = RankedTensorType::get(broadcastShape, fp32Ty);
+  Value broadcasted = rewriter.create<triton::BroadcastOp>(
+    op.getLoc(),
+    broadcastTy,
+    expanded1
+  ).getResult();
+
+  SmallVector<ReassociationIndices> reassociation;
+  reassociation.push_back({0});
+  reassociation.push_back({1, 2});
+
+  Value scaledLhs = rewriter.create<tensor::CollapseShapeOp>(
+    op.getLoc(),
+    RankedTensorType::get({D0, D1 * D2}, fp32Ty),
+    broadcasted,
+    reassociation
+  ).getResult();
+
+  Value scaledLhsFinal = rewriter.create<arith::MulFOp>(
+    op.getLoc(),
+    lhsF32,
+    scaledLhs
+  ).getResult();
+
+  Operation *matmulOp;
+  if (dstType.getRank() == 2) {
+    matmulOp = rewriter.create<linalg::MatmulOp>(
+      op.getLoc(), ValueRange{scaledLhsFinal, rhsF32}, ValueRange{c}
+    );
+  } else if (dstType.getRank() == 3) {
+    matmulOp = rewriter.create<linalg::BatchMatmulOp>(
+      op.getLoc(), ValueRange{scaledLhsFinal, rhsF32}, ValueRange{c}
+    );
+  } else {
+    return op.emitError("DotScaledOp only support 2D or 3D tensor");
+  }
+
+  rewriter.replaceOp(op, matmulOp->getResults());
   return success();
 }
 
