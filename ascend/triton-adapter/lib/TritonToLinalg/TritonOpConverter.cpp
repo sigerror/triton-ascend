@@ -34,16 +34,6 @@ using namespace mlir;
 using namespace triton;
 
 LogicalResult
-AssertCanonicalizer::matchAndRewrite(triton::AssertOp op,
-                                     PatternRewriter &rewriter) const {
-  // TODO: update assert converter to support llvm20
-  LLVM_DEBUG(llvm::dbgs()
-             << "we do not support assertion in kernel in llvm-20 yet \n");
-  rewriter.eraseOp(op);
-  return success();
-}
-
-LogicalResult
 BitcastConverter::matchAndRewrite(triton::BitcastOp op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const {
   auto arithBitcast = rewriter.create<arith::BitcastOp>(
@@ -1331,6 +1321,43 @@ LogicalResult DevicePrintConverter::matchAndRewrite(
 
   rewriter.setInsertionPoint(op);
   rewriter.create<func::CallOp>(op.getLoc(), funcOp, op.getArgs());
+
+  rewriter.eraseOp(op);
+  return success();
+}
+
+LogicalResult DeviceAssertConverter::matchAndRewrite(
+    triton::AssertOp op, OpAdaptor adaptor,
+    mlir::ConversionPatternRewriter &rewriter) const {
+  auto msgAttr = op.getMessageAttr();
+  // Filter out automatically inserted assert ops
+  if (auto strAttr = mlir::dyn_cast<mlir::StringAttr>(msgAttr)) {
+    llvm::StringRef msg = strAttr.getValue();
+    if (msg.contains("overflow detected for operation")) {
+      rewriter.eraseOp(op);
+      return success();
+    }
+  }
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+  auto conditionType = op.getCondition().getType();
+
+  auto libFnType = rewriter.getFunctionType({conditionType}, {});
+  auto funcOp =
+      rewriter.create<func::FuncOp>(op.getLoc(), printFuncNameBase, libFnType);
+  mlir::SymbolTable symTab(moduleOp);
+  auto maybePrintFuncNameAttr = symTab.renameToUnique(funcOp, {&symTab});
+  if (failed(maybePrintFuncNameAttr)) {
+    return op->emitError(
+        "failed to create a unique func name for device_assert");
+  }
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+  funcOp->setAttr(msgAttrName, msgAttr);
+
+  rewriter.setInsertionPoint(op);
+  rewriter.create<func::CallOp>(op.getLoc(), funcOp, ValueRange{op.getCondition()});
 
   rewriter.eraseOp(op);
   return success();

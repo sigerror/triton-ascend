@@ -17,6 +17,7 @@
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/Linalg/Transforms/Transforms.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
@@ -351,7 +352,7 @@ void TritonToLinalgPass::addDynamicLegal(
   target.addLegalDialect<
       func::FuncDialect, arith::ArithDialect, math::MathDialect,
       linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
-      cf::ControlFlowDialect, tensor::TensorDialect,
+      cf::ControlFlowDialect, tensor::TensorDialect, LLVM::LLVMDialect,
       bufferization::BufferizationDialect, memref::MemRefDialect,
       annotation::AnnotationDialect, hivm::HIVMDialect>();
 
@@ -424,7 +425,6 @@ void TritonToLinalgPass::addDynamicLegal(
 
 void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewritePatternSet &patterns)
 {
-    patterns.add<TTOpConverters::AssertCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::LoadStoreCanonicalizer<triton::LoadOp>,
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::StoreOp>,
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicRMWOp>,
@@ -525,6 +525,7 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::YieldConverter>(patterns.getContext());
   patterns.add<TTOpConverters::GatherConverter>(patterns.getContext());
 
+  patterns.add<TTOpConverters::DeviceAssertConverter>(patterns.getContext());
   patterns.add<TTOpConverters::DevicePrintConverter>(patterns.getContext());
   patterns.add<TTOpConverters::MatmulConverter>(patterns.getContext());
   patterns.add<TTOpConverters::SortOpConverter>(patterns.getContext());

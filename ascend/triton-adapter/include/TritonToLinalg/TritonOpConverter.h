@@ -489,12 +489,17 @@ public:
                   ConversionPatternRewriter &rewriter) const override;
 };
 
-class AssertCanonicalizer : public OpRewritePattern<triton::AssertOp> {
-public:
-  using OpRewritePattern<triton::AssertOp>::OpRewritePattern;
+class DeviceAssertConverter : public OpConversionPattern<triton::AssertOp> {
+  using OpConversionPattern<triton::AssertOp>::OpConversionPattern;
 
-  LogicalResult matchAndRewrite(triton::AssertOp op,
-                                PatternRewriter &rewriter) const override;
+private:
+  static constexpr llvm::StringRef printFuncNameBase = "triton_assert";
+  static constexpr llvm::StringRef msgAttrName = "msg";
+
+public:
+  LogicalResult
+  matchAndRewrite(triton::AssertOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
 };
 
 class DevicePrintConverter : public OpConversionPattern<triton::PrintOp> {

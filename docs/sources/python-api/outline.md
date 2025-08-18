@@ -89,7 +89,7 @@
 |                          | sort                   | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | gather                 | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |        Atomic Ops        | atomic_add             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|                          | atomic_and             | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | atomic_and             | ✓    | ✓     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | atomic_cas             | ×    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ×    |
 |                          | atomic_max             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | atomic_min             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
@@ -103,14 +103,15 @@
 |         Iterators        | range                  | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
 |                          | static_range           | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
 |      Inline Assembly     | inline_asm_elementwise | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
-|     Compiler Hint Ops    | debug_barrier          | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
+|     Compiler Hint Ops    | assume                 | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ✓    |
+|                          | debug_barrier          | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | max_constancy          | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | max_contiguous         | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | multiple_of            | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |         Debug Ops        | static_print           | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | static_assert          | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | device_print           | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ✓    |
-|                          | device_assert          | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | device_assert          | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ✓    |
 
 ## 约束说明
 
@@ -124,11 +125,13 @@
 
 - device_print: 需要增加1个环境变量，TRITON_DEVICE_PRINT=1。
 
+- device_assert: 生效需要设置两个环境变量，TRITON_DEBUG=1，TRITON_DEVICE_PRINT=1。
+
 - atomic_add: 昇腾不支持atomic_add实现多核add+保存中间结果，需要修改成普通add来保存中间结果
 
-- atomic_or: sem只支持默认值"acq_rel"模式，其他值均按默认值处理；scope只支持默认值"gpu"，其他值均按默认值处理
+- atomic类op: 对于昇腾后端，sem只支持默认值"acq_rel"模式，其他值均按默认值处理；scope只支持默认值"gpu"，其他值均按默认值处理
 
-- atomic_xor: sem只支持默认值"acq_rel"模式，其他值均按默认值处理；scope只支持默认值"gpu"，其他值均按默认值处理
+- atomic_or/atomic_xor/atomic_and/atomic_xchg/atomic_cas: 昇腾暂不支持在loop中使用
 
 - permute: 不支持不相邻轴转置，如`(0, 1, 2) -> (2, 1, 0)`
 

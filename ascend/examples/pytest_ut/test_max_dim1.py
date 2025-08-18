@@ -88,7 +88,7 @@ def test_max_dim1(dtype, sigtype, M, N, MNUMEL, NNUMEL):
     print(ans)
    
     output = torch.zeros((M,), dtype = dtype).npu()
-    triton_max_dim1[1,1,1](x0, output, M = M, N = N,MNUMEL = MNUMEL, NNUMEL = NNUMEL, debug = True)
+    triton_max_dim1[1,1,1](x0, output, M = M, N = N,MNUMEL = MNUMEL, NNUMEL = NNUMEL)
     print(output)
 
     test_common.validate_cmp(sigtype,output,ans)

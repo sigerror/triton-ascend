@@ -9,6 +9,7 @@
 #include "mlir/Dialect/Linalg/Passes.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Tools/mlir-opt/MlirOptMain.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 
@@ -18,7 +19,7 @@ int main(int argc, char **argv) {
   registry.insert<
       mlir::triton::TritonDialect, mlir::cf::ControlFlowDialect,
       mlir::math::MathDialect, mlir::arith::ArithDialect, mlir::scf::SCFDialect,
-      mlir::linalg::LinalgDialect, mlir::func::FuncDialect,
+      mlir::linalg::LinalgDialect, mlir::func::FuncDialect, mlir::LLVM::LLVMDialect,
       mlir::tensor::TensorDialect, mlir::memref::MemRefDialect,
       mlir::bufferization::BufferizationDialect, mlir::gpu::GPUDialect>();
   bishengir::registerAllDialects(registry);
