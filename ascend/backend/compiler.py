@@ -89,7 +89,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         ]
         if _is_ascend_sanitizer_enabled() or not _is_debug_line_info_disabled():
             cmd_list += ["--mlir-print-debuginfo"]  # pass debug info
-        
+
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
         if opt.debug:
             dump_manager = get_dump_manager(metadata["hash"])
@@ -288,6 +288,34 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
             _compile_option_list += ["--enable-sanitizer=true"]
         if not _is_debug_line_info_disabled():
             _compile_option_list += ["--enable-debug-info=true"]
+
+        if metadata["auto_cv_balance"]:
+            _compile_option_list += \
+                ["--enable-hivm-auto-cv-balance=true"]
+
+        if metadata["unit_flag"]:
+            _compile_option_list += \
+                ["--enable-hivm-unit-flag-sync=true"]
+
+        if metadata["limit_auto_multi_buffer_only_for_local_buffer"]:
+            _compile_option_list += \
+                ["--limit-auto-multi-buffer-only-for-local-buffer=true"]
+
+        set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
+        if set_workspace_multibuffer:
+            _compile_option_list += \
+                [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
+
+        nested_sub_block_num = metadata["nested_sub_block_num"]
+        if nested_sub_block_num:
+            _compile_option_list += \
+                [f"--nested-sub-block-num={nested_sub_block_num}"]
+
+        auto_multi_buffer = metadata["auto_multi_buffer_of_local_buffer"]
+        if len(auto_multi_buffer) != 0:
+            _compile_option_list += \
+                [f"--limit-auto-multi-buffer-of-local-buffer={auto_multi_buffer}"]
+
         if _is_auto_map_parallel_blocks_enabled():
             _compile_option_list += ["--enable-auto-blockify-loop"]
         npu_compiler_path = _get_npucompiler_path()
@@ -308,7 +336,7 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
             __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_num_function", metadata, "lock_num")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_init_function", metadata, "lock_init_val")
-            
+
         return Path(bin_path).read_bytes()
 
 
@@ -339,6 +367,12 @@ class NPUOptions:
     extern_libs: dict = None
 
     multibuffer: bool = True
+    auto_cv_balance: bool = False
+    unit_flag: bool = False
+    limit_auto_multi_buffer_only_for_local_buffer: bool = False
+    auto_multi_buffer_of_local_buffer: str = ""
+    set_workspace_multibuffer: int = 0
+    nested_sub_block_num: int = 0
 
     stream: int = None
 
