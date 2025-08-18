@@ -354,3 +354,4 @@ rm -rf ~/.triton/dump
 手动影响后续的编译过程, 用于极致的性能调优。
 
 1. triton.language.multibuffer(tensor, buffer_size): 使用该接口后，可以对这个tensor同时进行读取和写入，增强计算的性能，但内存占用翻倍。
+2. triton.language.get_element(src: tl.tensor, indice: tuple(int)): 接受一个tensor和一个合法坐标，将tensor中该坐标位置的元素作为标量提取出来。
