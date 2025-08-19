@@ -27,7 +27,7 @@ void libentry::ArgProcessor::classifyArguments(
 
         if (kwargs.contains(param.attr("name"))) {
             val = kwargs[param.attr("name")];
-        } else if (!param.attr("default")is_none()) {
+        } else if (py::hasattr(param, "default") && !param.attr("default").is_none()) {
             val = param.attr("default");
         } else {
             continue;
