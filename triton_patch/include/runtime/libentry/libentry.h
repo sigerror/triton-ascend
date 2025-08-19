@@ -43,7 +43,7 @@ private:
 PYBIND11_MODULE(libentry_ascend, m) {
     py::class_<libentry::ArgProcessor>(m, "ArgProcessor")
         .def(py::init<int>())
-        .def("classify_arrguments", &libentry::ArgProcessor::classifyArguments,
+        .def("classify_arguments", &libentry::ArgProcessor::classifyArguments,
             py::arg("args"),
             py::arg("kwargs"),
             py::arg("jit_params"),
