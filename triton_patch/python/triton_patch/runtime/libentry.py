@@ -31,6 +31,16 @@ torch_device_fn = torch.npu
 
 from .code_cache import config_cache_dir
 
+import sys
+import os
+
+current_file = os.path.abspath(__file__)
+triton_path = os.path.dirname(os.path.dirname(current_file))
+
+sys.path.insert(0, triton_path)
+
+from _C import libentry_ascend
+
 DEVICE_COUNT = torch_device_fn.device_count()
 major_version = eval(triton.__version__.split(".")[0])
 
