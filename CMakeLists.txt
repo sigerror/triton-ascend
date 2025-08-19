@@ -327,3 +327,5 @@ endif()
 
 add_subdirectory(${TRITON_ROOT_DIR}/third_party/f2reduce)
 
+find_package(pybind11 CONFIG REQUIRED HINTS "${Python3_SITELIB}")
+pybind11_add_module(libentry_ascend ${PATCHED_TRITON_ROOT_DIR}/lib/runtime/libentry/libentry.cpp)

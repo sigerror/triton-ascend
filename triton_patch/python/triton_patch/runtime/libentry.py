@@ -195,28 +195,6 @@ class LibEntry(triton.KernelInterface):
         ]
         self.lock = threading.Lock()
 
-    def key(self, spec_args, dns_args, const_args):
-        spec_key = [
-            (arg.dtype, arg.data_ptr() % self.divisibility == 0)
-            if hasattr(arg, "data_ptr")
-            else (type(arg), arg)
-            for arg in spec_args
-        ]
-        dns_key = [
-            arg.dtype
-            if hasattr(arg, "data_ptr")
-            else type(arg)
-            if not isinstance(arg, int)
-            else "i32"
-            if -(2**31) <= arg and arg <= 2**31 - 1
-            else "u64"
-            if 2**63 <= arg and arg <= 2**64 - 1
-            else "i64"
-            for arg in dns_args
-        ]
-        # const args passed by position
-        return tuple(spec_key + dns_key + const_args)
-
     def run(self, *args, **kwargs):
         grid = kwargs["grid"]
 
@@ -225,33 +203,18 @@ class LibEntry(triton.KernelInterface):
         dns_args = []  # do not specialize arguments
         const_args = []  # constexpr arguments
         k_args = []  # kernel arguments
-        for i, arg in enumerate(args):
-            if i in self.specialize_indices:
-                k_args.append(arg)
-                spec_args.append(arg)
-            elif i in self.do_not_specialize_indices:
-                k_args.append(arg)
-                dns_args.append(arg)
-            else:
-                const_args.append(arg)
-        for p in self.jit_function.params[len(args) :]:
-            if p.name in kwargs:
-                val = kwargs[p.name]
-            elif p.default is inspect._empty:
-                continue
-            else:
-                val = p.default
+        arg_processor = libentry_ascend.ArgProcessor(self.divisibility)
+        arg_processor.classify_arguments(
+            list(args),
+            kwargs,
+            self.jit_function.params,
+            set(self.specialize_indices),
+            set(self.do_not_specialize_indices)
+        )
 
-            if p.is_constexpr:
-                const_args.append(val)
-            elif p.do_not_specialize:
-                dns_args.append(val)
-                k_args.append(val)
-            else:
-                spec_args.append(val)
-                k_args.append(val)
+        k_args = arg_processor.get_k_args()
 
-        entry_key = self.key(spec_args, dns_args, const_args)
+        entry_key = arg_processor.generate_key()
         device = torch_device_fn.current_device()
         cache = self.kernel_cache[device]
         while entry_key not in cache:
