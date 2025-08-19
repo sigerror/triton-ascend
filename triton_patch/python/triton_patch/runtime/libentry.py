@@ -18,6 +18,8 @@
 #   - adapt torch_device_fn to ascend
 #
 
+import sys
+import os
 import inspect
 import sqlite3
 import threading
@@ -27,8 +29,6 @@ from typing import Dict
 import triton
 import torch
 import torch_npu
-import sys
-import os
 torch_device_fn = torch.npu
 
 from .code_cache import config_cache_dir

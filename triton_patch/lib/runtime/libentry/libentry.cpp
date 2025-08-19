@@ -9,7 +9,7 @@ void libentry::ArgProcessor::classifyArguments(
     const std::unordered_set<int>& specialize_indices,
     const std::unordered_set<int>& do_not_specialize_indices)
 {
-    for (size_t i=0; i < args.size(); ++i) {
+    for (size_t i = 0; i < args.size(); ++i) {
         if (specialize_indices.count(i)) {
             k_args_.append(args[i]);
             spec_args_.append(args[i]);
