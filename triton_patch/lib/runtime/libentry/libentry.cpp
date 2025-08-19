@@ -7,8 +7,8 @@ void libentry::ArgProcessor::classifyArguments(
     const py::dict& kwargs,
     const py::list& jit_params,
     const std::unordered_set<int>& specialize_indices,
-    const std::unordered_set<int>& do_not_specialize_indices
-) {
+    const std::unordered_set<int>& do_not_specialize_indices)
+{
     for (size_t i=0; i < args.size(); ++i) {
         if (specialize_indices.count(i)) {
             k_args_.append(args[i]);
@@ -45,7 +45,8 @@ void libentry::ArgProcessor::classifyArguments(
     }
 }
 
-KeyType libentry::ArgProcessor::generateKey() {
+KeyType libentry::ArgProcessor::generateKey()
+{
     auto is_tensor = [](py::handle x) {
         return py::hasattr(x, "daat_ptr");
     };
@@ -95,6 +96,7 @@ KeyType libentry::ArgProcessor::generateKey() {
     return result;
 }
 
-py::list libentry::ArgProcessor::getKArgs() {
+py::list libentry::ArgProcessor::getKArgs()
+{
     return k_args_;
 }

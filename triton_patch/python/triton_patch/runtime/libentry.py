@@ -27,12 +27,11 @@ from typing import Dict
 import triton
 import torch
 import torch_npu
+import sys
+import os
 torch_device_fn = torch.npu
 
 from .code_cache import config_cache_dir
-
-import sys
-import os
 
 current_file = os.path.abspath(__file__)
 triton_path = os.path.dirname(os.path.dirname(current_file))
