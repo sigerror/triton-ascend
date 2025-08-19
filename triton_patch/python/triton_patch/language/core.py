@@ -1,5 +1,5 @@
 import os
-from typing import List, Sequence, Optional
+from typing import List, Sequence, Optional, Union
 
 from triton._C.libtriton import ir
 from triton.language import semantic as real_semantic
@@ -472,14 +472,14 @@ def sync_block_wait(sender, receiver, event_id, _builder=None):
 
 
 @builtin
-def load_tensor_descriptor(desc: tensor_descriptor_base, offsets: Sequence[constexpr | tensor],
+def load_tensor_descriptor(desc: tensor_descriptor_base, offsets: Sequence[Union[constexpr, tensor]],
                            _builder=None) -> tensor:
     """Load a block of data from a tensor descriptor."""
     return desc.load(offsets, _builder=_builder)
 
 
 @builtin
-def store_tensor_descriptor(desc: tensor_descriptor_base, offsets: Sequence[constexpr | tensor], value: tensor,
+def store_tensor_descriptor(desc: tensor_descriptor_base, offsets: Sequence[Union[constexpr, tensor]], value: tensor,
                             _builder=None) -> tensor:
     """Store a block of data to a tensor descriptor."""
     return desc.store(offsets, value, _builder=_builder)
