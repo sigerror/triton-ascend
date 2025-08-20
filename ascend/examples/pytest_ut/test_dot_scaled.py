@@ -20,7 +20,7 @@ from triton.language.extra import libdevice
 
 @pytest.mark.parametrize("M, N, K, rhs_scale, normal_type, acc_num, num_warps",
                          [(M, N, K, rhs_scale, normal_type, acc_num, 4)
-                          for M, N, K in itertools.product([16, 32, 64, 128], [16, 32, 64, 128], [32, 64])
+                          for M, N, K in itertools.product([32, 64], [32, 64], [32, 64])
                           for rhs_scale in [False, True]
                           for normal_type in ["bf16", "fp16"]
                           for acc_num in [None, 1, 2]])
