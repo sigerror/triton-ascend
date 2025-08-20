@@ -89,6 +89,55 @@ bool opIsIndirectLoad(Operation *op);
 
 bool opIsIndirectCalc(Operation *op);
 
+/// Maximum expected rank for loop tiling in tensor operations.
+static constexpr int kMaxTiledRank = 4;
+
+/// This function generates a series of `scf.for` loops for the given dimensions
+/// in `loopDims`. Although the loops are created sequentially, nesting is simulated
+/// by adjusting the insertion point to the body of the last created loop.
+/// This allows the `bodyFunc` to be inserted into the innermost scope.
+///
+/// \param rewriter The MLIR OpBuilder used to create operations.
+/// \param loc The source location information for debuggability.
+/// \param target The memref value whose dimensions are being looped over.
+/// \param loopDims An array of dimension indices to create loops for.
+/// \param bodyFunc A callable that defines the operations to insert in the innermost loop.
+///                 It takes a SmallVector of induction variables (one per loop).
+///
+template <typename Func>
+void createSimpleNestedLoops(OpBuilder &rewriter, Location loc, Value target,
+                             ArrayRef<int> loopDims, Func bodyFunc)
+{
+  MemRefType type = cast<MemRefType>(target.getType());
+  int rank = type.getRank();
+
+  Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+  llvm::SmallVector<scf::ForOp, kMaxTiledRank> loops;
+  llvm::SmallVector<Value, kMaxTiledRank> ivs;
+
+  for (int dim : loopDims) {
+    Value ub;
+    if (type.isDynamicDim(dim)) {
+      ub = rewriter.create<memref::DimOp>(loc, target, dim).getResult();
+    } else {
+      ub = rewriter.create<arith::ConstantIndexOp>(loc, type.getDimSize(dim));
+    }
+
+    auto forOp = rewriter.create<scf::ForOp>(loc, zero, ub, one);
+    rewriter.setInsertionPointToStart(forOp.getBody());
+    loops.push_back(forOp);
+    ivs.push_back(forOp.getInductionVar());
+  }
+
+  bodyFunc(ivs);
+
+  if (!loops.empty()) {
+    rewriter.setInsertionPointAfter(loops.front());
+  }
+}
+
 scf::ForOp createNestedLoops(
     OpBuilder &builder, Location loc, unsigned currentDim, unsigned totalDims,
     ValueRange LBs, ValueRange UBs, ValueRange steps, SmallVector<Value> &ivs,

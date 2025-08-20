@@ -976,51 +976,167 @@ LogicalResult ScanConverter::convertToTargetOp(
     triton::ScanOp op, typename triton::ScanOp::Adaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
   auto reductionOps = this->getRedOps(op);
-  // Reduction of arbitrary operations isn't supported because using the first
-  // element across the reduction dimension requires us to iterate over a
-  // subview that skips over each first element.
-  if (!this->isReductionOpSupported(reductionOps.front())) {
-    return rewriter.notifyMatchFailure(
-        op, "Only support lowering reduction with single op and limited types of reducetion");
+  if (reductionOps.empty()) {
+    return rewriter.notifyMatchFailure(op, "No reduction op found in scan body");
+  }
+
+  bool reverse = op.getReverse();
+    if (reverse) {
+    return rewriter.notifyMatchFailure(op, "reverse=True not supported yet");
   }
 
   llvm::SmallString<64> funcName;
   auto rop = reductionOps.front();
-  if (isa<arith::AddFOp, arith::AddIOp>(rop)) {
-    funcName = "triton_cumsum";
-  } else if (isa<arith::MulFOp, arith::MulIOp>(rop)) {
-    funcName = "triton_cumprod";
-  }
+  if (this->isReductionOpSupported(reductionOps.front())) {
+    if (isa<arith::AddFOp, arith::AddIOp>(rop)) {
+      funcName = "triton_cumsum";
+    } else if (isa<arith::MulFOp, arith::MulIOp>(rop)) {
+      funcName = "triton_cumprod";
+    }
 
-  auto moduleOp = op->getParentOfType<ModuleOp>();
-  rewriter.setInsertionPoint(moduleOp.getBody(),
-                             std::prev(moduleOp.getBody()->end()));
+    auto moduleOp = op->getParentOfType<ModuleOp>();
+    rewriter.setInsertionPoint(moduleOp.getBody(),
+                              std::prev(moduleOp.getBody()->end()));
 
-  int uniqueId = 0;
-  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
-    funcName += "_" + std::to_string(uniqueId++);
-  }
-
-  auto loc = op.getLoc();
-  auto src = adaptor.getOperands().front();
-  auto resTy = op.getResult().front().getType();
-  auto libFnType = rewriter.getFunctionType(
+    auto loc = op.getLoc();
+    auto src = adaptor.getOperands().front();
+    auto resTy = op.getResult().front().getType();
+    auto libFnType = rewriter.getFunctionType(
       {src.getType(), rewriter.getI32Type(), rewriter.getI1Type()}, {resTy});
-  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
-  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+    auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
 
-  rewriter.setInsertionPoint(op);
-  auto scanAxis = op.getAxis();
-  auto scanReverse = op.getReverse();
-  Value axis = rewriter.create<arith::ConstantIntOp>(loc, scanAxis, 32);
-  Value reverse = rewriter.create<arith::ConstantIntOp>(loc, scanReverse, 1);
-  auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
-                                              TypeRange({resTy}),
-                                              ValueRange({src, axis, reverse}));
+    SymbolTable symTab(moduleOp);
+    auto maybePrintFuncNameAttr = symTab.renameToUnique(funcOp, {&symTab});
+    if (failed(maybePrintFuncNameAttr)) {
+      return op->emitError(
+          "failed to create a unique func name for device_print");
+    }
+    SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
 
-  rewriter.replaceOp(op, callOp);
+    rewriter.setInsertionPoint(op);
+    auto scanAxis = op.getAxis();
+    auto scanReverse = op.getReverse();
+    Value axis = rewriter.create<arith::ConstantIntOp>(loc, scanAxis, 32);
+    Value reverse = rewriter.create<arith::ConstantIntOp>(loc, scanReverse, 1);
+    auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
+                                                TypeRange({resTy}),
+                                                ValueRange({src, axis, reverse}));
 
-  return success();
+    rewriter.replaceOp(op, callOp);
+
+    return success();
+  } else {
+    // This branch is the associative_scan op.
+    auto loc = op.getLoc();
+
+    Value scanInput = op.getOperand(0);
+
+    scanInput.dump();
+
+    for (Value operand : op->getOperands()) {
+      operand.dump();
+    }
+
+    auto srcType = mlir::dyn_cast<RankedTensorType>(scanInput.getType());
+    if (!srcType) {
+      return rewriter.notifyMatchFailure(op, "Expected RankedTensorType input for associative_scan");
+    }
+
+    auto elementType = srcType.getElementType();
+    auto shape = srcType.getShape();
+    int rank = shape.size();
+    int axis = op.getAxis();
+
+    if (axis < 0 || axis >= rank) {
+      return rewriter.notifyMatchFailure(op, "Invalid scan axis: " + std::to_string(axis));
+    }
+
+    if (op->getNumRegions() < 1 || op->getRegion(0).empty()) {
+      return rewriter.notifyMatchFailure(op, "Missing combine region");
+    }
+
+    OpBuilder::InsertionGuard guard(rewriter);
+
+    auto memrefType = MemRefType::get(shape, elementType);
+    Value inputMemRef = rewriter.create<bufferization::ToMemrefOp>(loc, memrefType, scanInput);
+    Value outputMemRef = rewriter.create<memref::AllocOp>(loc, memrefType);
+
+    auto processDimension = [&](ArrayRef<Value> baseIdxsArray) {
+      llvm::SmallVector<Value> baseIdxs(baseIdxsArray.begin(), baseIdxsArray.end());
+      llvm::SmallVector<Value> firstIdx = baseIdxs;
+      if (axis <= firstIdx.size()) {
+        firstIdx.insert(firstIdx.begin() + axis,
+                      rewriter.create<arith::ConstantIndexOp>(loc, 0));
+      } else {
+        firstIdx.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 0));
+      }
+
+      Value firstVal = rewriter.create<memref::LoadOp>(loc, inputMemRef, firstIdx);
+      rewriter.create<memref::StoreOp>(loc, firstVal, outputMemRef, firstIdx);
+
+      Value axisSize = rewriter.create<memref::DimOp>(loc, inputMemRef, axis).getResult();
+      Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+      Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sgt, axisSize, one);
+      auto ifOp = rewriter.create<scf::IfOp>(loc, cmp, false);
+
+      // Create a loop only when the axis size is greater than 1.
+      rewriter.setInsertionPointToStart(ifOp.thenBlock());
+
+      auto forOp = rewriter.create<scf::ForOp>(loc, one, axisSize, one);
+      rewriter.setInsertionPointToStart(forOp.getBody());
+
+      Value k = forOp.getInductionVar();
+      llvm::SmallVector<Value> currIdx = baseIdxs;
+      if (axis <= currIdx.size()) {
+        currIdx.insert(currIdx.begin() + axis, k);
+      } else {
+        currIdx.push_back(k);
+      }
+
+      Value km1 = rewriter.create<arith::SubIOp>(loc, k, one);
+      llvm::SmallVector<Value> prevIdx = baseIdxs;
+      if (axis <= prevIdx.size()) {
+        prevIdx.insert(prevIdx.begin() + axis, km1);
+      } else {
+        prevIdx.push_back(km1);
+      }
+
+      Value currentVal = rewriter.create<memref::LoadOp>(loc, inputMemRef, currIdx);
+      Value prevResult = rewriter.create<memref::LoadOp>(loc, outputMemRef, prevIdx);
+
+      Region &combineRegion = op->getRegion(0);
+      Block &combineBlock = combineRegion.front();
+      IRMapping mapping;
+      mapping.map(combineBlock.getArgument(0), prevResult);
+      mapping.map(combineBlock.getArgument(1), currentVal);
+
+      for (Operation &innerOp : combineBlock.without_terminator()) {
+        rewriter.clone(innerOp, mapping);
+      }
+
+      Operation *yieldOp = combineBlock.getTerminator();
+      Value resultVal = mapping.lookup(yieldOp->getOperand(0));
+
+      rewriter.create<memref::StoreOp>(loc, resultVal, outputMemRef, currIdx);
+
+      rewriter.setInsertionPointAfter(ifOp);
+    };
+
+    // Constructing loops for non-scanning dimensions
+    llvm::SmallVector<int> nonScanDims;
+    for (int i = 0; i < rank; ++i) {
+      if (i != axis) nonScanDims.push_back(i);
+    }
+
+    createSimpleNestedLoops(rewriter, loc, outputMemRef, nonScanDims, processDimension);
+
+    rewriter.setInsertionPointAfter(op);
+
+    Value outputTensor = rewriter.create<bufferization::ToTensorOp>(loc, outputMemRef, true);
+    rewriter.replaceOp(op, outputTensor);
+    return success();
+  }
 }
 
 LogicalResult ScanConverter::convertToTargetOpExtended(
