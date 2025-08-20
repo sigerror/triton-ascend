@@ -52,6 +52,7 @@ if [ ! -d /opt/llvm-b5cc222/lib ]; then
     -DCMAKE_CXX_COMPILER=clang++ \
     -DLLVM_ENABLE_LLD=ON
   ninja install
+  cp bin/FileCheck /opt/llvm-b5cc222/bin
 fi
 # triton-ascend
 cd $WORKSPACE
