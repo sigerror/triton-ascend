@@ -56,8 +56,8 @@ def matmul_kernel(
 @pytest.mark.parametrize('dtype', TestUtils.dtype_list)
 def test_matmul(shape, dtype):
     M, N, K = shape[0], shape[0], shape[1]
-
-    kalign = 32 // get_dtype_size(dtype)  # 32byte/Dtype_bytes
+    # 32byte/Dtype_bytes
+    kalign = 32 // get_dtype_size(dtype)  
     BLOCK_M, BLOCK_N, BLOCK_K = min(max(M, 16), 32), min(max(N, 16), 32), min(max(K, kalign), 32)
     a = test_common.generate_tensor((M, K), dtype)
     b = test_common.generate_tensor((K, N), dtype)
