@@ -15,7 +15,7 @@ from triton.backends.ascend.utils import (
     _build_npu_ext,
     _check_cxx11_abi,
     convert_sigtype_to_int,
-    _is_auto_map_parallel_blocks_enabled
+    _is_auto_map_parallel_blocks_enabled,
 )
 
 class NPUUtils(object):

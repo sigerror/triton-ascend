@@ -14,6 +14,7 @@ from triton._C.libtriton import ir, passes
 from triton.backends.ascend.utils import (
     _check_bishengir_api_change,
     _check_bishengir_is_regbased,
+    _enable_unpublished_feature,
     _get_kernel_target,
     _get_llvm_path,
     _get_mlir_path,
@@ -275,9 +276,10 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         bin_path = os.path.join(tmpdir, bin_file_with_ext)
         callback_path = os.path.join(tmpdir, "libkernel.so")
         _compile_option_list = []
-        _compile_option_list += [
-            f"--target={NPUUtils().get_arch()}",
-        ]
+        if _enable_unpublished_feature():
+            _compile_option_list += [
+                f"--target={NPUUtils().get_arch()}",
+            ]
         multibuffer = metadata["multibuffer"]
         _compile_option_list += [
             f"--enable-auto-multi-buffer={multibuffer}",
