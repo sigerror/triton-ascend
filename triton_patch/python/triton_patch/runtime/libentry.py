@@ -25,13 +25,12 @@ import weakref
 from typing import Dict
 
 import triton
+from triton._C import libentry_ascend
 import torch
 import torch_npu
 torch_device_fn = torch.npu
 
 from .code_cache import config_cache_dir
-
-from triton._C import libentry_ascend
 
 DEVICE_COUNT = torch_device_fn.device_count()
 major_version = eval(triton.__version__.split(".")[0])
