@@ -302,6 +302,7 @@ if(TRITON_BUILD_PYTHON_MODULE)
     target_link_libraries(triton PRIVATE z)
   endif()
   target_link_options(triton PRIVATE ${LLVM_LDFLAGS})
+  add_library(entry_ascend SHARED ${PATCHED_TRITON_ROOT_DIR}/lib/runtime/libentry/libentry.cpp)
 endif()
 
 if (UNIX AND NOT APPLE)
@@ -326,6 +327,3 @@ if(NOT TRITON_BUILD_PYTHON_MODULE)
 endif()
 
 add_subdirectory(${TRITON_ROOT_DIR}/third_party/f2reduce)
-
-# find_package(pybind11 CONFIG REQUIRED HINTS "${Python3_SITELIB}")
-add_library(entry_ascend SHARED ${PATCHED_TRITON_ROOT_DIR}/lib/runtime/libentry/libentry.cpp)
