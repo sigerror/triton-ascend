@@ -217,6 +217,7 @@ git clone https://gitee.com/ascend/triton-ascend.git --recurse-submodules --shal
 
 2. 运行Triton示例
 
+   运行实例: [01-vector-add.py](../../../ascend/examples/tutorials/01-vector-add.py)
    ```bash
    # 设置CANN环境变量（以root用户默认安装路径`/usr/local/Ascend`为例）
    source /usr/local/Ascend/ascend-toolkit/set_env.sh
