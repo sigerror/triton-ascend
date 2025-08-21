@@ -48,7 +48,7 @@ void libentry::ArgProcessor::classifyArguments(
 KeyType libentry::ArgProcessor::generateKey()
 {
     auto is_tensor = [](py::handle x) {
-        return py::hasattr(x, "daat_ptr");
+        return py::hasattr(x, "data_ptr");
     };
     auto is_int = [](py::handle x) {
         return py::isinstance<py::int_>(x);
