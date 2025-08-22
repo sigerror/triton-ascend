@@ -725,9 +725,6 @@ void BlockDataParser::parseReinterpretCast(
     auto strideConst = getConstantIntValue(data.getStridesRef()[i]);
     auto sizeConst = getConstantIntValue(data.getSizesRef()[i]);
     assert(sizeConst.has_value());
-    if (sizeConst.value() == 1 && strideConst.has_value()) {
-      data.getStridesRef()[i] = rewriter.getIndexAttr(0);
-    }
   }
 }
 

@@ -243,20 +243,63 @@ LogicalResult MakeTensorPtrConverter::matchAndRewrite(
     auto basePtr = castOp.getResult();
     int original_rank = op.getShape().size() + 1;
     std::string shapeStr;
+
+    auto baseMemrefType = mlir::dyn_cast<MemRefType>(basePtr.getType());
+    if (!baseMemrefType) {
+      return op.emitError("basePtr is not a memref type");
+    }
+    auto shape = baseMemrefType.getShape();
+
     if (auto memrefType = mlir::dyn_cast<MemRefType>(basePtr.getType())) {
         for (auto dim : memrefType.getShape()) {
             shapeStr += llvm::formatv("_{0}", dim);
         }
     }
+    std::string elemTypeName;
+    Type elemType = baseMemrefType.getElementType();
+    if (auto intType = mlir::dyn_cast<mlir::IntegerType>(elemType)) {
+      elemTypeName = llvm::formatv("i{0}", intType.getWidth());
+    } else if (auto floatType = mlir::dyn_cast<mlir::FloatType>(elemType)) {
+      std::string floatTypeName;
+      llvm::raw_string_ostream os(floatTypeName);
+      floatType.print(os);
+      os.flush();
+      elemTypeName = floatTypeName;
+    } else {
+      std::string typeName;
+      llvm::raw_string_ostream os(typeName);
+      elemType.print(os);
+      os.flush();
+      elemTypeName = typeName;
+    }
+
+    std::string memrefTypeStr;
+    llvm::raw_string_ostream os(memrefTypeStr);
+    baseMemrefType.print(os);
+    os.flush();
+
+    std::string layoutSuffix;
+    for (char c : memrefTypeStr) {
+      if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >='A' && c <= 'Z') ||
+           c == '_' || c == ',' || c == '[' || c == ']') {
+        layoutSuffix += c;
+      }
+    }
     auto funcName = rewriter.getStringAttr(
-        llvm::formatv("__hmf_original_shape{0}d{1}", original_rank, shapeStr)
+        llvm::formatv("__hmf_original_shape{0}d{1}_{2}_{3}",
+            original_rank, shapeStr, elemTypeName, layoutSuffix)
+    );
+    MemRefType targetMemrefType = MemRefType::get(
+        baseMemrefType.getShape(),
+        baseMemrefType.getElementType(),
+        baseMemrefType.getLayout()
     );
     const int vectorSize = 4;
     SmallVector<Type, vectorSize> srcElemTys;
     for (auto sz : op.getShape()) {
       srcElemTys.push_back(sz.getType());
     }
-    srcElemTys.push_back(basePtr.getType());
+    srcElemTys.push_back(targetMemrefType);
     Type dstElemTy = rewriter.getNoneType();
     FunctionType hintFuncType =
         FunctionType::get(rewriter.getContext(), srcElemTys, {dstElemTy});
