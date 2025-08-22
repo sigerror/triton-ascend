@@ -288,7 +288,7 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         if not _is_debug_line_info_disabled():
             _compile_option_list += ["--enable-debug-info=true"]
 
-        if metadata["auto_cv_balance"]:
+        if metadata["enable_hivm_auto_cv_balance"]:
             _compile_option_list += \
                 ["--enable-hivm-auto-cv-balance=true"]
 
@@ -296,19 +296,24 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
             _compile_option_list += \
                 ["--enable-hivm-unit-flag-sync=true"]
 
-        if metadata["limit_auto_multi_buffer_only_for_local_buffer"]:
+        if not metadata["limit_auto_multi_buffer_only_for_local_buffer"]:
             _compile_option_list += \
-                ["--limit-auto-multi-buffer-only-for-local-buffer=true"]
+                ["--limit-auto-multi-buffer-only-for-local-buffer=false"]
 
         set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
         if set_workspace_multibuffer:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
 
-        nested_sub_block_num = metadata["nested_sub_block_num"]
-        if nested_sub_block_num:
+        nested_vector_loop_num = metadata["nested_vector_loop_num"]
+        if nested_vector_loop_num:
             _compile_option_list += \
-                [f"--nested-sub-block-num={nested_sub_block_num}"]
+                [f"--nested-vector-loop-num={nested_vector_loop_num}"]
+
+        nested_cube_loop_num = metadata["nested_cube_loop_num"]
+        if nested_cube_loop_num:
+            _compile_option_list += \
+                [f"--nested-cube-loop-num={nested_cube_loop_num}"]
 
         auto_multi_buffer = metadata["auto_multi_buffer_of_local_buffer"]
         if len(auto_multi_buffer) != 0:
@@ -366,12 +371,13 @@ class NPUOptions:
     extern_libs: dict = None
 
     multibuffer: bool = True
-    auto_cv_balance: bool = False
+    enable_hivm_auto_cv_balance: bool = False
     unit_flag: bool = False
-    limit_auto_multi_buffer_only_for_local_buffer: bool = False
+    limit_auto_multi_buffer_only_for_local_buffer: bool = True
     auto_multi_buffer_of_local_buffer: str = ""
     set_workspace_multibuffer: int = 0
-    nested_sub_block_num: int = 0
+    nested_vector_loop_num: int = 0
+    nested_cube_loop_num: int = 0
 
     stream: int = None
 

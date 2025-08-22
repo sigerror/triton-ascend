@@ -168,7 +168,7 @@ class Autotuner(KernelInterface):
             return self.do_bench(kernel_call, quantiles=(0.5, 0.2, 0.8))
         except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as e:
             return [float("inf"), float("inf"), float("inf")]
-        
+
     def _profile(self, *args, config, **meta):
         from triton.testing import do_bench_npu
 
@@ -303,7 +303,10 @@ class Config:
     """
 
     def __init__(self, kwargs, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
-                 reg_dec_producer=0, reg_inc_consumer=0, maxnreg=None, pre_hook=None):
+                 reg_dec_producer=0, reg_inc_consumer=0, enable_hivm_auto_cv_balance=False, unit_flag=False,
+                 limit_auto_multi_buffer_only_for_local_buffer=True, auto_multi_buffer_of_local_buffer="",
+                 set_workspace_multibuffer=0, nested_vector_loop_num=0, nested_cube_loop_num=0, maxnreg=None,
+                 pre_hook=None):
         self.kwargs = kwargs
         self.num_warps = num_warps
         self.num_ctas = num_ctas
@@ -314,6 +317,14 @@ class Config:
         self.reg_inc_consumer = reg_inc_consumer
         self.maxnreg = maxnreg
         self.pre_hook = pre_hook
+
+        self.enable_hivm_auto_cv_balance = enable_hivm_auto_cv_balance
+        self.unit_flag = unit_flag
+        self.limit_auto_multi_buffer_only_for_local_buffer = limit_auto_multi_buffer_only_for_local_buffer
+        self.auto_multi_buffer_of_local_buffer = auto_multi_buffer_of_local_buffer
+        self.set_workspace_multibuffer = set_workspace_multibuffer
+        self.nested_vector_loop_num = nested_vector_loop_num
+        self.nested_cube_loop_num = nested_cube_loop_num
 
     def all_kwargs(self):
         return {
@@ -328,6 +339,15 @@ class Config:
                     ("reg_dec_producer", self.reg_dec_producer),
                     ("reg_inc_consumer", self.reg_inc_consumer),
                     ("maxnreg", self.maxnreg),
+
+                    ("enable_hivm_auto_cv_balance", self.enable_hivm_auto_cv_balance),
+                    ("unit_flag", self.unit_flag),
+                    ("limit_auto_multi_buffer_only_for_local_buffer", \
+                        self.unit_limit_auto_multi_buffer_only_for_local_bufferflag),
+                    ("auto_multi_buffer_of_local_buffer", self.auto_multi_buffer_of_local_buffer),
+                    ("set_workspace_multibuffer", self.set_workspace_multibuffer),
+                    ("nested_vector_loop_num", self.nested_vector_loop_num),
+                    ("nested_cube_loop_num", self.nested_cube_loop_num),
                 ) if v is not None
             }
         }
@@ -344,6 +364,15 @@ class Config:
         res.append(f"reg_dec_producer: {self.reg_dec_producer}")
         res.append(f"reg_inc_consumer: {self.reg_inc_consumer}")
         res.append(f"maxnreg: {self.maxnreg}")
+
+        res.append(f"enable_hivm_auto_cv_balance: {self.enable_hivm_auto_cv_balance}")
+        res.append(f"unit_flag: {self.unit_flag}")
+        res.append(f"limit_auto_multi_buffer_only_for_local_buffer: \
+            {self.limit_auto_multi_buffer_only_for_local_buffer}")
+        res.append(f"auto_multi_buffer_of_local_buffer: {self.auto_multi_buffer_of_local_buffer}")
+        res.append(f"set_workspace_multibuffer: {self.set_workspace_multibuffer}")
+        res.append(f"nested_vector_loop_num: {self.nested_vector_loop_num}")
+        res.append(f"nested_cube_loop_num: {self.nested_cube_loop_num}")
         return ", ".join(res)
 
 
