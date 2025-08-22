@@ -35,10 +35,6 @@ def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
 def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
          fp_downcast_rounding: Optional[str] = None) -> tl.tensor:
     src_ty = input.type
-    src_sca_ty = src_ty.scalar
-    dst_sca_ty = dst_ty.scalar
-    if src_sca_ty == dst_sca_ty:
-        return input
     if isinstance(dst_ty, tl.constexpr):
         dst_ty = dst_ty.value
     if isinstance(fp_downcast_rounding, tl.constexpr):
@@ -46,6 +42,11 @@ def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
     if src_ty.is_block():
         dst_ty = tl.block_type(dst_ty.scalar, input.type.get_block_shapes())
     if src_ty == dst_ty:
+        return input
+    
+    src_sca_ty = src_ty.scalar
+    dst_sca_ty = dst_ty.scalar
+    if src_sca_ty == dst_sca_ty:
         return input
 
     # For fp downcasting default rounding mode should be RTNE, for all other conversions it should
