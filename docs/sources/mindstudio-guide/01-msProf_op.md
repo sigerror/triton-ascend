@@ -106,7 +106,7 @@ insight信息展示(Memory)：
 
 算子仿真信息采集，参考命令:  
 ```
-mmsprof op simulator --kernel-name=triton_add --soc-version=Ascend910B1  pytest test_add.py
+msprof op simulator --kernel-name=triton_add --soc-version=Ascend910B1  pytest test_add.py
 ```
 说明： 更多特性可参考官方资料[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha003/devaids/optool/atlasopdev_16_0082.html)
 
