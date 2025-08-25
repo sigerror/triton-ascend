@@ -17,6 +17,8 @@ namespace mlir {
 
 namespace ConverterUtils {
 
+const std::string discreteAttrName = "DiscreteMemAccess";
+
 Value getTransposedValue(Value source, const Location loc,
                          ConversionPatternRewriter &rewriter,
                          llvm::ArrayRef<int> order);
@@ -59,7 +61,8 @@ findFirstMatchingOperandDef(mlir::Operation *rootOp,
 
 void traverseBackwardUpdateOperandChainIf(
     Operation *op, std::function<bool(Operation *)> conditionFn,
-    std::function<void(OpBuilder &, Operation *)> actionFn, OpBuilder &builder);
+    std::function<void(OpBuilder &, Operation *)> actionFn, OpBuilder &builder,
+    DenseSet<Operation *> &handledOperation);
 
 void traverseBackwardUpdateOperandChainIf(
     Operation *rootOp, std::function<bool(Operation *)> conditionFn,
@@ -93,21 +96,22 @@ bool opIsIndirectCalc(Operation *op);
 static constexpr int kMaxTiledRank = 4;
 
 /// This function generates a series of `scf.for` loops for the given dimensions
-/// in `loopDims`. Although the loops are created sequentially, nesting is simulated
-/// by adjusting the insertion point to the body of the last created loop.
-/// This allows the `bodyFunc` to be inserted into the innermost scope.
+/// in `loopDims`. Although the loops are created sequentially, nesting is
+/// simulated by adjusting the insertion point to the body of the last created
+/// loop. This allows the `bodyFunc` to be inserted into the innermost scope.
 ///
 /// \param rewriter The MLIR OpBuilder used to create operations.
 /// \param loc The source location information for debuggability.
 /// \param target The memref value whose dimensions are being looped over.
 /// \param loopDims An array of dimension indices to create loops for.
-/// \param bodyFunc A callable that defines the operations to insert in the innermost loop.
-///                 It takes a SmallVector of induction variables (one per loop).
+/// \param bodyFunc A callable that defines the operations to insert in the
+/// innermost loop.
+///                 It takes a SmallVector of induction variables (one per
+///                 loop).
 ///
 template <typename Func>
 void createSimpleNestedLoops(OpBuilder &rewriter, Location loc, Value target,
-                             ArrayRef<int> loopDims, Func bodyFunc)
-{
+                             ArrayRef<int> loopDims, Func bodyFunc) {
   MemRefType type = cast<MemRefType>(target.getType());
   int rank = type.getRank();
 

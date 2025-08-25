@@ -360,22 +360,44 @@ findFirstMatchingOperandDef(mlir::Operation *rootOp,
 
 void traverseBackwardUpdateOperandChainIf(
     Operation *op, std::function<bool(Operation *)> conditionFn,
-    std::function<void(OpBuilder &, Operation *)> actionFn,
-    OpBuilder &builder) {
+    std::function<void(OpBuilder &, Operation *)> actionFn, OpBuilder &builder,
+    DenseSet<Operation *> &handledOperation) {
 
-  if (!op)
+  if (!op || handledOperation.contains(op))
     return;
+
+  handledOperation.insert(op);
 
   if (conditionFn(op)) {
     actionFn(builder, op);
   }
 
-  for (Value operand : op->getOperands()) {
-    // TODO: handle BlockArgument
+  DenseSet<Value> handledOperand;
+
+  std::function<void(Value)> handler = [&](Value operand) {
+    if (handledOperand.contains(operand))
+      return;
+    handledOperand.insert(operand);
     if (Operation *defOp = operand.getDefiningOp()) {
       traverseBackwardUpdateOperandChainIf(defOp, conditionFn, actionFn,
-                                           builder);
+                                           builder, handledOperation);
+    } else {
+      auto blockArgument = cast<BlockArgument>(operand);
+      auto argNum = blockArgument.getArgNumber();
+      auto parentForOp =
+          dyn_cast<scf::ForOp>(blockArgument.getOwner()->getParentOp());
+      if (parentForOp && argNum > 0) {
+        auto iterArg = parentForOp.getInitArgs()[argNum - 1];
+        handler(iterArg);
+        auto yieldOp =
+            cast<scf::YieldOp>(blockArgument.getOwner()->getTerminator());
+        handler(yieldOp.getOperand(argNum - 1));
+      }
     }
+  };
+
+  for (Value operand : op->getOperands()) {
+    handler(operand);
   }
 }
 
@@ -385,8 +407,10 @@ void traverseBackwardUpdateOperandChainIf(
     std::function<void(OpBuilder &, Operation *)> actionFn) {
 
   OpBuilder builder(rootOp->getContext());
+  DenseSet<Operation *> handledOperation;
 
-  traverseBackwardUpdateOperandChainIf(rootOp, conditionFn, actionFn, builder);
+  traverseBackwardUpdateOperandChainIf(rootOp, conditionFn, actionFn, builder,
+                                       handledOperation);
 }
 
 void traverseForwardUpdateUserChainIf(

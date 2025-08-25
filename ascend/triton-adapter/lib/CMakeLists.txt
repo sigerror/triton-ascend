@@ -1,5 +1,6 @@
 add_subdirectory(TritonToAnnotation)
 add_subdirectory(TritonToHIVM)
 add_subdirectory(TritonToLinalg)
-add_subdirectory(Utils)
 add_subdirectory(DiscreteMaskAccessConversion)
+add_subdirectory(TritonToUnstructure)
+add_subdirectory(Utils)

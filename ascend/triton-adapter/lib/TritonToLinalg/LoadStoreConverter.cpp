@@ -5,8 +5,8 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "TritonToLinalg/LoadStoreConverter.h"
 #include "TritonToLinalg/BlockPtrAnalysis.h"
+#include "TritonToLinalg/LoadStoreConverter.h"
 #include "TritonToLinalg/MaskAnalysis.h"
 #include "Utils/InterleaveOptimization.h"
 #include "Utils/Utils.h"
@@ -599,7 +599,7 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
   // the input memref is also the output memref
   // Thus, there are a total of four inputs and outputs.
   // so here we have 4 map to create
-  for (int i = 0; i < 4; i++) {   // 4: 3 input and 1 output
+  for (int i = 0; i < 4; i++) { // 4: 3 input and 1 output
     indexingMaps.push_back(AffineMap::get(rank, 0, inputDims, context));
   }
 
@@ -613,15 +613,14 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
         Value setValue = blockArgs[2];
         Value cond;
         if (mlir::isa<mlir::FloatType>(lhs.getType())) {
-          cond = nestedBuilder.create<arith::CmpFOp>(nestedLoc,
-                                                     arith::CmpFPredicate::UEQ,
-                                                     lhs, rhs);
+          cond = nestedBuilder.create<arith::CmpFOp>(
+              nestedLoc, arith::CmpFPredicate::UEQ, lhs, rhs);
         } else {
-          cond = nestedBuilder.create<arith::CmpIOp>(nestedLoc,
-                                                     arith::CmpIPredicate::eq,
-                                                     lhs, rhs);
+          cond = nestedBuilder.create<arith::CmpIOp>(
+              nestedLoc, arith::CmpIPredicate::eq, lhs, rhs);
         }
-        auto ifOp = nestedBuilder.create<scf::IfOp>(nestedLoc, TypeRange{setValue.getType()}, cond, true);
+        auto ifOp = nestedBuilder.create<scf::IfOp>(
+            nestedLoc, TypeRange{setValue.getType()}, cond, true);
         {
           OpBuilder::InsertionGuard guard(nestedBuilder);
           nestedBuilder.setInsertionPointToEnd(&ifOp.getThenRegion().front());
@@ -633,7 +632,8 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
           nestedBuilder.create<scf::YieldOp>(nestedLoc, lhs);
         }
         nestedBuilder.setInsertionPointToEnd(nestedBuilder.getBlock());
-        nestedBuilder.create<mlir::linalg::YieldOp>(nestedLoc, ifOp.getResult(0));
+        nestedBuilder.create<mlir::linalg::YieldOp>(nestedLoc,
+                                                    ifOp.getResult(0));
       });
 
   const StringRef genericAtomicRMW = "GenericAtomicRMW";
@@ -672,12 +672,13 @@ ScalarStoreCanonicalizer::matchAndRewrite(triton::StoreOp op,
   auto valSplat =
       rewriter.create<triton::SplatOp>(op.getLoc(), valTy, op.getValue());
   auto mask = op.getMask();
-  if(mask){
+  if (mask) {
     auto maskTy = RankedTensorType::get({(int64_t)1}, mask.getType());
-    auto maskSplat = 
-      rewriter.create<triton::SplatOp>(op.getLoc(), maskTy, mask);
+    auto maskSplat =
+        rewriter.create<triton::SplatOp>(op.getLoc(), maskTy, mask);
     auto newStoreOp = rewriter.create<triton::StoreOp>(
-      op.getLoc(), ptrSplat, valSplat, maskSplat, op.getCache(), op.getEvict());
+        op.getLoc(), ptrSplat, valSplat, maskSplat, op.getCache(),
+        op.getEvict());
     rewriter.replaceOp(op, newStoreOp);
     return success();
   }
@@ -715,7 +716,8 @@ ScalarAtomicRMWCanonicalizer::matchAndRewrite(triton::AtomicRMWOp op,
 LogicalResult
 ScalarAtomicCASCanonicalizer::matchAndRewrite(triton::AtomicCASOp op,
                                               PatternRewriter &rewriter) const {
-  if (!op.getVal().getType().isIntOrIndexOrFloat() && !op.getCmp().getType().isIntOrIndexOrFloat()) {
+  if (!op.getVal().getType().isIntOrIndexOrFloat() &&
+      !op.getCmp().getType().isIntOrIndexOrFloat()) {
     return rewriter.notifyMatchFailure(
         op, "ScalarAtomicCASCanonicalizer handles scalar atomic cas op scene!");
   }
@@ -731,8 +733,8 @@ ScalarAtomicCASCanonicalizer::matchAndRewrite(triton::AtomicCASOp op,
       rewriter.create<triton::SplatOp>(op.getLoc(), valTy, op.getVal());
 
   auto newAtomicOp = rewriter.create<triton::AtomicCASOp>(
-      op.getLoc(), valTy, ptrSplat, cmpSplat, valSplat,
-      op.getSem(), op.getScope());
+      op.getLoc(), valTy, ptrSplat, cmpSplat, valSplat, op.getSem(),
+      op.getScope());
   rewriter.replaceOp(op, newAtomicOp);
   return success();
 }

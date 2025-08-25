@@ -68,9 +68,8 @@ void triton::UseAnalysis::visitOperation(Operation *op,
           propagateUse(operands[2], UseType::MetaUse);
         }
       })
-      .Case<triton::AssertOp>([&](auto assert) {
-        propagateUse(operands[0], UseType::DataUse);
-      })
+      .Case<triton::AssertOp>(
+          [&](auto assert) { propagateUse(operands[0], UseType::DataUse); })
       .Case<triton::StoreOp>([&](auto store) {
         propagateUse(operands[0], UseType::MetaUse);
         propagateUse(operands[1], UseType::DataUse);
@@ -166,7 +165,7 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
       LLVM_DEBUG({ op->setAttr("Undefined", UnitAttr::get(context)); });
       return;
     } else if (useType == UseType::MetaUse) {
-      if (!isa<mlir::scf::IfOp>(op)) {
+      if (!isa<mlir::scf::IfOp, mlir::scf::ForOp, mlir::scf::WhileOp>(op)) {
         assert(op->getNumResults() == 1 &&
                "Ops used for meta computation are expected to have one result");
       }
@@ -333,7 +332,7 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
         traverseBackwardUpdateOperandChainIf(
             stopOp,
             [stopOp](Operation *curOp) {
-              return isMetaUse(curOp) && curOp != stopOp;
+              return isMetaUse(curOp) && !isMixUse(curOp) && curOp != stopOp;
             },
             [](OpBuilder &b, Operation *op) {
               op->setAttr("MixUse", UnitAttr::get(op->getContext()));
@@ -345,6 +344,17 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
       });
       // Modify this op.
       op->setAttr("MixUse", UnitAttr::get(op->getContext()));
+    }
+    if (op->hasAttr(ConverterUtils::discreteAttrName)) {
+      op->removeAttr(ConverterUtils::discreteAttrName);
+      traverseBackwardUpdateOperandChainIf(
+          op,
+          [op](Operation *curOp) {
+            return isMetaUse(curOp) && !isMixUse(curOp) && curOp != op;
+          },
+          [](OpBuilder &b, Operation *op) {
+            op->setAttr("MixUse", UnitAttr::get(op->getContext()));
+          });
     }
   });
   // Remove MetaUse in case of MixUse existing in the op
@@ -364,6 +374,13 @@ MetaUseEraser::MetaUseEraser(MLIRContext *context)
 
 LogicalResult MetaUseEraser::matchAndRewrite(Operation *op,
                                              PatternRewriter &rewriter) const {
+  LLVM_DEBUG({
+    int64_t count = 0;
+    for (auto result : op->getResults()) {
+      count += std::distance(result.use_begin(), result.use_end());
+    }
+    llvm::dbgs() << "Number of user: " << count << "\n";
+  });
   if (isa<triton::AddPtrOp>(op)) {
     return rewriter.notifyMatchFailure(op,
                                        "AddPtrOp will be handled separately");

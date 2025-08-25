@@ -56,6 +56,7 @@ public:
   SmallVector<OpFoldResult> &getOffsetsRef();
   SmallVector<OpFoldResult> &getSizesRef();
   SmallVector<OpFoldResult> &getStridesRef();
+  SmallVector<int64_t> &getDiscreteDimsRef();
   Value &getSourceRef();
   OpFoldResult &getScalarRef();
   Type &getResElemTyRef();
@@ -64,10 +65,12 @@ public:
   SmallVector<OpFoldResult> getOffsets() const;
   SmallVector<OpFoldResult> getSizes() const;
   SmallVector<OpFoldResult> getStrides() const;
+  SmallVector<int64_t> getDiscreteDims() const;
   Type getResElemTy() const;
   OpFoldResult getOffset(int) const;
   OpFoldResult getSize(int) const;
   OpFoldResult getStride(int) const;
+  bool isDiscreteDim(int) const;
   OpFoldResult getScalar() const;
   Value getSource() const;
   MemAccType getMemAccType() const;
@@ -114,6 +117,8 @@ private:
   OpFoldResult scalar;
   Type resElemTy;
   MemAccType memAccTy;
+
+  SmallVector<int64_t> discreteDims;
 
   // Accumulate offsets of each dimension in BlockData to get a total offset
   // from source ptr, which is used in memref::ReinterpretCastOp

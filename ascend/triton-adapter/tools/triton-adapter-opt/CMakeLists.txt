@@ -10,6 +10,7 @@ target_link_libraries(triton-adapter-opt PRIVATE
   TritonToHIVM
   DiscreteMaskAccessConversion
   TritonToLinalg
+  TritonToUnstructure
   TritonTransforms
   ${dialect_libs}
   ${conversion_libs}

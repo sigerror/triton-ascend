@@ -48,7 +48,6 @@ private:
   fillTensorWithOtherForMaskScenario(Value other, memref::AllocOp localMem,
                                      ArrayRef<OpFoldResult> maskDim,
                                      ConversionPatternRewriter &rewriter) const;
-
 public:
   explicit LoadConverter(MLIRContext *context);
   using OpConversionPattern<triton::LoadOp>::OpConversionPattern;

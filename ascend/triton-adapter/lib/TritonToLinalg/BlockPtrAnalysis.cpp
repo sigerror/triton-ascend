@@ -44,6 +44,10 @@ SmallVector<OpFoldResult> &BlockData::getSizesRef() { return this->sizes; }
 
 SmallVector<OpFoldResult> &BlockData::getStridesRef() { return this->strides; }
 
+SmallVector<int64_t> &BlockData::getDiscreteDimsRef() {
+  return this->discreteDims;
+}
+
 Value &BlockData::getSourceRef() { return this->source; }
 
 OpFoldResult &BlockData::getScalarRef() { return this->scalar; }
@@ -58,6 +62,10 @@ SmallVector<OpFoldResult> BlockData::getStrides() const {
   return this->strides;
 }
 
+SmallVector<int64_t> BlockData::getDiscreteDims() const {
+  return this->discreteDims;
+}
+
 OpFoldResult BlockData::getOffset(int index) const {
   return this->offsets[index];
 }
@@ -66,6 +74,15 @@ OpFoldResult BlockData::getSize(int index) const { return this->sizes[index]; }
 
 OpFoldResult BlockData::getStride(int index) const {
   return this->strides[index];
+}
+
+bool BlockData::isDiscreteDim(int index) const {
+  for (auto dim : this->discreteDims) {
+    if (dim == index) {
+      return true;
+    }
+  }
+  return false;
 }
 
 OpFoldResult BlockData::getScalar() const { return this->scalar; }
@@ -134,8 +151,10 @@ MemRefType BlockData::getResultMemrefType(int64_t offset,
   SmallVector<Value> dynamicStrides;
   dispatchIndexOpFoldResults(strides, dynamicStrides, staticStrides);
 
-  auto elementType =
-      dyn_cast<BaseMemRefType>(this->source.getType()).getElementType();
+  auto baseMemrefType = dyn_cast<BaseMemRefType>(this->source.getType());
+  assert(baseMemrefType &&
+         "Invalid element type. It should be a base memref type.");
+  auto elementType = baseMemrefType.getElementType();
   auto layout =
       StridedLayoutAttr::get(this->source.getContext(), offset, staticStrides);
   return MemRefType::get(resultShape, elementType, layout);
@@ -188,6 +207,15 @@ void BlockData::addBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   // Both sizes are same implicitly under `add`
   this->sizes = lBlock.getSizesRef();
 
+  DenseSet<int64_t> discreteDims;
+
+  for (auto discreteDim : lBlock.getDiscreteDimsRef())
+    discreteDims.insert(discreteDim);
+  for (auto discreteDim : rBlock.getDiscreteDimsRef())
+    discreteDims.insert(discreteDim);
+
+  this->discreteDims = llvm::to_vector(discreteDims);
+
   this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
   this->getMemAccTypeRef().merge(rBlock.getMemAccTypeRef());
   // this->setMemAccTy(selectMaxMemAccTy(lBlock.getMemAccType(),
@@ -221,6 +249,7 @@ void BlockData::mulBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   }
 
   this->sizes = lb->getSizesRef();
+  this->discreteDims = lb->getDiscreteDimsRef();
 
   this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
   this->getMemAccTypeRef().merge(rBlock.getMemAccTypeRef());
@@ -246,6 +275,15 @@ void BlockData::divBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
 
   this->sizes = lBlock.getSizesRef();
 
+  DenseSet<int64_t> discreteDims;
+
+  for (auto discreteDim : lBlock.getDiscreteDimsRef())
+    discreteDims.insert(discreteDim);
+  for (auto discreteDim : rBlock.getDiscreteDimsRef())
+    discreteDims.insert(discreteDim);
+
+  this->discreteDims = llvm::to_vector(discreteDims);
+
   this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
   this->getMemAccTypeRef().merge(rBlock.getMemAccTypeRef());
   // this->setMemAccTy(selectMaxMemAccTy(lBlock.getMemAccType(),
@@ -269,19 +307,29 @@ void BlockData::dump() const {
   llvm::outs() << "[INFO][BEG] BlockData info\n";
   llvm::outs() << "offsets has " << offsets.size() << " items\n";
   int cnt = 0;
-  for (auto it = offsets.begin(); it != offsets.end(); it++) {
+  for (auto it = offsets.begin(); it != offsets.end(); ++it) {
     llvm::outs() << "offsets[" << cnt++ << "] = " << *it << "\n";
   }
   llvm::outs() << "sizes has " << sizes.size() << " items\n";
   cnt = 0;
-  for (auto it = sizes.begin(); it != sizes.end(); it++) {
+  for (auto it = sizes.begin(); it != sizes.end(); ++it) {
     llvm::outs() << "sizes[" << cnt++ << "] = " << *it << "\n";
   }
   llvm::outs() << "strides has " << strides.size() << " items\n";
   cnt = 0;
-  for (auto it = strides.begin(); it != strides.end(); it++) {
+  for (auto it = strides.begin(); it != strides.end(); ++it) {
     llvm::outs() << "strides[" << cnt++ << "] = " << *it << "\n";
   }
+  bool isFirst = true;
+  llvm::outs() << "discrete dimension is [";
+  for (auto it = discreteDims.begin(); it != discreteDims.end(); ++it) {
+    if (isFirst)
+      isFirst = false;
+    else
+      llvm::outs() << ", ";
+    llvm::outs() << *it;
+  }
+  llvm::outs() << "\n";
   llvm::outs() << "source = " << source << "\n";
   llvm::outs() << "scalar = " << scalar << "\n";
   llvm::outs() << "resElemTy = " << resElemTy << "\n";
@@ -342,7 +390,10 @@ void BlockDataParser::parse(
         // ptr_0 = tl.advance(ptr)
         // ptr_1 = tl.advance(ptr_0)
         parseTensorPtr(advanceOp, data, loc, rewriter, known);
+      } else if (auto intToPtrOp = dyn_cast<triton::IntToPtrOp>(op)) {
+        data.setSource(remappedPtr);
       } else {
+        LLVM_DEBUG({ llvm::dbgs() << operand << "\n"; });
         llvm_unreachable(
             "Unexpected operand defining operation, a scalar "
             "pointer can only be produced by AddPtrOp or direct block ptr");
@@ -385,8 +436,20 @@ void BlockDataParser::parse(
     parseIndirectLoad<triton::LoadOp>(loadOp, data, loc, rewriter, known);
   } else if (auto castOp = operand.getDefiningOp<arith::FPToSIOp>()) {
     parseIndirectLoad<arith::FPToSIOp>(castOp, data, loc, rewriter, known);
-  } else if (auto extractSliceOp = operand.getDefiningOp<tensor::ExtractSliceOp>()) {
+  } else if (auto extractSliceOp =
+                 operand.getDefiningOp<tensor::ExtractSliceOp>()) {
     parseExtractSlice(extractSliceOp, data, loc, rewriter, known);
+  } else if (auto forOp = operand.getDefiningOp<scf::ForOp>()) {
+    parseIndirectLoad<scf::ForOp>(forOp, data, loc, rewriter, known);
+  } else if (isa<BlockArgument>(operand)) {
+    auto resShape = cast<ShapedType>(operand.getType()).getShape().vec();
+    data.setMemAccVal(MemAccVal::UnstrucMemAcc);
+    for (auto &s : resShape) {
+      data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
+      data.getSizesRef().push_back(rewriter.getIndexAttr(s));
+      data.getStridesRef().push_back(rewriter.getIndexAttr(1));
+      data.getDiscreteDimsRef().push_back(data.getDiscreteDimsRef().size());
+    }
   } else {
     operand.dump();
     llvm_unreachable("encountered AddPtrOp produced by unsupported operation");
@@ -472,15 +535,19 @@ void BlockDataParser::parseExpandDims(
                               rewriter.getIndexAttr(0));
 }
 
-void BlockDataParser::parseExtractSlice(tensor::ExtractSliceOp op, BlockData &data,
-    const Location &loc,
+void BlockDataParser::parseExtractSlice(
+    tensor::ExtractSliceOp op, BlockData &data, const Location &loc,
     ConversionPatternRewriter &rewriter,
     const llvm::SmallDenseMap<Value, BlockData> &known) {
   const std::string scenarioMessages =
-      "PtsAnalysis supports indirectly block load in the following scenario\n"
+      "PtsAnalysis supports indirectly block load in the "
+      "following scenario\n"
       "B = tl.load(Aptr + Aoffset) # B is 1D tensor\n"
-      "s = tl.extract_slice(indices, offsets= (i,), sizes= (1,), strides= (1,)) # s is a tensor<1x$dtype>\n" 
-      "D = tl.load(Cptr + s + Coffset) # s is used as the scalar offset\n"; // tensor<2x$dtype> will be support soon
+      "s = tl.extract_slice(indices, offsets= (i,), sizes= "
+      "(1,), strides= (1,)) # s is a tensor<1x$dtype>\n"
+      "D = tl.load(Cptr + s + Coffset) # s is used as the "
+      "scalar offset\n"; // tensor<2x$dtype> will be support
+                         // soon
 
   auto extract_src = op->getOperand(0);
   BlockData srcBlock;
@@ -507,10 +574,10 @@ void BlockDataParser::parseExtractSlice(tensor::ExtractSliceOp op, BlockData &da
     data.getSizesRef().push_back(rewriter.getIndexAttr(shape[0]));
     data.getStridesRef().push_back(rewriter.getIndexAttr(1));
   } else {
-    llvm_unreachable("parseExtractSlice with offset already setup not yet supported");
+    llvm_unreachable(
+        "parseExtractSlice with offset already setup not yet supported");
   }
 }
-
 
 void BlockDataParser::parseBitcast(
     triton::BitcastOp op, BlockData &data, const Location &loc,
@@ -663,6 +730,13 @@ void BlockDataParser::parseAddPtr(
   // offset has source means offset is from tl.load and other ops(TODO)
   if (offsetBlock.hasSource()) {
     ptrBlock.setMemAccTy(offsetBlock.getMemAccType());
+    auto src = offsetBlock.getSource();
+    if (auto srcType = dyn_cast<MemRefType>(src.getType())) {
+      size_t rank = srcType.getShape().size();
+      for (size_t dim = 0; dim < rank; ++dim) {
+        data.getDiscreteDimsRef().push_back(dim);
+      }
+    }
     offsetBlock.removeSource();
   }
 
@@ -795,6 +869,7 @@ void parseIndirectLoad(OpTy op, BlockData &data, const Location &loc,
     data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
     data.getSizesRef().push_back(rewriter.getIndexAttr(s));
     data.getStridesRef().push_back(rewriter.getIndexAttr(1));
+    data.getDiscreteDimsRef().push_back(data.getDiscreteDimsRef().size());
   }
   // set the source in BlockData so that we know an indirect-load op exists in
   // the chain.
@@ -810,13 +885,6 @@ void BlockDataParser::rewriteAddPtr(
 
   BlockData data;
   parseAddPtr(op, data, op.getLoc(), rewriter, known);
-
-  if (data.getMemAccTypeRef().isUnstructured()) {
-    // TODO: Based on more info, try to create a performant IR
-    rewriteAddPtrToUnstrucMemAcc(op, adaptor, rewriter, data);
-    LLVM_DEBUG({ llvm::dbgs() << *getModuleOpFromOperation(op) << "\n"; });
-    return;
-  }
 
   if (data.getSizesRef().size() == 0) {
     data.getSizesRef().push_back(rewriter.getIndexAttr(1));
@@ -888,7 +956,8 @@ void BlockDataParser::rewriteAdvanceOp(
   BlockData blockData;
   parse(op.getOperand(0), blockData, loc, rewriter, known);
 
-  // region [BUGFIX] Add the code block below following the same logic as 'BlockDataParser::rewriteAddPtr' function.
+  // region [BUGFIX] Add the code block below following the same logic as
+  // 'BlockDataParser::rewriteAddPtr' function.
   known[op.getResult()] = blockData;
   auto inferedSize = 1;
   for (int i = blockData.getSizesRef().size() - 1; i >= 0; i--) {
@@ -1183,7 +1252,7 @@ void BlockDataParser::rewriteForOp(
       auto castOp = data.createCastOp(resultShape, op.getLoc(), rewriter);
       if (resultShape.size() > 1) {
         auto originalOffset = dyn_cast<Value>(data.getOffsetsRef()[0]);
-        for (auto &offsets: newInitArgs) {
+        for (auto &offsets : newInitArgs) {
           if (offsets == originalOffset) {
             offsets = castOp.getOffsets()[0];
             break;
