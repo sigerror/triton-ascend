@@ -3,7 +3,7 @@
 在本节中，我们将展示使用 Triton 的 autotune 方法以自动选择最优的 kernel 配置参数。当前 Triton-Ascend autotune 完全兼容社区 autotune 的使用方法（参考[社区文档](https://triton-lang.org/main/python-api/generated/triton.autotune.html)），即需要用户手动传入一些定义好的 triton.Config，然后 autotune 会通过 benchmark 的方式选择其中的最优 kernel 配置；此外 Triton-Ascend 提供了**进阶的 autotune** 用法，用户需要提供当前 triton kernel 的切分轴、tiling 轴等信息，此时 autotune 会根据实际的输入大小自动生成一些可能最优的 kernel 配置，然后通过 benchmark 或者 profiling 的方式选择其中的最优配置。
 
 说明：
-当前Triton-Ascend autotune支持block size、multibuffer（编译器的优化），未来还会持续增加autotune可调项。
+当前Triton-Ascend autotune支持block size、multibuffer（编译器的优化），因为硬件架构差异不支持num_warps、num_statges参数，未来还会持续增加autotune可调项。
 
 ## 社区 autotune 使用示例
 ```Python
