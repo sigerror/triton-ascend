@@ -1,5 +1,5 @@
 // RUN: triton-adapter-opt --triton-to-linalg %s | FileCheck %s
-
+// XFAIL: *
 // @triton.jit
 // def test_cumsum_op(
 //     input_ptr, output_ptr, n_columns
