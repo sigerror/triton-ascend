@@ -1,8 +1,8 @@
+import math
 import pytest
 import torch
 import triton
 import triton.language as tl
-import math
 import test_common
 
 
@@ -121,6 +121,7 @@ def test_tensor_descriptor_functional_interface(dtype):
     kernel[(grid_m, grid_n)](out, inp, M, N, M_BLOCK, N_BLOCK)
     torch.testing.assert_close(inp, out)
 
+
 @pytest.mark.parametrize("dtype_str", ["int32"])
 @pytest.mark.parametrize("shape", [(128, 2, 4), (64, 2, 4), (32, 2, 4), (2, 4, 32), (2, 4, 2)])
 @pytest.mark.parametrize("axis", [0, 1, 2])
@@ -154,11 +155,11 @@ def test_reduce_max(dtype_str, shape, axis, device):
         output = tl.max(val, axis=axis)
         out_desc.store([0], output.reshape(out_desc.block_shape))
 
-    input = torch.arange(math.prod(shape), 
+    inp = torch.arange(math.prod(shape), 
                          dtype=getattr(torch, dtype_str),
                          device=device).reshape(shape)
-    expected, indices = torch.max(input.to(torch.int64), dim=axis)
+    expected, indices = torch.max(inp.to(torch.int64), dim=axis)
     expected = expected.to(torch.int32)
     actual = torch.zeros(expected.shape, dtype=getattr(torch, dtype_str), device=device)
-    kernel[(1, )](input, actual, *shape, *expected.shape, axis=axis)
+    kernel[(1, )](inp, actual, *shape, *expected.shape, axis=axis)
     assert torch.equal(expected, actual)
