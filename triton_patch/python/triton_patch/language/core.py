@@ -390,8 +390,15 @@ class parallel(range):
 
 @builtin
 def compile_hint(ptr, hint_name, hint_val=None, _builder=None):
+    def _unwrap(val):
+        return _unwrap_if_constexpr(val) if val else val
+
     hint_name = _constexpr_to_value(hint_name)
     assert isinstance(hint_name, str), f"hint name: {hint_name} is not string"
+    if isinstance(hint_val, list):
+        hint_val = [_unwrap(val) for val in hint_val]
+    else:
+        hint_val = _unwrap(hint_val)
     hint_val = _unwrap_if_constexpr(hint_val) if hint_val else hint_val
     semantic.compile_hint(ptr, hint_name, hint_val, _builder)
 
