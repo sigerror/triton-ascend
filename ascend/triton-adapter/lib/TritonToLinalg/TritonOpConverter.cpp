@@ -1024,8 +1024,9 @@ LogicalResult ScanConverter::convertToTargetOp(
   }
 
   bool reverse = op.getReverse();
-    if (reverse) {
-    return rewriter.notifyMatchFailure(op, "reverse=True not supported yet");
+  if (reverse) {
+    op.emitError("reverse=True is not yet supported for scan op");
+    return failure();
   }
 
   llvm::SmallString<64> funcName;

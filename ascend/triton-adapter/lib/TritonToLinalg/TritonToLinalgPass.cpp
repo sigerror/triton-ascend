@@ -638,6 +638,9 @@ void TritonToLinalgPass::runOnOperation() {
   // 3.标注合法方言
   this->addDynamicLegal(target, tritonTypeConverter);
 
+  // 4：标记必须转换的op，包括tt.scan
+  target.addIllegalOp<triton::ScanOp>();
+
   // 5.对非法Op注册Converter
   this->populateTritonToLinalgConversionPatterns(tritonTypeConverter, patterns,
                                                  LAUNCH_GRID_RANK);
