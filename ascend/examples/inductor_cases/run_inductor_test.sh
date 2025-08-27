@@ -13,6 +13,12 @@ TEST_inductor="${WORKSPACE}/ascend/examples/inductor_cases"
 # 定义统计文件路径
 SUMMARY_FILE="${WORKSPACE}/ascend/examples/summary.txt"
 
+# install daily torch_npu
+current_date=$(date +%Y%m%d)
+wget https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta/Daily/v2.6.0/${current_date}.3/pytorch_v2.6.0_py311.tar.gz
+tar -zxvf pytorch_v2.6.0_py311.tar.gz
+pip install torch_npu-2.6.0.post2.dev${current_date}-cp311-cp311-manylinux_2_28_aarch64.whl
+
 # remove inductor cache
 rm -rf /tmp/torchinductor_*
 cd ${TEST_inductor}
