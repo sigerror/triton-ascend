@@ -656,6 +656,7 @@ from .triton_patch.language.math import (
     tanh,
     floor,
     ceil,
+    _check_dtype,
 )
 from .triton_patch.language.semantic import (
     arange,
@@ -762,6 +763,7 @@ language.math.erf = erf
 language.math.tanh = tanh
 language.math.floor = floor
 language.math.ceil = ceil
+language.math._check_dtype = _check_dtype
 language.math.isnan = language.extra.ascend.libdevice.isnan
 language.math.isinf = language.extra.ascend.libdevice.isinf
 language.math.reciprocal = language.extra.ascend.libdevice.reciprocal
