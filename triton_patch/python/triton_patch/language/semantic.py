@@ -711,6 +711,7 @@ def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.te
     assert lhs.type.is_block() and rhs.type.is_block()
     assert lhs.dtype == tl.bfloat16 or lhs.dtype == tl.float16, f"lhs matrix dtype must be bf16 or fp16"
     assert rhs.dtype == tl.bfloat16 or rhs.dtype == tl.float16, f"rhs matrix dtype must be bf16 or fp16"
+    assert lhs.dtype == rhs.dtype, f"lhs rhs matrix must get same dtype"
     lhs_rank = len(lhs.shape)
     rhs_rank = len(rhs.shape)
     assert lhs_rank == rhs_rank == 2 or lhs_rank == rhs_rank == 3, f"Both inputs must be either 2D or 3D; (lhs: {lhs.shape} vs rhs: {rhs.shape})"
@@ -723,9 +724,16 @@ def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.te
     assert rhs_format in allowed_formats, f"NYI: rhs_format {rhs_format}"
     rhs_scale_is_none = rhs_scale is None or (isinstance(rhs_scale, tl.constexpr) and rhs_scale.value is None)
     lhs_scale_is_none = lhs_scale is None or (isinstance(lhs_scale, tl.constexpr) and lhs_scale.value is None)
+    assert isinstance(lhs_scale, tl.tensor) and lhs_scale.dtype == tl.int8, f"lhs_scale must be int8 tensor"
+    if not rhs_scale_is_none:
+        assert isinstance(rhs_scale, tl.tensor) and rhs_scale.dtype == tl.int8, f"rhs_scale must be int8 tensor"
     lhs = _bitcast_to_fp_type(lhs, lhs_format, builder)
     rhs = _bitcast_to_fp_type(rhs, rhs_format, builder)
 
+    assert lhs.type.shape[-1] == rhs.type.shape[-2], (
+        f"lhs last dimension (columns) {lhs.shape[-1]} "
+        f"must equal rhs penultimate dimension (rows) {rhs.shape[-2]}"
+    )
     M = lhs.type.shape[-2]
     K, N = rhs.type.shape[-2:]
     PACKED_A = 2 if lhs_format == "e2m1" else 1
