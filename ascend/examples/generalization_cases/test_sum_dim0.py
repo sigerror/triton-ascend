@@ -3,7 +3,7 @@ import triton.language as tl
 import torch
 import pytest
 import test_common
-from test_common import TestUtils
+from test_common import TestUtils, get_dtype_size
 import math
 
 def torch_sum(x0):
@@ -24,9 +24,18 @@ def triton_sum(in_ptr0, out_ptr1, xnumel, rnumel, XBLOCK : tl.constexpr, RBLOCK 
         tmp4 = tl.sum(tmp2, 0)
         tl.store(out_ptr1 + (rindex), tmp4, rmask)
 
+def should_skip_due_to_mem(dtype, shape):
+    dtype_size = get_dtype_size(dtype)
+    total_mem = dtype_size * math.prod(shape)
+    threshold = TestUtils.ub_size / 1.5
+
+    if total_mem >= threshold:
+        pytest.skip(f"dtype:{dtype} shape:{shape} mem overflow")
+
 @pytest.mark.parametrize('shape', TestUtils.test_shape2d)
 @pytest.mark.parametrize('dtype', ['float32', 'int32'])
 def test_case(dtype, shape):
+    should_skip_due_to_mem(dtype, shape)
     x0 = test_common.generate_tensor(shape, dtype).npu()
 
     rblock = shape[1]
