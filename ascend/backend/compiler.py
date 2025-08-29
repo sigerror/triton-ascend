@@ -280,43 +280,52 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
                 f"--target={NPUUtils().get_arch()}",
             ]
         multibuffer = metadata["multibuffer"]
-        _compile_option_list += [
-            f"--enable-auto-multi-buffer={multibuffer}",
-        ]
+        if multibuffer is not None:
+            _compile_option_list += [
+                f"--enable-auto-multi-buffer={multibuffer}",
+            ]
         if _is_ascend_sanitizer_enabled():
             _compile_option_list += ["--enable-sanitizer=true"]
         if not _is_debug_line_info_disabled():
             _compile_option_list += ["--enable-debug-info=true"]
 
-        if metadata["enable_hivm_auto_cv_balance"]:
+        enable_hivm_auto_cv_balance = metadata["enable_hivm_auto_cv_balance"]
+        if enable_hivm_auto_cv_balance is not None:
             _compile_option_list += \
-                ["--enable-hivm-auto-cv-balance=true"]
+                [f"--enable-hivm-auto-cv-balance={enable_hivm_auto_cv_balance}"]
 
-        if metadata["unit_flag"]:
+        unit_flag = metadata["unit_flag"]
+        if unit_flag is not None:
             _compile_option_list += \
-                ["--enable-hivm-unit-flag-sync=true"]
+                [f"--enable-hivm-unit-flag-sync={unit_flag}"]
 
-        if not metadata["limit_auto_multi_buffer_only_for_local_buffer"]:
+        limit_auto_multi_buffer_only_for_local_buffer = metadata["limit_auto_multi_buffer_only_for_local_buffer"]
+        if limit_auto_multi_buffer_only_for_local_buffer is not None:
             _compile_option_list += \
-                ["--limit-auto-multi-buffer-only-for-local-buffer=false"]
+                [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
 
+        nested_sub_block_num = metadata["nested_sub_block_num"]
+        if nested_sub_block_num is not None:
+            _compile_option_list += \
+                [f"--nested-sub-block-num={nested_sub_block_num}"]
+                
         set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
-        if set_workspace_multibuffer:
+        if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
 
         nested_vector_loop_num = metadata["nested_vector_loop_num"]
-        if nested_vector_loop_num:
+        if nested_vector_loop_num is not None:
             _compile_option_list += \
                 [f"--nested-vector-loop-num={nested_vector_loop_num}"]
 
         nested_cube_loop_num = metadata["nested_cube_loop_num"]
-        if nested_cube_loop_num:
+        if nested_cube_loop_num is not None:
             _compile_option_list += \
                 [f"--nested-cube-loop-num={nested_cube_loop_num}"]
 
-        auto_multi_buffer = metadata["auto_multi_buffer_of_local_buffer"]
-        if len(auto_multi_buffer) != 0:
+        auto_multi_buffer = metadata["limit_auto_multi_buffer_of_local_buffer"]
+        if auto_multi_buffer is not None:
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-of-local-buffer={auto_multi_buffer}"]
 
@@ -370,14 +379,15 @@ class NPUOptions:
     max_num_imprecise_acc_default: bool = None
     extern_libs: dict = None
 
-    multibuffer: bool = True
-    enable_hivm_auto_cv_balance: bool = False
-    unit_flag: bool = False
-    limit_auto_multi_buffer_only_for_local_buffer: bool = True
-    auto_multi_buffer_of_local_buffer: str = ""
-    set_workspace_multibuffer: int = 0
-    nested_vector_loop_num: int = 0
-    nested_cube_loop_num: int = 0
+    multibuffer: bool = None
+    enable_hivm_auto_cv_balance: bool = None
+    unit_flag: bool = None
+    limit_auto_multi_buffer_only_for_local_buffer: bool = None
+    limit_auto_multi_buffer_of_local_buffer: str = None
+    set_workspace_multibuffer: int = None
+    nested_sub_block_num: int = None
+    nested_vector_loop_num: int = None
+    nested_cube_loop_num: int = None
 
     stream: int = None
 

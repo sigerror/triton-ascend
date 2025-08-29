@@ -3,6 +3,7 @@
 
 import os
 import shutil
+import itertools
 
 import pytest
 import triton
@@ -15,12 +16,34 @@ _AUTO_PROF_DIR1 = "./TEST_AUTO_PROF1"
 _AUTO_PROF_DIR2 = "./TEST_AUTO_PROF2"
 
 
-# Community's autotune
+def get_autotune_config():
+    configs = []
+    block_size_list = [1024, 2048]
+    
+    multibuffer_list = [False]
+    for combo in itertools.product(
+        block_size_list,
+        multibuffer_list,
+    ):
+        (
+            block_size,
+            multibuffer,
+        ) = combo
+
+        configs.append(
+            triton.Config(
+                {
+                    "BLOCK_SIZE": block_size,
+                },
+                multibuffer=multibuffer,
+            )
+        )
+
+    return configs
+
+
 @triton.autotune(
-    configs=[
-        triton.Config({"BLOCK_SIZE": 2048}),
-        triton.Config({"BLOCK_SIZE": 1024}),
-    ],
+    configs=get_autotune_config(),
     key=["n_elements"],
     auto_profile_dir=_AUTO_PROF_DIR1,  # auto profile the best configuration and store the result
 )
