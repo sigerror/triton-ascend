@@ -19,8 +19,19 @@ wget https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta/Daily/v2.6.0/$
 tar -zxvf pytorch_v2.6.0_py311.tar.gz
 pip install torch_npu-2.6.0.post2.dev${current_date}-cp311-cp311-manylinux_2_28_aarch64.whl
 
-# remove inductor cache
-rm -rf /tmp/torchinductor_*
+# remove inductor and triton cache
+if [ -d /tmp/torchinductor_* ];then
+  rm -rf /tmp/torchinductor_*
+fi
+
+if [ -d ~/.triton/dump ];then
+  rm -rf ~/.triton/dump
+fi
+
+if [ -d ~/.triton/cache ];then
+  rm -rf ~/.triton/cache
+fi
+
 cd ${TEST_inductor}
 git init
 git remote add origin http://gitee.com/ascend/pytorch.git
