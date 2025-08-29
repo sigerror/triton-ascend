@@ -562,7 +562,7 @@ void TritonToLinalgPass::getDependentDialects(DialectRegistry &registry) const {
   registry.insert<func::FuncDialect, arith::ArithDialect, math::MathDialect,
                   linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
                   tensor::TensorDialect, bufferization::BufferizationDialect,
-                  memref::MemRefDialect>();
+                  memref::MemRefDialect, hivm::HIVMDialect, annotation::AnnotationDialect>();
 }
 
 LogicalResult TritonToLinalgPass::processDescriptorOperations(ModuleOp moduleOp)
@@ -687,6 +687,88 @@ void TritonToLinalgPass::runOnOperation() {
   pm.addPass(createCanonicalizerPass());
   if (failed(runPipeline(pm, getOperation()))) {
     signalPassFailure();
+  }
+
+  // Calculate size of PointerCastOp precisely
+  SmallVector<hivm::PointerCastOp> castOps;
+
+  moduleOp.walk([&](hivm::PointerCastOp op) { castOps.push_back(op); });
+
+  for (auto op : castOps) {
+    SmallVector<Operation *> userOps(op->getUsers().begin(),
+                                     op->getUsers().end());
+    IRRewriter rewriter(&getContext());
+    rewriter.setInsertionPointAfter(op);
+    Value addr = op.getAddrs()[0];
+    auto elementType =
+        cast<MemRefType>(op.getResult().getType()).getElementType();
+    Value elementTypeSize;
+    if (auto intType = dyn_cast<IntegerType>(elementType)) {
+      elementTypeSize = rewriter.create<arith::ConstantOp>(op.getLoc(), rewriter.getIntegerAttr(addr.getType(), intType.getWidth() / 8));
+    } else if (auto floatType = dyn_cast<FloatType>(elementType)) {
+      elementTypeSize = rewriter.create<arith::ConstantOp>(op.getLoc(), rewriter.getIntegerAttr(addr.getType(), floatType.getWidth() / 8));
+    } else {
+      llvm_unreachable("Cannot get memory size");
+    }
+
+    for (auto userOp : userOps) {
+      auto reinterpretCastOp = cast<memref::ReinterpretCastOp>(userOp);
+      auto sizes = reinterpretCastOp.getStaticSizes();
+      auto staticStrides = reinterpretCastOp.getStaticStrides();
+      auto strides = reinterpretCastOp.getStrides();
+      if(reinterpretCastOp.getStaticOffsets().size() != 1)
+        userOp->emitError("IntToPtrOp must converted to PointerCastOp of memref<?xdtype> type");
+      int64_t castOpSize = 0;
+      SmallVector<int64_t> dynamicSizes;
+      for (const auto &[size, stride] : llvm::zip_equal(sizes, staticStrides)) {
+        assert(!ShapedType::isDynamic(size));
+        if (ShapedType::isDynamic(stride))
+          dynamicSizes.push_back(size);
+        else
+          castOpSize = size * stride;
+      }
+      rewriter.setInsertionPoint(reinterpretCastOp);
+      Value dynamicSize = rewriter.create<arith::ConstantOp>(
+          op.getLoc(), rewriter.getIndexAttr(castOpSize));
+      for (const auto &[size, stride] :
+           llvm::zip_equal(dynamicSizes, strides)) {
+        Value axisSize = rewriter.create<arith::ConstantOp>(
+            op.getLoc(), rewriter.getIndexAttr(size));
+        axisSize =
+            rewriter.create<arith::MulIOp>(op.getLoc(), stride, axisSize);
+        dynamicSize = rewriter.create<arith::AddIOp>(op.getLoc(), dynamicSize,
+                                                      axisSize);
+      }
+      Value offsetValue;
+      auto staticOffset = reinterpretCastOp.getStaticOffsets()[0];
+      if (ShapedType::isDynamic(staticOffset)) {
+        offsetValue = reinterpretCastOp.getOffsets()[0];
+        if (offsetValue.getType() != addr.getType())
+          offsetValue = rewriter.create<arith::IndexCastOp>(
+              op.getLoc(), addr.getType(), offsetValue);
+      } else {
+        offsetValue = rewriter.create<arith::ConstantOp>(
+            op.getLoc(), rewriter.getIntegerAttr(addr.getType(), staticOffset));
+      }
+      offsetValue = rewriter.create<arith::MulIOp>(op.getLoc(), offsetValue, elementTypeSize);
+      Value realAddr = rewriter.create<arith::AddIOp>(op.getLoc(), addr, offsetValue);
+      auto memrefType = MemRefType::get({ShapedType::kDynamic}, elementType);
+      auto newCastOp = rewriter.create<hivm::PointerCastOp>(
+          op.getLoc(), memrefType, realAddr, dynamicSize);
+      auto markOp = rewriter.create<annotation::MarkOp>(op.getLoc(),
+                                                        newCastOp.getResult());
+      markOp->setAttr(hivm::AddressSpaceAttr::getMnemonic(),
+                      {hivm::AddressSpaceAttr::get(rewriter.getContext(),
+                                                   hivm::AddressSpace::GM)});
+      rewriter.replaceOpWithNewOp<memref::ReinterpretCastOp>(
+          reinterpretCastOp,
+          cast<MemRefType>(reinterpretCastOp.getResult().getType()), newCastOp,
+          ValueRange({}), reinterpretCastOp.getSizes(),
+          reinterpretCastOp.getStrides(), SmallVector<int64_t>({0}),
+          reinterpretCastOp.getStaticSizes(),
+          reinterpretCastOp.getStaticStrides());
+    }
+    rewriter.eraseOp(op);
   }
 
   // Try interleave optimization

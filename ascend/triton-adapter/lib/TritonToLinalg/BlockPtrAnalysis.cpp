@@ -7,6 +7,9 @@
 #include "TritonToLinalg/BlockPtrAnalysis.h"
 #include "Utils/Utils.h"
 
+#include "bishengir/Dialect/Annotation/IR/Annotation.h"
+#include "bishengir/Dialect/HIVM/IR/HIVM.h"
+
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
@@ -135,8 +138,7 @@ MemRefType BlockData::getResultMemrefType(int64_t offset,
   dispatchIndexOpFoldResults(strides, dynamicStrides, staticStrides);
 
   auto baseMemrefType = dyn_cast<BaseMemRefType>(this->source.getType());
-  assert(baseMemrefType &&
-         "Invalid element type. It should be a base memref type.");
+  assert(baseMemrefType && "Invalid element type. It should be a base memref type.");
   auto elementType = baseMemrefType.getElementType();
   auto layout =
       StridedLayoutAttr::get(this->source.getContext(), offset, staticStrides);
@@ -851,6 +853,15 @@ void BlockDataParser::rewriteAddPtr(
   BlockData data;
   parseAddPtr(op, data, op.getLoc(), rewriter, known);
 
+  if (auto src = data.getSource();
+      data.getMemAccTypeRef().isUnstructured() &&
+      !(src && isa_and_nonnull<triton::IntToPtrOp>(src.getDefiningOp()))) {
+    // TODO: Based on more info, try to create a performant IR
+    rewriteAddPtrToUnstrucMemAcc(op, adaptor, rewriter, data);
+    LLVM_DEBUG({ llvm::dbgs() << *getModuleOpFromOperation(op) << "\n"; });
+    return;
+  }
+
   if (data.getSizesRef().size() == 0) {
     data.getSizesRef().push_back(rewriter.getIndexAttr(1));
     data.getStridesRef().push_back(rewriter.getIndexAttr(0));
@@ -883,6 +894,16 @@ void BlockDataParser::rewriteAddPtr(
       data.getStridesRef()[i] = rewriter.getIndexAttr(inferedSize);
     }
     inferedSize *= sizeConst.value();
+  }
+
+  if (auto intToPtrOp =
+          dyn_cast<triton::IntToPtrOp>(data.getSourceRef().getDefiningOp())) {
+    auto rtype = cast<triton::PointerType>(intToPtrOp.getResult().getType());
+    auto memrefType =
+        MemRefType::get({ShapedType::kDynamic}, rtype.getPointeeType());
+    auto hivmPointCastOp = rewriter.create<hivm::PointerCastOp>(
+        intToPtrOp.getLoc(), memrefType, ValueRange{intToPtrOp.getSrc()});
+    data.setSource(hivmPointCastOp.getResult());
   }
 
   if (data.hasResElemTy()) {
