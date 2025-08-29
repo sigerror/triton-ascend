@@ -178,17 +178,17 @@ cd ${WORKSPACE}
 echo "生成时间: $(date +"%Y-%m-%d %H:%M:%S")" >> ${SUMMARY_FILE}
 echo "========================================" >> ${SUMMARY_FILE}
 
+# run inductor cases
+TEST_inductor_cases="${WORKSPACE}/ascend/examples/inductor_cases"
+cd ${TEST_inductor_cases}
+bash run_inductor_test.sh
+
 # run gene case
 zip_file="test_generalizetion_case_$(date +%Y%m%d).zip"
 TEST_generalization="${WORKSPACE}/ascend/examples/generalization_cases"
 run_case_by_multi_card ${TEST_generalization} ${zip_file}
 
 echo "========================================" >> ${SUMMARY_FILE}
-
-# run inductor cases
-TEST_inductor_cases="${WORKSPACE}/ascend/examples/inductor_cases"
-cd ${TEST_inductor_cases}
-bash run_inductor_test.sh
 
 # run flaggems cases
 TEST_flaggems_cases="${WORKSPACE}/ascend/examples/flaggems_cases"
