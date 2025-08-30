@@ -625,6 +625,12 @@ from .triton_patch.language.core import (
     insert_slice,
     extract_slice,
     trans,
+    __add__,
+    __radd__,
+    __sub__,
+    __rsub__,
+    __mul__,
+    __rmul__,
     __lshift__,
     __rshift__,
     parallel,
@@ -690,6 +696,12 @@ language.gather = gather
 language.insert_slice = insert_slice
 language.extract_slice = extract_slice
 language.get_element = get_element
+language.tensor.__add__ = __add__
+language.tensor.__radd__ = __radd__
+language.tensor.__sub__ = __sub__
+language.tensor.__rsub__ = __rsub__
+language.tensor.__mul__ = __mul__
+language.tensor.__rmul__ = __rmul__
 language.tensor.__lshift__ = __lshift__
 language.tensor.__rshift__ = __rshift__
 language.trans = trans
