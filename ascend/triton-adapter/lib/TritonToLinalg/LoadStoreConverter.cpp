@@ -671,7 +671,16 @@ ScalarStoreCanonicalizer::matchAndRewrite(triton::StoreOp op,
   auto valTy = RankedTensorType::get({(int64_t)1}, op.getValue().getType());
   auto valSplat =
       rewriter.create<triton::SplatOp>(op.getLoc(), valTy, op.getValue());
-
+  auto mask = op.getMask();
+  if(mask){
+    auto maskTy = RankedTensorType::get({(int64_t)1}, mask.getType());
+    auto maskSplat = 
+      rewriter.create<triton::SplatOp>(op.getLoc(), maskTy, mask);
+    auto newStoreOp = rewriter.create<triton::StoreOp>(
+      op.getLoc(), ptrSplat, valSplat, maskSplat, op.getCache(), op.getEvict());
+    rewriter.replaceOp(op, newStoreOp);
+    return success();
+  }
   auto newStoreOp = rewriter.create<triton::StoreOp>(
       op.getLoc(), ptrSplat, valSplat, op.getCache(), op.getEvict());
   rewriter.replaceOp(op, newStoreOp);
