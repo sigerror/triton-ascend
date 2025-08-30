@@ -15,6 +15,9 @@ from triton.language.core import (
     check_bit_width,
     _unwrap_if_constexpr,
     range,
+    add,
+    sub,
+    mul,
 )
 from typing import Optional
 # from triton.language.core import _unwrap_if_constexpr, _unwrap_shape
@@ -351,6 +354,31 @@ def get_element(src, indice, _builder=None, _generator=None):
         for i in indice
     ]
     return semantic.get_element(src, new_indice, _builder)
+
+@builtin
+def __add__(self, other, _builder=None):
+    return add(self, other, sanitize_overflow=False, _builder=_builder)
+
+@builtin
+def __radd__(self, other, _builder=None):
+    return add(other, self, sanitize_overflow=False, _builder=_builder)
+
+@builtin
+def __sub__(self, other, _builder=None):
+    return sub(self, other, sanitize_overflow=False, _builder=_builder)
+
+@builtin
+def __rsub__(self, other, _builder=None):
+    return sub(other, self, sanitize_overflow=False, _builder=_builder)
+
+@builtin
+def __mul__(self, other, _builder=None):
+    return mul(self, other, sanitize_overflow=False, _builder=_builder)
+
+@builtin
+def __rmul__(self, other, _builder=None):
+    return mul(other, self, sanitize_overflow=False, _builder=_builder)
+
 
 @builtin
 def __lshift__(self, other, _builder=None):
