@@ -1,4 +1,3 @@
-from itertools import product
 import contextlib
 import itertools
 import re
@@ -19,15 +18,16 @@ from numpy.random import RandomState
 from triton.language.extra import libdevice
 
 
-
 @triton.jit
-def dot_scale_kernel(a_base, stride_a0, stride_a1, a_scale, b_base, stride_b0, stride_b1, b_scale, out,
+def dot_scale_kernel(a_base, stride_a0: tl.constexpr, stride_a1: tl.constexpr, a_scale, b_base, stride_b0: tl.constexpr,
+                     stride_b1: tl.constexpr, b_scale, out,
                      BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr, type_a: tl.constexpr,
                      type_b: tl.constexpr, acc_num: tl.constexpr):
     PACKED_BLOCK_K_A: tl.constexpr = BLOCK_K
     PACKED_BLOCK_K_B: tl.constexpr = BLOCK_K
+    str_a0: tl.constexpr = stride_a0
     a_ptr = a_base + tl.arange(0, BLOCK_M)[:, None] * stride_a0 + tl.arange(0,
-                                                                            PACKED_BLOCK_K_A)[None, :] * stride_a1
+                                                                            str_a0)[None, :] * stride_a1
     b_ptr = b_base + tl.arange(0, PACKED_BLOCK_K_B)[:, None] * stride_b0 + tl.arange(0,
                                                                                      BLOCK_N)[None, :] * stride_b1
 
@@ -136,15 +136,11 @@ def test_4d_dot(B, M, N, K):
     device = "npu"
     torch.manual_seed(0)
 
-    # 随便造一个 4-D 张量
     x4d = torch.randn((B, B, M, N), dtype=torch.float16, device=device)
     y4d = torch.randn((B, B, N, K), dtype=torch.float16, device=device)
 
-    # view 成 2-D，让 kernel 可以启动
     x2d = x4d.view(-1, N)  # shape (B*B*M, N)
-    print('x2d shape: ', x2d.shape)
     y2d = y4d.view(-1, K)  # shape (B*B*N, K)
-    # scale 的 shape 仍按 kernel 期望的 2-D 逻辑
     scale_x = torch.randint(-10, 10, (x2d.shape[0], N // 32),
                             dtype=torch.int8, device=device)
     scale_y = torch.randint(-10, 10, (y2d.shape[1], N // 32),
@@ -170,6 +166,37 @@ def test_4d_dot(B, M, N, K):
     torch.testing.assert_close(z, z_ref, atol=atol, rtol=rtol)
 
 
+@pytest.mark.parametrize("B, M, N, K", [(2, 16, 16, 32)])
+@test_common.raises_with_match(triton.compiler.errors.CompilationError,
+                               r"lhs last dimension .* must equal rhs penultimate dimension"
+                               )
+def test_2d_dot_invaild_shape(B, M, N, K):
+    device = "npu"
+    torch.manual_seed(0)
+
+    x4d = torch.randn((B, B, M, N), dtype=torch.float16, device=device)
+    y4d = torch.randn((B, B, N, K), dtype=torch.float16, device=device)
+
+    x2d = x4d.view(-1, N)  # shape (B*B*M, N)
+    y2d = y4d.view(-1, K)  # shape (B*B*N, K)
+    scale_x = torch.randint(-10, 10, (x2d.shape[0], N // 32),
+                            dtype=torch.int8, device=device)
+    scale_y = torch.randint(-10, 10, (y2d.shape[1], N // 32),
+                            dtype=torch.int8, device=device)
+
+    z = torch.empty((x2d.shape[0], y2d.shape[0]),
+                    dtype=x2d.dtype, device=device)
+    acc_num = None
+    dot_scale_kernel[(1,)](
+        x2d, *x2d.stride(), scale_x,
+        y2d, *y2d.stride(), None,
+        z,
+        x2d.shape[0], y2d.shape[0], K,
+        "fp16", "fp16", None,
+        num_warps=4
+    )
+
+
 VALID_MAIN_DTYPES = {
     torch.float16,  # fp16
     torch.bfloat16,  # bf16
@@ -185,7 +212,6 @@ ALL_DTYPES = {
 }
 ILLEGAL_MAIN_DTYPES = ALL_DTYPES - VALID_MAIN_DTYPES
 
-# 只有 int8 合法，其余都算非法
 ILLEGAL_SCALE_DTYPES = {
     torch.int16,
     torch.int32,
@@ -196,15 +222,17 @@ ILLEGAL_SCALE_DTYPES = {
     torch.bool,
 }
 
+from itertools import product
+
 
 def is_legal_dtype(lhs_dtype, rhs_dtype, lhs_scale_dtype, rhs_scale_dtype):
-    """Return True 如果四个参数都合法，否则 False。"""
     return (
-        lhs_dtype in VALID_MAIN_DTYPES and
-        rhs_dtype in VALID_MAIN_DTYPES and
-        lhs_scale_dtype is torch.int8 and
-        rhs_scale_dtype is torch.int8
+            lhs_dtype in VALID_MAIN_DTYPES and
+            rhs_dtype in VALID_MAIN_DTYPES and
+            lhs_scale_dtype is torch.int8 and
+            rhs_scale_dtype is torch.int8
     )
+
 
 illegal_cases = []
 for lhs, rhs, lhs_s, rhs_s in product(
@@ -213,6 +241,7 @@ for lhs, rhs, lhs_s, rhs_s in product(
         {torch.int8} | ILLEGAL_SCALE_DTYPES,
         {torch.int8} | ILLEGAL_SCALE_DTYPES,
 ):
+
     if not is_legal_dtype(lhs, rhs, lhs_s, rhs_s):
         illegal_cases.append((lhs, rhs, lhs_s, rhs_s))
 

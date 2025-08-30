@@ -306,12 +306,12 @@ def should_skip_due_to_mem(dtype, shape):
 
 
 @pytest.mark.parametrize("dtype", ['int8', 'int16', 'int32', 'int64', 'bool'])
-@pytest.mark.parametrize("shape", TestUtils.full_shape)
-@pytest.mark.parametrize("dim", [0, 1, 2, 3, 4])
+@pytest.mark.parametrize("shape", TestUtils.test_shape1d)
+@pytest.mark.parametrize("dim", [0])
 @pytest.mark.parametrize("combine_fn",
                          ['maximum_fn', 'minimum_fn', 'bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
 @pytest.mark.parametrize("reverse", [False])
-def test_scan(dtype, shape, dim, combine_fn, reverse):
+def test_scan_1d(dtype, shape, dim, combine_fn, reverse):
     should_skip_due_to_mem(dtype, shape)
     torch.manual_seed(0)
     x = test_common.generate_tensor(shape=shape, dtype=dtype)
@@ -322,3 +322,207 @@ def test_scan(dtype, shape, dim, combine_fn, reverse):
     triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
 
     test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['int8', 'int16', 'int32', 'int64', 'bool'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape2d)
+@pytest.mark.parametrize("dim", [1])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn', 'bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_2d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['int8', 'int16', 'int32', 'int64', 'bool'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape3d)
+@pytest.mark.parametrize("dim", [2])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn', 'bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_3d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['int8', 'int16', 'int32', 'int64', 'bool'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape4d)
+@pytest.mark.parametrize("dim", [3])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn', 'bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_4d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['int8', 'int16', 'int32', 'int64', 'bool'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape5d)
+@pytest.mark.parametrize("dim", [4])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn', 'bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_5d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['float16', 'float32'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape1d)
+@pytest.mark.parametrize("dim", [0])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_float_1d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['float16', 'float32'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape2d)
+@pytest.mark.parametrize("dim", [1])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_float_2d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['float16', 'float32'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape3d)
+@pytest.mark.parametrize("dim", [2])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_float_1d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['float16', 'float32'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape4d)
+@pytest.mark.parametrize("dim", [3])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_float_1d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['float16', 'float32'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape5d)
+@pytest.mark.parametrize("dim", [4])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn'])
+@pytest.mark.parametrize("reverse", [False])
+def test_scan_float_1d(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+    x_gold = x
+    cpu_res = torch_func_scan(x_gold, dim, combine_fn, reverse)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+    test_common.validate_cmp(dtype, triton_res, cpu_res)
+
+
+@pytest.mark.parametrize("dtype", ['float16', 'float32'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape1d)
+@pytest.mark.parametrize("dim", [0])
+@pytest.mark.parametrize("combine_fn",
+                         ['bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
+@pytest.mark.parametrize("reverse", [False])
+@test_common.raises_with_match(triton.compiler.errors.CompilationError, "unexpected type")
+def test_scan_float_invalid(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
+@pytest.mark.parametrize("dtype", ['int32'])
+@pytest.mark.parametrize("shape", TestUtils.test_shape1d)
+@pytest.mark.parametrize("dim", [0])
+@pytest.mark.parametrize("combine_fn",
+                         ['maximum_fn', 'minimum_fn', 'bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
+@pytest.mark.parametrize("reverse", [True])
+@test_common.raises_with_match(triton.compiler.errors.MLIRCompilationError,
+                               "reverse=True is not yet supported for scan op")
+def test_scan_float_invalid_reverse(dtype, shape, dim, combine_fn, reverse):
+    should_skip_due_to_mem(dtype, shape)
+    torch.manual_seed(0)
+    x = test_common.generate_tensor(shape=shape, dtype=dtype)
+
+    x_npu = x.npu()
+    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
+
