@@ -1,7 +1,7 @@
 from functools import wraps
 from typing import List
 from triton.language import core
-from triton.language.math import _add_math_1arg_docstr, _add_math_2arg_docstr
+from triton.language.math import _add_math_1arg_docstr, _add_math_2arg_docstr, _add_math_3arg_docstr
 from triton.language import semantic
 
 T = core.TypeVar('T')
@@ -158,4 +158,17 @@ def floor(x, _builder=None):
 def ceil(x, _builder=None):
     x = semantic.to_tensor(x, _builder)
     return core.tensor(_builder.create_ceil(x.handle), x.type)
+
+
+@core.builtin
+@_check_dtype(dtypes=["bf16", "fp16", "fp32"])
+@_add_math_3arg_docstr("fused multiply-add")
+def fma(x, y, z, _builder=None):
+    x = semantic.to_tensor(x, _builder)
+    y = semantic.to_tensor(y, _builder)
+    z = semantic.to_tensor(z, _builder)
+    x, y = core.binary_op_type_legalization(x, y, _builder)
+    z, x = core.binary_op_type_legalization(z, x, _builder)
+    z, y = core.binary_op_type_legalization(z, y, _builder)
+    return core.tensor(_builder.create_fma(x.handle, y.handle, z.handle), x.type)
 
