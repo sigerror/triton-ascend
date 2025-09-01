@@ -288,6 +288,7 @@ if(TRITON_BUILD_PYTHON_MODULE)
   message(STATUS "Triton backends tuple: ${TRITON_BACKENDS_TUPLE}")
 
   set(TRITON_BACKENDS_TUPLE "(${TRITON_BACKENDS_TUPLE})")
+
   add_compile_definitions(TRITON_BACKENDS_TUPLE=${TRITON_BACKENDS_TUPLE})
   add_library(triton SHARED ${PYTHON_SRC_PATH}/main.cc
                             ${PATCHED_PYTHON_SRC_PATH}/ir.cc
@@ -302,6 +303,16 @@ if(TRITON_BUILD_PYTHON_MODULE)
     target_link_libraries(triton PRIVATE z)
   endif()
   target_link_options(triton PRIVATE ${LLVM_LDFLAGS})
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --fPIE")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIE")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstack-protector-strong")
+  set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector-strong")
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,now -pie -s")
+  set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,now -s")
+  set(CMAKE_SKIP_RPATH TRUE)
+  set(CMAKE_INSTALL_RPATH_USE_LINK_PATH FALSE)
+  unset(CMAKE_INSTALL_RPATH)
   add_library(entry_ascend SHARED ${PATCHED_TRITON_ROOT_DIR}/lib/runtime/libentry/libentry.cpp)
 endif()
 
