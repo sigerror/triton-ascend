@@ -263,6 +263,10 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location &loc,
     return failure();
   }
 
+  if (!lhsState.isMask() && !rhsState.isMask()) {
+    return failure();
+  }
+
   // Only support both lhs and rhs satisfy `isMask` condition
   return this->minStates(lhsState, rhsState, loc, builder);
 }
@@ -289,7 +293,8 @@ LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
   }
 
   if (!(!lhsState.scalar && rhsState.scalar)) {
-    cmpOp->emitRemark("[MaskState] Unsupported cmpi scenario");
+    InFlightDiagnostic diag = emitError(loc)
+                                << "[MaskState] Unsupported cmpi scenario";
     return failure();
   }
 

@@ -1,6 +1,7 @@
 #include "TritonToLinalg/Passes.h"
 #include "TritonToAnnotation/Passes.h"
 #include "TritonToHIVM/Passes.h"
+#include "DiscreteMaskAccessConversion/Passes.h"
 #include "bishengir/InitAllDialects.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -28,6 +29,7 @@ int main(int argc, char **argv) {
   mlir::triton::registerTritonToLinalgPass();
   mlir::triton::registerTritonToAnnotationPass();
   mlir::triton::registerTritonToHIVMPass();
+  mlir::triton::registerDiscreteMaskAccessConversionPass();
 
   return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "Triton-Adapter test driver\n", registry));

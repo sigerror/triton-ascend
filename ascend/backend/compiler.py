@@ -80,6 +80,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         cmd_list = [
             triton_adapter_opt_path,
             src_path,
+            "--discrete-mask-access-conversion",
             "--triton-to-annotation",
             "--triton-to-hivm",
             f"--triton-to-linalg=global-kernel=false named-ops={named_ops} ",

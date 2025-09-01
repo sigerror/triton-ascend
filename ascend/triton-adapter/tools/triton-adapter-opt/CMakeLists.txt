@@ -8,6 +8,7 @@ llvm_update_compile_flags(triton-adapter-opt)
 target_link_libraries(triton-adapter-opt PRIVATE
   TritonToAnnotation
   TritonToHIVM
+  DiscreteMaskAccessConversion
   TritonToLinalg
   TritonTransforms
   ${dialect_libs}
