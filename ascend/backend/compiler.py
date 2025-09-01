@@ -299,6 +299,11 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--enable-hivm-unit-flag-sync={unit_flag}"]
 
+        inject_barrier_all = metadata["inject_barrier_all"]
+        if inject_barrier_all is not None:
+            _compile_option_list += \
+                [f"--enable-hivm-inject-barrier-all-sync={inject_barrier_all}"]
+
         limit_auto_multi_buffer_only_for_local_buffer = metadata["limit_auto_multi_buffer_only_for_local_buffer"]
         if limit_auto_multi_buffer_only_for_local_buffer is not None:
             _compile_option_list += \
@@ -382,6 +387,7 @@ class NPUOptions:
     multibuffer: bool = None
     enable_hivm_auto_cv_balance: bool = None
     unit_flag: bool = None
+    inject_barrier_all: bool = None
     limit_auto_multi_buffer_only_for_local_buffer: bool = None
     limit_auto_multi_buffer_of_local_buffer: str = None
     set_workspace_multibuffer: int = None
