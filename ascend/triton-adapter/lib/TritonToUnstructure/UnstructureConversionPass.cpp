@@ -229,10 +229,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
 template <typename LoopOpTy, typename>
 void TritonToUnstructurePass::runPreparse(LoopOpTy op) {
   IRRewriter rewriter(&getContext());
-  for (const auto &[idx, res] : llvm::enumerate(op->getResults())) {
-    // FIXME: support preparse for all tensors
-    if (auto tensorType = dyn_cast<RankedTensorType>(res.getType());
-        (tensorType && isa<triton::PointerType>(tensorType.getElementType()))) {
+  for (const auto &[idx, res]: llvm::enumerate(op->getResults())) {
+    if (isa<RankedTensorType>(res.getType())) {
       LLVM_DEBUG({
         auto &os = llvm::dbgs();
         os << "Pre-parsing " << op->getName() << "\n" << op << "\n";
