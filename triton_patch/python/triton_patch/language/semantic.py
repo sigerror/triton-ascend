@@ -791,7 +791,10 @@ def make_tensor_descriptor(
     if len(block_shape) != ndim:
         raise ValueError(f"Expected block_shape to have {ndim} dimensions but got {len(strides)}")
     assert isinstance(base.dtype, tl.pointer_type)
-    elem_size = base.dtype.element_ty.primitive_bitwidth // 8
+    primitive_bitwidth = base.dtype.element_ty.primitive_bitwidth
+    if primitive_bitwidth == 1:
+        raise ValueError("int1 type is not supported for make_tensor_descriptor yet")
+    elem_size = primitive_bitwidth // 8
     contig_dim_size = _unwrap_if_constexpr(block_shape[-1])
     if contig_dim_size * elem_size < 16:
         raise ValueError(
