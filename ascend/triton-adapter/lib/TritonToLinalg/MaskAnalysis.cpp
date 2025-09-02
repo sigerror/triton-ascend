@@ -274,9 +274,9 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location &loc,
 LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
                                   OpBuilder &builder) {
   assert(this->isEmpty());
-
-  // Only support <, >=, =
+  // Only support <, <=, >=, =
   if (cmpOp.getPredicate() != arith::CmpIPredicate::slt &&
+      cmpOp.getPredicate() != arith::CmpIPredicate::sle &&
       cmpOp.getPredicate() != arith::CmpIPredicate::sge &&
       cmpOp.getPredicate() != arith::CmpIPredicate::eq) {
     LLVM_DEBUG({ llvm::dbgs() << "Unsupported cmpi predicate\n"; });
@@ -321,6 +321,16 @@ LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
   case arith::CmpIPredicate::slt: {
     auto realBound =
         maxOpFoldResult(lhsState.start, rhsState.scalar, loc, builder);
+    auto newEnd = minOpFoldResult(lhsState.end, realBound, loc, builder);
+    auto newDim = subOpFoldResult(newEnd, lhsState.start, loc, builder);
+
+    this->dims[cmpDim] = newDim;
+    break;
+  }
+  case arith::CmpIPredicate::sle: {
+    // lhs <= rhs  <=>  lhs < rhs + 1
+    auto rhsPlusOne = addOpFoldResult(rhsState.scalar, builder.getIndexAttr(1), loc, builder);
+    auto realBound = maxOpFoldResult(lhsState.start, rhsPlusOne, loc, builder);
     auto newEnd = minOpFoldResult(lhsState.end, realBound, loc, builder);
     auto newDim = subOpFoldResult(newEnd, lhsState.start, loc, builder);
 
