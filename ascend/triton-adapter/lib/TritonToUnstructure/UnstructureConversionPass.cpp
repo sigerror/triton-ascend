@@ -108,7 +108,7 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   localMemStrides.pop_back();
 
   std::reverse(localMemStrides.begin(), localMemStrides.end());
-
+  bool isExtractedAttrInserted = false;
   for (const auto &[size, localMemStride] :
        llvm::zip_equal(resultShape, localMemStrides)) {
     // handle indirect dimension
@@ -130,6 +130,10 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     }
     offsets.push_back(forOp.getInductionVar());
     iterIdx.push_back(forOp.getInductionVar());
+    if (!isExtractedAttrInserted) {
+      forOp->setAttr("ExtractedLoadOrStore", UnitAttr::get(rewriter.getContext()));
+      isExtractedAttrInserted=true;
+    }
     rewriter.setInsertionPointToStart(forOp.getBody());
   }
 
