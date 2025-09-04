@@ -555,7 +555,7 @@ void parseBitcast(triton::BitcastOp op, const Location &loc,
   SmallVector<bool> &srcStructured = srcOffsetInfo.getStructuredRef();
   // Set extSI offset map
   auto dst = op.getResult();
-  offsetMap[dst] = PtrOffsetInfo();
+  offsetMap[dst] = PtrOffsetInfo(srcOffsetInfo.getPtr(), srcOffsetInfo.getOffset());
   offsetMap[dst].setScalarLike(srcOffsetInfo.isScalarLike());
   SmallVector<bool> &dstStructured = offsetMap[dst].getStructuredRef();
   dstStructured.resize(srcStructured.size());
