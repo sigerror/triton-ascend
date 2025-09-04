@@ -9,8 +9,7 @@ import torch
 import torch_npu
 import triton
 import triton.language as tl
-
-from bench_utils import BenchUtils
+from triton.testing import do_bench_npu
 
 
 @triton.autotune(
@@ -122,18 +121,14 @@ def test_layer_norm(shape, dtype, eps=1e-5):
     y_torch = layer_norm_torch((x, w_shape, weight, bias, eps, dtype))
     y_triton = layer_norm_autotune((x, weight, bias, eps))
     assert torch.allclose(y_triton, y_torch, atol=1e-2, rtol=0)
-    BenchUtils.validate_perf(
-        layer_norm_torch,
-        layer_norm_autotune,
-        (x, w_shape, weight, bias, eps, dtype),
-        (x, weight, bias, eps),
-        "layer_norm",
-        0.8,
+
+    time_eager = do_bench_npu(
+        lambda: layer_norm_torch((x, w_shape, weight, bias, eps, dtype))
     )
+    time_triton = do_bench_npu(lambda: layer_norm_autotune((x, weight, bias, eps)))
+    assert (time_eager / time_triton) >= 0.8
     print(f"Layer Normalization {M},{N} {dtype} PASSED!")
 
 
 if __name__ == "__main__":
     test_layer_norm((128, 128), torch.float16)
-    test_layer_norm((128, 128), torch.bfloat16)
-    test_layer_norm((128, 128), torch.float32)

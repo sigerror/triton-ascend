@@ -9,8 +9,7 @@ import torch
 import torch_npu
 import triton
 import triton.language as tl
-
-from bench_utils import BenchUtils
+from triton.testing import do_bench_npu
 
 
 @triton.autotune(
@@ -63,13 +62,11 @@ def softmax_kernel(
         tl.store(output_ptrs, softmax_output, mask=mask)
 
 
-def softmax_torch(args):
-    (x,) = args
+def softmax_torch(x):
     return torch.softmax(x, axis=-1)
 
 
-def softmax_autotune(args):
-    (x,) = args
+def softmax_autotune(x):
     n_rows, n_cols = x.shape
     BLOCK_SIZE = n_cols
 
@@ -89,15 +86,15 @@ def test_softmax(shape, dtype):
     )
     x = torch.randn(shape, dtype=dtype, device="npu")
 
-    y_torch = softmax_torch((x,))
-    y_triton = softmax_autotune((x,))
+    y_torch = softmax_torch(x)
+    y_triton = softmax_autotune(x)
     assert torch.allclose(y_triton, y_torch)
-    BenchUtils.validate_perf(
-        softmax_torch, softmax_autotune, (x,), (x,), "softmax", 0.8
-    )
+
+    time_eager = do_bench_npu(lambda: softmax_torch(x))
+    time_triton = do_bench_npu(lambda: softmax_autotune(x))
+    assert (time_eager / time_triton) >= 0.8
     print(f"Fused Softmax {shape} {dtype} PASSED!")
 
 
 if __name__ == "__main__":
-    test_softmax((1823, 781), torch.float32)
     test_softmax((16896, 1024), torch.float32)

@@ -9,8 +9,7 @@ import torch
 import torch_npu
 import triton
 import triton.language as tl
-
-from bench_utils import BenchUtils
+from triton.testing import do_bench_npu
 
 
 @triton.autotune(
@@ -51,13 +50,11 @@ def add_kernel(
     tl.store(output_ptr + offsets, output, mask=mask)
 
 
-def add_torch(args):
-    x, y = args
+def add_torch(x, y):
     return x + y
 
 
-def add_autotune(args):
-    x, y = args
+def add_autotune(x, y):
     output = torch.empty_like(x)
     n_elements = output.numel()
     grid = lambda meta: (triton.cdiv(n_elements, meta["BLOCK_SIZE"]),)
@@ -71,13 +68,14 @@ def test_add(size: int):
     )
     x = torch.rand(size, device="npu")
     y = torch.rand(size, device="npu")
-    
-    output_torch = add_torch((x, y))
-    output_triton = add_autotune((x, y))
+
+    output_torch = add_torch(x, y)
+    output_triton = add_autotune(x, y)
     assert torch.allclose(output_triton, output_torch)
-    BenchUtils.validate_perf(
-        add_torch, add_autotune, (x, y), (x, y), "add", 0.8
-    )
+
+    time_eager = do_bench_npu(lambda: add_torch(x, y))
+    time_triton = do_bench_npu(lambda: add_autotune(x, y))
+    assert (time_eager / time_triton) >= 0.8
     print(f"Vector Add {size} PASSED!")
 
 
