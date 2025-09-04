@@ -8,7 +8,7 @@
 #include "mlir/IR/PatternMatch.h"
 
 #define GEN_PASS_DEF_TRITONTOUNSTRUCTURE
-#include "../../include/TritonToUnstructure/Passes.h.inc"
+#include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
 
 namespace mlir {
 namespace triton {

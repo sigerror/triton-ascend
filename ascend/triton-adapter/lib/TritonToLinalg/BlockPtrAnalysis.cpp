@@ -44,10 +44,6 @@ SmallVector<OpFoldResult> &BlockData::getSizesRef() { return this->sizes; }
 
 SmallVector<OpFoldResult> &BlockData::getStridesRef() { return this->strides; }
 
-SmallVector<int64_t> &BlockData::getDiscreteDimsRef() {
-  return this->discreteDims;
-}
-
 Value &BlockData::getSourceRef() { return this->source; }
 
 OpFoldResult &BlockData::getScalarRef() { return this->scalar; }
@@ -62,10 +58,6 @@ SmallVector<OpFoldResult> BlockData::getStrides() const {
   return this->strides;
 }
 
-SmallVector<int64_t> BlockData::getDiscreteDims() const {
-  return this->discreteDims;
-}
-
 OpFoldResult BlockData::getOffset(int index) const {
   return this->offsets[index];
 }
@@ -74,15 +66,6 @@ OpFoldResult BlockData::getSize(int index) const { return this->sizes[index]; }
 
 OpFoldResult BlockData::getStride(int index) const {
   return this->strides[index];
-}
-
-bool BlockData::isDiscreteDim(int index) const {
-  for (auto dim : this->discreteDims) {
-    if (dim == index) {
-      return true;
-    }
-  }
-  return false;
 }
 
 OpFoldResult BlockData::getScalar() const { return this->scalar; }
@@ -207,15 +190,6 @@ void BlockData::addBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   // Both sizes are same implicitly under `add`
   this->sizes = lBlock.getSizesRef();
 
-  DenseSet<int64_t> discreteDims;
-
-  for (auto discreteDim : lBlock.getDiscreteDimsRef())
-    discreteDims.insert(discreteDim);
-  for (auto discreteDim : rBlock.getDiscreteDimsRef())
-    discreteDims.insert(discreteDim);
-
-  this->discreteDims = llvm::to_vector(discreteDims);
-
   this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
   this->getMemAccTypeRef().merge(rBlock.getMemAccTypeRef());
   // this->setMemAccTy(selectMaxMemAccTy(lBlock.getMemAccType(),
@@ -249,7 +223,6 @@ void BlockData::mulBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   }
 
   this->sizes = lb->getSizesRef();
-  this->discreteDims = lb->getDiscreteDimsRef();
 
   this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
   this->getMemAccTypeRef().merge(rBlock.getMemAccTypeRef());
@@ -274,15 +247,6 @@ void BlockData::divBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   }
 
   this->sizes = lBlock.getSizesRef();
-
-  DenseSet<int64_t> discreteDims;
-
-  for (auto discreteDim : lBlock.getDiscreteDimsRef())
-    discreteDims.insert(discreteDim);
-  for (auto discreteDim : rBlock.getDiscreteDimsRef())
-    discreteDims.insert(discreteDim);
-
-  this->discreteDims = llvm::to_vector(discreteDims);
 
   this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
   this->getMemAccTypeRef().merge(rBlock.getMemAccTypeRef());
@@ -320,16 +284,6 @@ void BlockData::dump() const {
   for (auto it = strides.begin(); it != strides.end(); ++it) {
     llvm::outs() << "strides[" << cnt++ << "] = " << *it << "\n";
   }
-  bool isFirst = true;
-  llvm::outs() << "discrete dimension is [";
-  for (auto it = discreteDims.begin(); it != discreteDims.end(); ++it) {
-    if (isFirst)
-      isFirst = false;
-    else
-      llvm::outs() << ", ";
-    llvm::outs() << *it;
-  }
-  llvm::outs() << "\n";
   llvm::outs() << "source = " << source << "\n";
   llvm::outs() << "scalar = " << scalar << "\n";
   llvm::outs() << "resElemTy = " << resElemTy << "\n";
@@ -448,7 +402,6 @@ void BlockDataParser::parse(
       data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
       data.getSizesRef().push_back(rewriter.getIndexAttr(s));
       data.getStridesRef().push_back(rewriter.getIndexAttr(1));
-      data.getDiscreteDimsRef().push_back(data.getDiscreteDimsRef().size());
     }
   } else {
     operand.dump();
@@ -730,13 +683,6 @@ void BlockDataParser::parseAddPtr(
   // offset has source means offset is from tl.load and other ops(TODO)
   if (offsetBlock.hasSource()) {
     ptrBlock.setMemAccTy(offsetBlock.getMemAccType());
-    auto src = offsetBlock.getSource();
-    if (auto srcType = dyn_cast<MemRefType>(src.getType())) {
-      size_t rank = srcType.getShape().size();
-      for (size_t dim = 0; dim < rank; ++dim) {
-        data.getDiscreteDimsRef().push_back(dim);
-      }
-    }
     offsetBlock.removeSource();
   }
 
@@ -869,7 +815,6 @@ void parseIndirectLoad(OpTy op, BlockData &data, const Location &loc,
     data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
     data.getSizesRef().push_back(rewriter.getIndexAttr(s));
     data.getStridesRef().push_back(rewriter.getIndexAttr(1));
-    data.getDiscreteDimsRef().push_back(data.getDiscreteDimsRef().size());
   }
   // set the source in BlockData so that we know an indirect-load op exists in
   // the chain.

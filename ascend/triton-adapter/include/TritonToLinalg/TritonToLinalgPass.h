@@ -15,7 +15,7 @@
 #include "triton/Dialect/Triton/IR/Dialect.h"
 
 #define GEN_PASS_CLASSES
-#include "../../include/TritonToLinalg/Passes.h.inc"
+#include "ascend/triton-adapter/include/TritonToLinalg/Passes.h.inc"
 
 extern int nd2nzFlag;
 
