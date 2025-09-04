@@ -156,7 +156,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
       auto extractedOther = extractOp(loc, op.getOther(), iterIdx, rewriter);
       accessedValue = rewriter.create<triton::LoadOp>(
           loc, ptrToAccess, extractedMask, extractedOther,
-          /*boundaryCheck=*/ArrayRef<int32_t>(), /*PaddingOptionAttr=*/nullptr);
+          /*boundaryCheck=*/ArrayRef<int32_t>(),
+          /*PaddingOptionAttr=*/nullptr);
     } else if constexpr (std::is_same_v<MemAccOpTy, triton::AtomicRMWOp>) {
       auto extractedValue = extractOp(loc, op.getVal(), iterIdx, rewriter);
       Value extractedMask = extractOp(loc, op.getMask(), iterIdx, rewriter);
@@ -199,10 +200,10 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     }
     auto result = rewriter.create<tensor::InsertSliceOp>(
         loc, splatedValue, iterArg, offsets, dims, strides);
-    rewriter.create<scf::YieldOp>(loc, result->getResult(0));
+    rewriter.create<scf::YieldOp>(loc, result->getResult(0))
+        ->setAttr(ConverterUtils::discreteAttrName,
+                  UnitAttr::get(rewriter.getContext()));
 
-    result->setAttr(ConverterUtils::discreteAttrName,
-                    UnitAttr::get(rewriter.getContext()));
     rewriter.restoreInsertionPoint(insertPoint);
     rewriter.replaceOp(op, newOpResult);
   } else if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
