@@ -226,23 +226,91 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   return success();
 }
 
+void exchangeValueWithOffset(Value value, Value ptr, const Location &loc,
+                             RewriterBase &rewriter,
+                             llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap) {
+  RewriterBase::InsertionGuard guard(rewriter);
+  if (auto blockArgument = dyn_cast<BlockArgument>(value)) {
+    rewriter.setInsertionPointToStart(blockArgument.getOwner());
+  } else {
+    rewriter.setInsertionPointAfter(value.getDefiningOp());
+  }
+  auto tempVar = rewriter
+                     .create<UnrealizedConversionCastOp>(loc, value.getType(),
+                                                         ValueRange({}))
+                     ->getResult(0);
+  auto valueType = cast<RankedTensorType>(value.getType());
+  auto offsetType =
+      RankedTensorType::get(valueType.getShape(), rewriter.getIntegerType(64));
+  rewriter.replaceAllUsesWith(value, tempVar);
+  value.setType(offsetType);
+  auto splatedPtr = rewriter.create<triton::SplatOp>(loc, valueType, ptr);
+  auto newPtr =
+      rewriter.create<triton::AddPtrOp>(loc, valueType, splatedPtr, value);
+  parseAddPtr(newPtr, loc, rewriter, offsetMap);
+  rewriter.replaceAllUsesWith(tempVar, newPtr);
+}
+
 template <typename LoopOpTy, typename>
 void TritonToUnstructurePass::runPreparse(LoopOpTy op) {
   IRRewriter rewriter(&getContext());
-  for (const auto &[idx, res]: llvm::enumerate(op->getResults())) {
-    if (isa<RankedTensorType>(res.getType())) {
+  for (const auto &[idx, res] : llvm::enumerate(op->getResults())) {
+    // FIXME: support preparse for all tensors
+    if (auto tensorType = dyn_cast<RankedTensorType>(res.getType())) {
+      auto loc = op.getLoc();
       LLVM_DEBUG({
         auto &os = llvm::dbgs();
         os << "Pre-parsing " << op->getName() << "\n" << op << "\n";
       });
-      parse(res, op.getLoc(), rewriter, offsetMapForLoopArgs);
+      parse(res, loc, rewriter, offsetMapForLoopArgs);
 
       Value regionIterArg;
-      if constexpr (std::is_same_v<LoopOpTy, scf::ForOp>) {
-        regionIterArg = op.getRegionIterArg(idx);
-      } else if constexpr (std::is_same_v<LoopOpTy, scf::WhileOp>) {
+      if (!offsetMapForLoopArgs.at(res).isStructured() &&
+          isa<triton::PointerType>(tensorType.getElementType())) {
+        LLVM_DEBUG({
+          auto &os = llvm::dbgs();
+          os << "Handling special case\n" << op << '\n';
+        });
+        
+        // Get yield
+        Value yieldedValue;
+        if constexpr (std::is_same_v<LoopOpTy, scf::ForOp>) {
+          yieldedValue = op.getBody()->getTerminator()->getOperand(idx);
+        } else if constexpr (std::is_same_v<LoopOpTy, scf::WhileOp>) {
+          yieldedValue = op.getAfterBody()->getTerminator()->getOperand(idx);
+        }
+        PtrOffsetInfo yieldOffsetInfo = offsetMapForLoopArgs.at(yieldedValue);
+        // Get initArg
+        Value initArg;
+        if constexpr (std::is_same_v<LoopOpTy, scf::ForOp>) {
+          initArg = op.getInitArgs()[idx];
+        } else if constexpr (std::is_same_v<LoopOpTy, scf::WhileOp>) {
+          initArg = op.getInits()[idx];
+        }
+        PtrOffsetInfo initOffsetInfo = offsetMapForLoopArgs.at(initArg);
+        // Get regionIterArg
         regionIterArg = op.getRegionIterArgs()[idx];
+        PtrOffsetInfo regionIterArgOffsetInfo =
+            offsetMapForLoopArgs.at(regionIterArg);
+        // Exchange iter arg with offset
+        exchangeValueWithOffset(regionIterArg, initOffsetInfo.getPtr(), loc,
+                                rewriter, offsetMapForLoopArgs);
+        rewriter.replaceAllUsesWith(regionIterArgOffsetInfo.getOffset(),
+                                    regionIterArg);
+        if constexpr (std::is_same_v<LoopOpTy, scf::ForOp>) {
+          op.getBody()->getTerminator()->setOperand(
+              idx, yieldOffsetInfo.getOffset());
+          op.getInitArgsMutable()[idx].set(initOffsetInfo.getOffset());
+        } else if constexpr (std::is_same_v<LoopOpTy, scf::WhileOp>) {
+          op.getAfterBody()->getTerminator()->setOperand(
+              idx, yieldOffsetInfo.getOffset());
+          op.getInitsMutable()[idx].set(initOffsetInfo.getOffset());
+        }
+        exchangeValueWithOffset(res, initOffsetInfo.getPtr(), loc, rewriter,
+                                offsetMapForLoopArgs);
       }
+
+      regionIterArg = op.getRegionIterArgs()[idx];
       offsetMap[regionIterArg] = PtrOffsetInfo();
       SmallVector<bool> &regionIterArgOffset =
           offsetMap[regionIterArg].getStructuredRef();

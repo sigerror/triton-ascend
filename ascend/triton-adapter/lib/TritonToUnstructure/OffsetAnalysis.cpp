@@ -86,14 +86,11 @@ void parse(Value operand, const Location &loc, RewriterBase &rewriter,
         parseWhile(whileOp, loc, rewriter, offsetMap, operand);
       } else if (auto extractOp = dyn_cast<tensor::ExtractOp>(defOp)) {
         parseExtract(extractOp, loc, rewriter, offsetMap);
-      } else {
-        defOp->emitError() << "Unhandled case\n" << operand;
-        llvm_unreachable("Unhandled case");
       }
     } 
   } else if (auto ptrType = dyn_cast<triton::PointerType>(operand.getType())) {
-    PtrOffsetInfo PtrOffsetInfo;
-    PtrOffsetInfo.setPtr(operand);
+    PtrOffsetInfo ptrOffsetInfo;
+    ptrOffsetInfo.setPtr(operand);
     auto innerType = ptrType.getPointeeType();
 
     RewriterBase::InsertionGuard guard(rewriter);
@@ -104,14 +101,14 @@ void parse(Value operand, const Location &loc, RewriterBase &rewriter,
                    RankedTensorType::get(tensorType.getShape(),
                                          rewriter.getIntegerType(64)),
                    rewriter.getZeroAttr(rewriter.getIntegerType(64))));
-      PtrOffsetInfo.setOffset(offset);
-      PtrOffsetInfo.getStructuredRef().resize(tensorType.getRank(), true);
+      ptrOffsetInfo.setOffset(offset);
+      ptrOffsetInfo.getStructuredRef().resize(tensorType.getRank(), true);
     } else {
-      PtrOffsetInfo.setOffset(rewriter.create<arith::ConstantOp>(
+      ptrOffsetInfo.setOffset(rewriter.create<arith::ConstantOp>(
           loc, rewriter.getI64IntegerAttr(0)));
     }
 
-    offsetMap[operand] = PtrOffsetInfo;
+    offsetMap[operand] = ptrOffsetInfo;
   } else if (auto blockArgument = dyn_cast<BlockArgument>(operand)) {
     auto parentOp = operand.getParentBlock()->getParentOp();
     LLVM_DEBUG({
@@ -181,6 +178,12 @@ void parse(Value operand, const Location &loc, RewriterBase &rewriter,
     }
   } else {
     llvm_unreachable("Unreachable");
+  }
+
+  if (!offsetMap.contains(operand)) {
+    offsetMap[operand] = PtrOffsetInfo();
+    if (auto tensorType = dyn_cast<RankedTensorType>(operand.getType()))
+      offsetMap[operand].setUnstructured(tensorType.getRank());
   }
 
   LLVM_DEBUG({
@@ -1274,31 +1277,6 @@ void parseYield(scf::YieldOp op, const Location &loc, RewriterBase &rewriter,
     parse(src, op.getLoc(), rewriter, offsetMap);
 }
 
-void exchangeValueWithOffset(Value value, Value ptr, const Location &loc,
-                             RewriterBase &rewriter,
-                             llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap) {
-  RewriterBase::InsertionGuard guard(rewriter);
-  if (auto blockArgument = dyn_cast<BlockArgument>(value)) {
-    rewriter.setInsertionPointToStart(blockArgument.getOwner());
-  } else {
-    rewriter.setInsertionPointAfter(value.getDefiningOp());
-  }
-  auto tempVar = rewriter
-                     .create<UnrealizedConversionCastOp>(loc, value.getType(),
-                                                         ValueRange({}))
-                     ->getResult(0);
-  auto valueType = cast<RankedTensorType>(value.getType());
-  auto offsetType =
-      RankedTensorType::get(valueType.getShape(), rewriter.getIntegerType(64));
-  rewriter.replaceAllUsesWith(value, tempVar);
-  value.setType(offsetType);
-  auto splatedPtr = rewriter.create<triton::SplatOp>(loc, valueType, ptr);
-  auto newPtr =
-      rewriter.create<triton::AddPtrOp>(loc, valueType, splatedPtr, value);
-  parseAddPtr(newPtr, loc, rewriter, offsetMap);
-  rewriter.replaceAllUsesWith(tempVar, newPtr);
-}
-
 void parseFor(scf::ForOp op, const Location &loc, RewriterBase &rewriter,
               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap, Value dst) {
   const unsigned int index = cast<OpResult>(dst).getResultNumber();
@@ -1319,22 +1297,6 @@ void parseFor(scf::ForOp op, const Location &loc, RewriterBase &rewriter,
   dstStructured.resize(yieldStructured.size());
   for (size_t i = 0; i < dstStructured.size(); i++)
     dstStructured[i] = yieldStructured[i] && initStructured[i];
-  if (auto tensorType = dyn_cast<RankedTensorType>(dst.getType());
-      (tensorType && isa<triton::PointerType>(tensorType.getElementType()))) {
-    LLVM_DEBUG({
-      auto &os = llvm::dbgs();
-      os << "[parseFor]: Handling special case\n" << op << '\n';
-    });
-    auto regionIterArg = op.getRegionIterArg(index);
-    auto offsetType = cast<RankedTensorType>(initOffsetInfo.getOffset().getType());
-    PtrOffsetInfo regionIterArgOffsetInfo = offsetMap.at(regionIterArg);
-    exchangeValueWithOffset(regionIterArg, initOffsetInfo.getPtr(), loc, rewriter,
-                            offsetMap);
-    rewriter.replaceAllUsesWith(regionIterArgOffsetInfo.getOffset(), regionIterArg);
-    op.getBody()->getTerminator()->setOperand(index, yieldOffsetInfo.getOffset());
-    op.getInitArgsMutable()[index].set(initOffsetInfo.getOffset());
-    exchangeValueWithOffset(dst, initOffsetInfo.getPtr(), loc, rewriter, offsetMap);
-  }
 }
 
 void parseWhile(scf::WhileOp op, const Location &loc, RewriterBase &rewriter,
@@ -1357,24 +1319,6 @@ void parseWhile(scf::WhileOp op, const Location &loc, RewriterBase &rewriter,
   dstStructured.resize(yieldStructured.size());
   for (size_t i = 0; i < dstStructured.size(); i++)
     dstStructured[i] = yieldStructured[i] && initStructured[i];
-
-  if (auto tensorType = dyn_cast<RankedTensorType>(dst.getType());
-      (tensorType && isa<triton::PointerType>(tensorType.getElementType()))) {
-    LLVM_DEBUG({
-      auto &os = llvm::dbgs();
-      os << "[parseWhile]: Handling special case\n" << op << '\n';
-    });
-    auto regionIterArg = op.getRegionIterArgs()[index];
-    auto offsetType = cast<RankedTensorType>(initOffsetInfo.getOffset().getType());
-    PtrOffsetInfo regionIterArgOffsetInfo = offsetMap.at(regionIterArg);
-    exchangeValueWithOffset(regionIterArg, initOffsetInfo.getPtr(), loc, rewriter,
-                            offsetMap);
-    rewriter.replaceAllUsesWith(regionIterArgOffsetInfo.getOffset(), regionIterArg);
-    op.getAfterBody()->getTerminator()->setOperand(index,
-                                                   yieldOffsetInfo.getOffset());
-    op.getInitsMutable()[index].set(initOffsetInfo.getOffset());
-    exchangeValueWithOffset(dst, initOffsetInfo.getPtr(), loc, rewriter, offsetMap);
-  }
 }
 
 void parseExtractSlice(tensor::ExtractSliceOp op, const Location &loc,
