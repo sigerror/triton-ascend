@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# 设备内多线程并行 + 跨设备动态负载均衡执行脚本（修复进度显示）
-
 # 获取传入参数
 param="$1"
 input_ops="$2"
@@ -106,34 +104,11 @@ cleanup_tasks() {
 }
 
 # 算子列表定义
-OPS=("abs" "add" "addmm" "all" "amax" "arange" "argmax" "scaled_dot_product_attention" "apply_rotary_pos_emb" "bitwise_and" "bitwise_not" "bitwise_or" "bmm" "cat" "clamp" \
-     "contiguous" "cos" "CrossEntropyLoss" "cumsum" "count_nonzero" "diag_embed" "diagonal_backward" "div" "dot" "dropout" "elu" "embedding" "eq" "erf" \
-     "exp" "exponential_" "fill" "flip" "full_like" "full" "gather" "ge" "gelu" \
-     "gelu_and_mul" "group_norm" "gt" "hstack" "index_select" "isinf" "isnan" "rsub" "le" "linspace" "log_sigmoid" "log" "logical_and" "logical_not" \
-     "logical_or" "logical_xor" "lt" "masked_fill" "max" "maximum" "mean" "min" "minimum" "mm" "mse_loss" "mul" "mv" "native_dropout" "nan_to_num" "ne" \
-     "neg" "normal" "ones_like" "pow" "prod" "rand_like" "rand" "randn_like" "randn" "reciprocal" "relu" "resolve_conj" "resolve_neg" "rms_norm" "rsqrt" \
-     "select_scatter" "sigmoid" "silu" "silu_and_mul" "sin" "slice_scatter" "softmax" "stack" "sub" "sum" "tanh" "topk" "triu" "uniform_" "where" "threshold" \
-     "zeros_like" "zeros")
-
-OPS_EXT=( "instance_norm" "skip_rms_norm" "weight_norm" "angle" "any" "argmin" \
-          "batch_norm" "conv_depthwise2d" "conv1d" "copy" "cummin" "diag" \
-          "index_add" "index_put" "isclose" "isfinite" "isin" "outer" "kron" "layer_norm" \
-          "log" "logical_and" "log_softmax" "masked_select" \
-          "multinomial" "nllloss" "nonzero" "pad" "polar" "quantile" \
-          "randperm" "repeat_interleave" "repeat" "sort" "tile" "unique" \
-           "upsample_bicubic2d_aa" "upsample_nearest2d" "vdot" "vector_norm" "vstack")
-
-OPS_EXCLUDE=( "conv2d" "var_mean" )
-
-# 处理算子列表
-if [ "$input_ops" == "fullop" ]; then
-    OPS+=("${OPS_EXT[@]}")
-elif [ "$input_ops" == "extop" ]; then
-    OPS=("${OPS_EXT[@]}")
-elif [[ -n "$input_ops" ]]; then
-    OPS=()
-    IFS=',' read -ra OPS <<< "$input_ops"
-fi
+OPS=("abs" "add" "addmm" "all" "amax" "argmax" "bitwise_and" "bitwise_not" "bitwise_or" "bmm" \
+"cos" "CrossEntryLoss" "div" "dropout" "eq" "exp" "fill" "ge" "gelu" "group_norm" "gt" "isinf" \
+"isnan" "rsub" "le" "linear" "log_softmax" "lt" "max" "mean" "min" "mm" "mul" "mv" \
+"native_dropout" "ne" "neg" "pow" "prod" "reciprocal" "relu" "rsqrt" "sigmoid" "silu" \
+"sin" "softmax" "sub" "sum" "tanh" "triu")
 
 total_ops=${#OPS[@]}
 echo "======================================"

@@ -167,21 +167,21 @@ export BISHENG_INSTALL_PATH=/home/shared/cann_compiler_20250812/compiler/ccec_co
 source /opt/miniconda3/bin/activate torch_260
 build_triton
 
+echo "Run ttir to linalg tests..."
+cd ${WORKSPACE}/build/cmake.linux-aarch64-cpython-3.11
+ninja check-triton-adapter-lit-tests
+if [ $? -eq 0 ]; then
+    echo "All ttir to linalg tests passed"
+else
+    echo "Some ttir to linalg tests failed"
+    exit 1
+fi
+
 pytestcase_dir=("pytest_ut")
 for test_dir in "${pytestcase_dir[@]}"; do
     echo "run pytestcase in ${test_dir}"
     run_pytestcases ${test_dir}
 done
-
-echo "Run ttir to linalg tests..."
-cd ${WORKSPACE}/build/cmake.linux-aarch64-cpython-3.11
-ninja check-triton-adapter-lit-tests
-if [ $? -eq 0 ]; then
-    echo "All ttir to linalg tests passed"    
-else
-    echo "Some ttir to linalg tests failed"
-    exit 1
-fi
 
 pythoncase_dir=("autotune_cases" "benchmark_cases" "tutorials")
 for test_dir in "${pythoncase_dir[@]}"; do

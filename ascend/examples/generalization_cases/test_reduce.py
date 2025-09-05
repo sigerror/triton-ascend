@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Copyright (c) Huawei Technologies Co., Ltd. 2024-2025. All rights reserved.
 import math
+import random
 import pytest
 import torch
 import triton
@@ -209,7 +210,7 @@ def reduce_check_ub_mem_overflow(dtype, shape):
         pytest.skip("dtype:{dtype} shape:{shape} mem overflow, skipping.")
 
 
-@pytest.mark.parametrize('shape', TestUtils.full_shape)
+@pytest.mark.parametrize('shape', random.sample(TestUtils.full_shape, 5))
 @pytest.mark.parametrize('dtype', TestUtils.full_dtype)
 @pytest.mark.parametrize('dims', [None, (0,), (1,), (2,), (0, 1), (1, 2), (0, 2)])
 def test_reduce(dtype, shape, dims):

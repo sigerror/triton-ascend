@@ -5,8 +5,6 @@ set -ex
 script=$(readlink -f "$0")
 script_dir=$(dirname "$script")
 
-export LLVM_BUILD_DIR=/triton_depends/llvm-20-install
-
 source /usr/local/CANN_8.2.RC1.alpha002/ascend-toolkit/set_env.sh
 export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
@@ -197,6 +195,3 @@ bash run_flaggems_test.sh
 
 # copy summary.txt to /home/daily_log
 cp ${SUMMARY_FILE} /home/daily_log
-
-
-

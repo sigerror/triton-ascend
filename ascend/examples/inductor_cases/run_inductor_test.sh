@@ -6,7 +6,6 @@ inductor_skip_list=(
   "test_foreach_add.py"
   "test_geometric.py"
   "test_lazy_register.py"
-  "test_npu_dtype_cast.py"
 )
 
 TEST_inductor="${WORKSPACE}/ascend/examples/inductor_cases"
@@ -17,7 +16,7 @@ SUMMARY_FILE="${WORKSPACE}/ascend/examples/summary.txt"
 current_date=$(date +%Y%m%d)
 wget https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta/Daily/v2.6.0/${current_date}.3/pytorch_v2.6.0_py311.tar.gz
 tar -zxvf pytorch_v2.6.0_py311.tar.gz
-pip install torch_npu-2.6.0.post2.dev${current_date}-cp311-cp311-manylinux_2_28_aarch64.whl
+pip install *.dev${current_date}-cp311-cp311-manylinux_2_28_aarch64.whl
 
 # remove inductor and triton cache
 if [ -d /tmp/torchinductor_* ];then
