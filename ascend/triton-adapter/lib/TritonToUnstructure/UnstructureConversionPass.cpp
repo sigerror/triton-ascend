@@ -22,7 +22,7 @@ using namespace triton;
 #include "llvm/Support/Debug.h"
 
 template <typename MemAccOpTy>
-Value UnstructuredMemAccessConverter<MemAccOpTy>::extractOp(
+Value UnstructuredMemAccessConverter<MemAccOpTy>::createExtractOp(
     Location loc, Value value, ArrayRef<Value> iterIdx,
     PatternRewriter &rewriter) const {
   if (!value)
@@ -31,6 +31,25 @@ Value UnstructuredMemAccessConverter<MemAccOpTy>::extractOp(
   extractedOp->setAttr(ConverterUtils::discreteAttrName,
                        UnitAttr::get(rewriter.getContext()));
   return extractedOp;
+}
+
+template <>
+template <>
+void UnstructuredMemAccessConverter<triton::LoadOp>::splatAndLoadScenario<triton::LoadOp>(triton::LoadOp op, int rank, PatternRewriter &rewriter) const {
+  auto loc = op.getLoc();
+  SmallVector<Value> idx(rank, rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0)));
+  auto extractedPtr = createExtractOp(loc, op.getPtr(), idx, rewriter);
+  Value mask = op.getMask();
+  Value other = op.getOther();
+  Value loadedValue = rewriter.create<triton::LoadOp>(
+      loc, extractedPtr, /*mask=*/nullptr, /*other=*/nullptr,
+      /*boundaryCheck=*/ArrayRef<int32_t>(),
+      /*PaddingOptionAttr=*/nullptr);
+  loadedValue = rewriter.create<triton::SplatOp>(loc, op.getResult().getType(), loadedValue);
+  if (mask)
+    rewriter.replaceOpWithNewOp<arith::SelectOp>(op, mask, loadedValue, other);
+  else
+    rewriter.replaceOp(op, loadedValue);
 }
 
 template <typename MemAccOpTy>
@@ -62,9 +81,16 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     os << ptrOffsetInfo.isStructured() << "\n";
   });
 
-  if (ptrOffsetInfo.isStructured()) {
+  if (ptrOffsetInfo.isStructured() && 
+      !ptrOffsetInfo.isScalarLike()) {
     return failure();
   }
+
+  if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>)
+    if (ptrOffsetInfo.isScalarLike()) {
+      splatAndLoadScenario(op, ptrOffsetInfo.getRank(), rewriter);
+      return success();
+    }
 
   auto srcPtr = ptrOffsetInfo.getPtr();
   auto offset = ptrOffsetInfo.getOffset();
@@ -142,9 +168,9 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
       RankedTensorType::get(scalarLikeShape, resultElementType);
 
   auto offsetType = cast<RankedTensorType>(offset.getType());
-  auto extractedOffset = extractOp(loc, offset, iterIdx, rewriter);
+  auto extractedOffset = createExtractOp(loc, offset, iterIdx, rewriter);
   if (isa<RankedTensorType>(srcPtr.getType())) {
-    srcPtr = extractOp(loc, srcPtr, iterIdx, rewriter);
+    srcPtr = createExtractOp(loc, srcPtr, iterIdx, rewriter);
   }
   Value ptrToAccess = rewriter.create<triton::AddPtrOp>(
       loc, srcPtr.getType(), srcPtr, extractedOffset);
@@ -152,15 +178,15 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     Value accessedValue;
     assert(iterArg && "Load case must have iterArg in for loop");
     if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
-      auto extractedMask = extractOp(loc, op.getMask(), iterIdx, rewriter);
-      auto extractedOther = extractOp(loc, op.getOther(), iterIdx, rewriter);
+      auto extractedMask = createExtractOp(loc, op.getMask(), iterIdx, rewriter);
+      auto extractedOther = createExtractOp(loc, op.getOther(), iterIdx, rewriter);
       accessedValue = rewriter.create<triton::LoadOp>(
           loc, ptrToAccess, extractedMask, extractedOther,
           /*boundaryCheck=*/ArrayRef<int32_t>(),
           /*PaddingOptionAttr=*/nullptr);
     } else if constexpr (std::is_same_v<MemAccOpTy, triton::AtomicRMWOp>) {
-      auto extractedValue = extractOp(loc, op.getVal(), iterIdx, rewriter);
-      Value extractedMask = extractOp(loc, op.getMask(), iterIdx, rewriter);
+      auto extractedValue = createExtractOp(loc, op.getVal(), iterIdx, rewriter);
+      Value extractedMask = createExtractOp(loc, op.getMask(), iterIdx, rewriter);
       auto splatedPtrToAccess = rewriter.create<triton::SplatOp>(
           loc, RankedTensorType::get(scalarLikeShape, ptrToAccess.getType()),
           ptrToAccess);
@@ -175,8 +201,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
           splatedExtractedValue, splatedExtractedMask, op.getSemAttr(),
           op.getScopeAttr());
     } else if constexpr (std::is_same_v<MemAccOpTy, triton::AtomicCASOp>) {
-      auto extractedCmp = extractOp(loc, op.getCmp(), iterIdx, rewriter);
-      auto extractedValue = extractOp(loc, op.getVal(), iterIdx, rewriter);
+      auto extractedCmp = createExtractOp(loc, op.getCmp(), iterIdx, rewriter);
+      auto extractedValue = createExtractOp(loc, op.getVal(), iterIdx, rewriter);
       auto splatedPtrToAccess = rewriter.create<triton::SplatOp>(
           loc, RankedTensorType::get(scalarLikeShape, ptrToAccess.getType()),
           ptrToAccess);
@@ -207,8 +233,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     rewriter.restoreInsertionPoint(insertPoint);
     rewriter.replaceOp(op, newOpResult);
   } else if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
-    auto extractedValue = extractOp(loc, op.getValue(), iterIdx, rewriter);
-    auto extractedMask = extractOp(loc, op.getMask(), iterIdx, rewriter);
+    auto extractedValue = createExtractOp(loc, op.getValue(), iterIdx, rewriter);
+    auto extractedMask = createExtractOp(loc, op.getMask(), iterIdx, rewriter);
     if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
       rewriter.create<triton::StoreOp>(loc, ptrToAccess, extractedValue,
                                        extractedMask);
@@ -252,10 +278,12 @@ void exchangeValueWithOffset(Value value, Value ptr, const Location &loc,
   rewriter.replaceAllUsesWith(tempVar, newPtr);
 }
 
-template <typename LoopOpTy, typename>
-void TritonToUnstructurePass::runPreparse(LoopOpTy op) {
+void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
   IRRewriter rewriter(&getContext());
-  for (const auto &[idx, res] : llvm::enumerate(op->getResults())) {
+  auto loopResults = op.getLoopResults();
+  if (!loopResults)
+    return;
+  for (OpResult res : *loopResults) {
     // FIXME: support preparse for all tensors
     if (auto tensorType = dyn_cast<RankedTensorType>(res.getType())) {
       auto loc = op.getLoc();
@@ -265,53 +293,35 @@ void TritonToUnstructurePass::runPreparse(LoopOpTy op) {
       });
       parse(res, loc, rewriter, offsetMapForLoopArgs);
 
-      Value regionIterArg;
+      BlockArgument regionIterArg;
       if (!offsetMapForLoopArgs.at(res).isStructured() &&
           isa<triton::PointerType>(tensorType.getElementType())) {
         LLVM_DEBUG({
           auto &os = llvm::dbgs();
           os << "Handling special case\n" << op << '\n';
         });
-        
-        // Get yield
-        Value yieldedValue;
-        if constexpr (std::is_same_v<LoopOpTy, scf::ForOp>) {
-          yieldedValue = op.getBody()->getTerminator()->getOperand(idx);
-        } else if constexpr (std::is_same_v<LoopOpTy, scf::WhileOp>) {
-          yieldedValue = op.getAfterBody()->getTerminator()->getOperand(idx);
-        }
-        PtrOffsetInfo yieldOffsetInfo = offsetMapForLoopArgs.at(yieldedValue);
         // Get initArg
-        Value initArg;
-        if constexpr (std::is_same_v<LoopOpTy, scf::ForOp>) {
-          initArg = op.getInitArgs()[idx];
-        } else if constexpr (std::is_same_v<LoopOpTy, scf::WhileOp>) {
-          initArg = op.getInits()[idx];
-        }
-        PtrOffsetInfo initOffsetInfo = offsetMapForLoopArgs.at(initArg);
+        OpOperand *initArg = op.getTiedLoopInit(res);
+        PtrOffsetInfo initOffsetInfo = offsetMapForLoopArgs.at(initArg->get());
         // Get regionIterArg
-        regionIterArg = op.getRegionIterArgs()[idx];
+        regionIterArg = op.getTiedLoopRegionIterArg(res);
         PtrOffsetInfo regionIterArgOffsetInfo =
             offsetMapForLoopArgs.at(regionIterArg);
+        // Get yield
+        OpOperand *yieldedValue = op.getTiedLoopYieldedValue(regionIterArg);
+        PtrOffsetInfo yieldOffsetInfo = offsetMapForLoopArgs.at(yieldedValue->get());
         // Exchange iter arg with offset
         exchangeValueWithOffset(regionIterArg, initOffsetInfo.getPtr(), loc,
                                 rewriter, offsetMapForLoopArgs);
         rewriter.replaceAllUsesWith(regionIterArgOffsetInfo.getOffset(),
                                     regionIterArg);
-        if constexpr (std::is_same_v<LoopOpTy, scf::ForOp>) {
-          op.getBody()->getTerminator()->setOperand(
-              idx, yieldOffsetInfo.getOffset());
-          op.getInitArgsMutable()[idx].set(initOffsetInfo.getOffset());
-        } else if constexpr (std::is_same_v<LoopOpTy, scf::WhileOp>) {
-          op.getAfterBody()->getTerminator()->setOperand(
-              idx, yieldOffsetInfo.getOffset());
-          op.getInitsMutable()[idx].set(initOffsetInfo.getOffset());
-        }
+        yieldedValue->set(yieldOffsetInfo.getOffset());
+        initArg->set(initOffsetInfo.getOffset());
         exchangeValueWithOffset(res, initOffsetInfo.getPtr(), loc, rewriter,
                                 offsetMapForLoopArgs);
       }
 
-      regionIterArg = op.getRegionIterArgs()[idx];
+      regionIterArg = op.getTiedLoopRegionIterArg(res);
       offsetMap[regionIterArg] = PtrOffsetInfo();
       SmallVector<bool> &regionIterArgOffset =
           offsetMap[regionIterArg].getStructuredRef();

@@ -42,12 +42,18 @@ BubbleUpExtract::matchAndRewrite(tensor::ExtractOp op,
     bubbleUpIntBinaryOp(op, maxSIOp, indices, loc, rewriter);
   } else if (auto minSIOp = dyn_cast<arith::MinSIOp>(parentOp)) {
     bubbleUpIntBinaryOp(op, minSIOp, indices, loc, rewriter);
+  } else if (auto selectOp = dyn_cast<arith::SelectOp>(parentOp)) {
+    bubbleUpOperation(op, selectOp, indices, loc, rewriter);
   } else if (auto andIOp = dyn_cast<arith::AndIOp>(parentOp)) {
     bubbleUpIntBinaryOp(op, andIOp, indices, loc, rewriter);
   } else if (auto orIOp = dyn_cast<arith::OrIOp>(parentOp)) {
     bubbleUpIntBinaryOp(op, orIOp, indices, loc, rewriter);
   } else if (auto cmpIOp = dyn_cast<arith::CmpIOp>(parentOp)) {
     bubbleUpOperation(op, cmpIOp, indices, loc, rewriter);
+  } else if (auto truncFOp = dyn_cast<arith::TruncFOp>(parentOp)) {
+    bubbleUpOperation<arith::TruncFOp>(op, truncFOp, indices, loc, rewriter);
+  } else if (auto extFOp = dyn_cast<arith::ExtFOp>(parentOp)) {
+    bubbleUpOperation<arith::ExtFOp>(op, extFOp, indices, loc, rewriter);
   } else if (auto fpTosiOp = dyn_cast<arith::FPToSIOp>(parentOp)) {
     bubbleUpOperation<arith::FPToSIOp>(op, fpTosiOp, indices, loc, rewriter);
   } else if (auto siTofpOp = dyn_cast<arith::SIToFPOp>(parentOp)) {
@@ -136,6 +142,17 @@ void BubbleUpExtract::bubbleUpOperation<arith::ExtSIOp>(
 }
 
 template <>
+void BubbleUpExtract::bubbleUpOperation<arith::SelectOp>(
+    Operation *op, arith::SelectOp parentOp, ArrayRef<Value> indices,
+    Location loc, PatternRewriter &rewriter) const {
+  auto condition = createExtractOp(parentOp.getCondition(), indices, loc, rewriter);
+  auto trueValue = createExtractOp(parentOp.getTrueValue(), indices, loc, rewriter);
+  auto falseValue = createExtractOp(parentOp.getFalseValue(), indices, loc, rewriter);
+  rewriter.replaceOpWithNewOp<arith::SelectOp>(op, condition,
+                                               trueValue, falseValue);
+}
+
+template <>
 void BubbleUpExtract::bubbleUpOperation<arith::CmpIOp>(
     Operation *op, arith::CmpIOp parentOp, ArrayRef<Value> indices,
     Location loc, PatternRewriter &rewriter) const {
@@ -193,9 +210,28 @@ void BubbleUpExtract::bubbleUpOperation<triton::MakeRangeOp>(
     Operation *op, triton::MakeRangeOp parentOp, ArrayRef<Value> indices,
     Location loc, PatternRewriter &rewriter) const {
   auto resultType = cast<RankedTensorType>(parentOp.getResult().getType());
-  auto index = rewriter.create<arith::IndexCastOp>(
-      loc, resultType.getElementType(), indices[0]);
-  rewriter.replaceOp(op, index);
+  rewriter.replaceOpWithNewOp<arith::IndexCastOp>(
+      op, resultType.getElementType(), indices[0]);
+}
+
+template <>
+void BubbleUpExtract::bubbleUpOperation<arith::TruncFOp>(
+    Operation *op, arith::TruncFOp parentOp, ArrayRef<Value> indices,
+    Location loc, PatternRewriter &rewriter) const {
+  auto in = createExtractOp(parentOp.getIn(), indices, loc, rewriter);
+  auto resultType = cast<RankedTensorType>(parentOp.getOut().getType());
+  rewriter.replaceOpWithNewOp<arith::TruncFOp>(op, resultType.getElementType(),
+                                               in);
+}
+
+template <>
+void BubbleUpExtract::bubbleUpOperation<arith::ExtFOp>(
+    Operation *op, arith::ExtFOp parentOp, ArrayRef<Value> indices,
+    Location loc, PatternRewriter &rewriter) const {
+  auto in = createExtractOp(parentOp.getIn(), indices, loc, rewriter);
+  auto resultType = cast<RankedTensorType>(parentOp.getOut().getType());
+  rewriter.replaceOpWithNewOp<arith::ExtFOp>(op, resultType.getElementType(),
+                                               in);
 }
 
 template <>

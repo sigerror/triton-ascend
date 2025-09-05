@@ -62,6 +62,8 @@ private:
 
   LogicalResult convertMultipleBlockControlFlow(Operation *funcOp,
                                                 OpBuilder &builder);
+  // 处理嵌套的if/else
+  scf::IfOp transformNestedIfElse(Operation &nestedBranch, OpBuilder &builder);
 
   void addDynamicLegal(ConversionTarget &target,
                        TritonTypeConverter &tritonTypeConverter);

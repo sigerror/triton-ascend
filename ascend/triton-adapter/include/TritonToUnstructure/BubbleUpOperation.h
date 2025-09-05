@@ -52,10 +52,28 @@ private:
   void bubbleUpOperation<arith::ExtSIOp>(Operation *op, arith::ExtSIOp parentOp,
                                          ArrayRef<Value> indices, Location loc,
                                          PatternRewriter &rewriter) const;
+
+  template <>
+  void bubbleUpOperation<arith::SelectOp>(Operation *op, arith::SelectOp parentOp,
+                                          ArrayRef<Value> indices, Location loc,
+                                          PatternRewriter &rewriter) const;
+
   template <>
   void bubbleUpOperation<arith::CmpIOp>(Operation *op, arith::CmpIOp parentOp,
                                         ArrayRef<Value> indices, Location loc,
                                         PatternRewriter &rewriter) const;
+  template <>
+  void bubbleUpOperation<arith::TruncFOp>(Operation *op,
+                                          arith::TruncFOp parentOp,
+                                          ArrayRef<Value> indices, Location loc,
+                                          PatternRewriter &rewriter) const;
+
+  template <>
+  void bubbleUpOperation<arith::ExtFOp>(Operation *op,
+                                        arith::ExtFOp parentOp,
+                                        ArrayRef<Value> indices, Location loc,
+                                        PatternRewriter &rewriter) const;
+
   template <>
   void bubbleUpOperation<arith::FPToSIOp>(Operation *op,
                                           arith::FPToSIOp parentOp,

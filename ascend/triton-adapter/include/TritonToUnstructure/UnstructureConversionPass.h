@@ -65,10 +65,13 @@ public:
   LogicalResult matchAndRewrite(MemAccOpTy op,
                                 PatternRewriter &rewriter) const override;
 
-  Value extractOp(Location loc, Value value, ArrayRef<Value> iterIdx,
-                  PatternRewriter &rewriter) const;
-
 private:
+  Value createExtractOp(Location loc, Value value, ArrayRef<Value> iterIdx,
+                        PatternRewriter &rewriter) const;
+  template <typename U = MemAccOpTy>
+  typename std::enable_if<std::is_same_v<U, triton::LoadOp>, void>::type
+  splatAndLoadScenario(MemAccOpTy op, int rank, PatternRewriter &rewriter) const;
+
   const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap;
 };
 
@@ -80,10 +83,7 @@ public:
   void runOnOperation() override;
 
 private:
-  template <typename LoopOpTy,
-            typename = std::enable_if_t<std::is_same_v<LoopOpTy, scf::ForOp> ||
-                                        std::is_same_v<LoopOpTy, scf::WhileOp>>>
-  void runPreparse(LoopOpTy op);
+  void runPreparse(LoopLikeOpInterface op);
   template <typename MemAccOpTy,
             typename = std::enable_if_t<
                 std::is_same_v<MemAccOpTy, triton::LoadOp> ||

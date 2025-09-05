@@ -540,13 +540,33 @@ void BlockDataParser::parseBitcast(
   parse(op.getSrc(), data, loc, rewriter, known);
 
   auto resType = op.getResult().getType();
-  mlir::Type resElemPointeeTy;
+  Type resElemPointeeTy = nullptr;
   if (auto resShapedTy = dyn_cast<ShapedType>(resType)) {
     auto resElemTy = resShapedTy.getElementType();
     resElemPointeeTy =
         dyn_cast<triton::PointerType>(resElemTy).getPointeeType();
   } else {
-    resElemPointeeTy = dyn_cast<triton::PointerType>(resType).getPointeeType();
+    auto srcPointeeType =
+        cast<triton::PointerType>(op.getSrc().getType()).getPointeeType();
+    auto resPointeeType = cast<triton::PointerType>(resType).getPointeeType();
+
+    // Handling special case
+    // If Op is MetaUse or src is i1 block argument and dst is i8,
+    // it should be converted to UnrealizedConversionCast
+    if (op->hasAttr("MetaUse") ||
+        (isa<BlockArgument>(op.getSrc()) &&
+         srcPointeeType == rewriter.getIntegerType(1) &&
+         resPointeeType == rewriter.getIntegerType(8))) {
+      resElemPointeeTy = resPointeeType;
+    } else {
+      auto remappedValue = rewriter.getRemappedValue(op);
+      data.setSource(remappedValue);
+      LLVM_DEBUG({
+        llvm::dbgs() << "Remapping bitcastOp:\n";
+        llvm::dbgs() << op << "\nto \n";
+        llvm::dbgs() << remappedValue << "\n";
+      });
+    }
   }
   data.setResElemTy(resElemPointeeTy);
 }
@@ -1271,7 +1291,8 @@ void BlockDataParser::rewriteForOp(
       rewriteAddPtr(addptrOp, adaptor, rewriter, known);
     } else if (auto advanceOp = dyn_cast<triton::AdvanceOp>(bodyOp)) {
       rewriteAdvanceOp(advanceOp, rewriter, known);
-    } else if (auto forOp = dyn_cast<scf::ForOp>(bodyOp)) {
+    } else if (auto forOp = dyn_cast<scf::ForOp>(bodyOp);
+              forOp && !forOp->hasAttr("ExtractedLoadOrStore")) {
       // TODO:
       //  Nested for loops are not supported at the moment
       assert(0 && "nested loops currently not supported");

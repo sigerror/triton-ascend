@@ -37,9 +37,28 @@ using namespace triton;
 LogicalResult
 BitcastConverter::matchAndRewrite(triton::BitcastOp op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const {
-  auto arithBitcast = rewriter.create<arith::BitcastOp>(
-      op.getLoc(), op.getType(), op.getOperand());
-  rewriter.replaceOp(op, arithBitcast.getResult());
+  Value result;
+  if (auto resPointerType = dyn_cast<triton::PointerType>(op.getType())) {
+    // TODO: use typeconverter
+    auto srcPointerType = cast<triton::PointerType>(op.getSrc().getType());
+    auto resType = MemRefType::get({ShapedType::kDynamic}, resPointerType.getPointeeType());
+    // Handling special case
+    // %0 = tt.bitcast %arg0 {MixUse} : !tt.ptr<i1> -> !tt.ptr<i8>
+    if (isa<BlockArgument>(adaptor.getSrc()) &&
+      srcPointerType.getPointeeType() == rewriter.getIntegerType(1) &&
+      resPointerType.getPointeeType() == rewriter.getIntegerType(8)) {
+      rewriter.modifyOpInPlace(op, [&]() {
+        op->setAttr("MetaUse", rewriter.getUnitAttr());
+      });
+      return success();
+    }
+    result = rewriter.create<arith::BitcastOp>(
+      op.getLoc(), resType, adaptor.getSrc());
+  } else {
+    result = rewriter.create<arith::BitcastOp>(
+      op.getLoc(), op.getType(), adaptor.getSrc());
+  }
+  rewriter.replaceOp(op, result);
   return success();
 }
 
@@ -420,9 +439,10 @@ BitcastCanonicalizer::matchAndRewrite(triton::BitcastOp bitcastOp,
   return failure();
 }
 
-void rewriteUserWithNewOrder(mlir::Operation *user, PatternRewriter &rewriter, llvm::SmallVector<int64_t, 8> &blkShapeI64, // 8: container size
+void rewriteUserWithNewOrder(mlir::OpOperand *use, PatternRewriter &rewriter, llvm::SmallVector<int64_t, 8> &blkShapeI64, // 8: container size
                              mlir::Location &loc, llvm::ArrayRef<int32_t> &order, size_t &orderSize)
 {
+  Operation *user = use->getOwner();
   rewriter.setInsertionPointAfter(user);
   if (auto loadOp = dyn_cast<triton::LoadOp>(user)) {
     auto loadResTy = loadOp.getResult().getType();
@@ -456,8 +476,7 @@ void rewriteUserWithNewOrder(mlir::Operation *user, PatternRewriter &rewriter, l
         loc, storeOp.getPtr(), storeOp.getValue(), storeOp.getMask(),
         storeOp.getBoundaryCheck(), storeOp.getCache(), storeOp.getEvict());
     rewriter.replaceOp(storeOp, newStoreOp);
-  } else {
-    auto advanceOp = dyn_cast<triton::AdvanceOp>(user);
+  } else if (auto advanceOp = dyn_cast<triton::AdvanceOp>(user)) {
     auto advanceResPtrTy =
         cast<triton::PointerType>(advanceOp.getResult().getType());
     auto advanceResShapedTy =
@@ -471,16 +490,35 @@ void rewriteUserWithNewOrder(mlir::Operation *user, PatternRewriter &rewriter, l
     for (int i = orderSize - 1; i >= 0; i--) {
       newAdvanceOffsets.push_back(advanceOffsets[order[i]]);
     }
+    SmallVector<OpOperand *> resUses;
+    for (auto &use: advanceOp->getUses())
+      resUses.push_back(&use);
     auto newAdvanceOp = rewriter.create<triton::AdvanceOp>(
         loc, newAdvanceResPtrTy, advanceOp.getPtr(), newAdvanceOffsets);
     rewriter.replaceOp(advanceOp, newAdvanceOp);
+    for (auto resUse : resUses)
+      rewriteUserWithNewOrder(resUse, rewriter, blkShapeI64, loc, order, orderSize);
+  } else if (auto loopOp = dyn_cast<LoopLikeOpInterface>(user)) {
+    auto initArg = use->get();
+    auto iterArg = loopOp.getTiedLoopRegionIterArg(use);
+    auto resultValue = loopOp.getTiedLoopResult(use);
+    iterArg.setType(initArg.getType());
+    resultValue.setType(initArg.getType());
+    for (auto &argUse : iterArg.getUses())
+      rewriteUserWithNewOrder(&argUse, rewriter, blkShapeI64, loc, order, orderSize);
+    for (auto &resUse : resultValue.getUses())
+      rewriteUserWithNewOrder(&resUse, rewriter, blkShapeI64, loc, order, orderSize);
+  } else if (isa<scf::YieldOp>(user)) {
+    return;
+  } else {
+    llvm_unreachable("[MakeTensorPtrCanonicalizer] tt.make_tensor_ptr's result is "
+                     "not used by load/store/advance op");
   }
 }
 
 LogicalResult
 MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
                                             PatternRewriter &rewriter) const {
-
   auto order = op.getOrder();
   auto orderSize = order.size();
   if (orderSize == 1) {
@@ -507,33 +545,10 @@ MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
   auto strides = op.getStrides();
   auto offsets = op.getOffsets();
   auto result = op.getResult();
-  auto opUsers = result.getUsers();
-  for (auto user : opUsers) {
-    if (isa<scf::ForOp>(user)) {
-      auto forOp = dyn_cast<scf::ForOp>(user);
-      auto initArgs = forOp.getInitArgs();
-      for (auto [idx, initArg] : llvm::enumerate(initArgs)) {
-        if (initArg == result) {
-          auto iterArgs = forOp.getRegionIterArgs();
-          auto targetIterArg = iterArgs[idx];
-          auto argUsers = targetIterArg.getUsers();
-          for (auto argUser : argUsers) {
-            if (!isa<triton::LoadOp>(argUser) && !isa<triton::StoreOp>(argUser) &&
-                !isa<triton::AdvanceOp>(argUser)) {
-              return rewriter.notifyMatchFailure(forOp,
-                                                 "[MakeTensorPtrCanonicalizer] scf.for's arg is "
-                                                 "not used by load/store/advance op");
-            }
-          }
-        }
-      }
-    } else if (!isa<triton::LoadOp>(user) && !isa<triton::StoreOp>(user) &&
-        !isa<triton::AdvanceOp>(user)) {
-      return rewriter.notifyMatchFailure(
-          op, "[MakeTensorPtrCanonicalizer] tt.make_tensor_ptr's result is "
-              "not used by load/store/advance op");
-    };
-  }
+  SmallVector<OpOperand *> opUses;
+
+  for (auto &use: result.getUses())
+    opUses.push_back(&use);
 
   llvm::SmallVector<int32_t, 8> blkShapeI32;
   llvm::SmallVector<int64_t, 8> blkShapeI64;
@@ -565,26 +580,8 @@ MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
       loc, base, ValueRange(newShape), ValueRange(newStrides),
       ValueRange(newOffsets), blkShapeI32, contiguousOrder);
   rewriter.replaceOp(op, newMakeTensorPtrOp);
-
-  for (auto user : opUsers) {
-    if (isa<scf::ForOp>(user)) {
-      auto forOp = dyn_cast<scf::ForOp>(user);
-      auto initArgs = forOp.getInitArgs();
-      for (auto [idx, initArg] : llvm::enumerate(initArgs)) {
-        if (initArg == newMakeTensorPtrOp.getResult()) {
-          auto iterArgs = forOp.getRegionIterArgs();
-          auto targetIterArg = iterArgs[idx];
-          auto argUsers = targetIterArg.getUsers();
-          for (auto argUser : argUsers) {
-            rewriteUserWithNewOrder(argUser, rewriter, blkShapeI64, loc, order, orderSize);
-          }
-        }
-      }
-    } else {
-      rewriteUserWithNewOrder(user, rewriter, blkShapeI64, loc, order, orderSize);
-    }
-  }
-
+  for (auto use : opUses)
+    rewriteUserWithNewOrder(use, rewriter, blkShapeI64, loc, order, orderSize);
   return success();
 }
 
@@ -699,6 +696,12 @@ LogicalResult
 SplatConverter::matchAndRewrite(triton::SplatOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const {
   auto loc = op.getLoc();
+  if (isa<triton::PointerType>(op.getSrc().getType())) {
+    rewriter.modifyOpInPlace(op, [&]() {
+      op->setAttr("MetaUse", rewriter.getUnitAttr());
+    });
+    return success();
+  }
   auto init = rewriter.create<tensor::EmptyOp>(loc, op.getType().getShape(),
                                                op.getType().getElementType());
   rewriter.replaceOpWithNewOp<linalg::FillOp>(op, ValueRange{adaptor.getSrc()},

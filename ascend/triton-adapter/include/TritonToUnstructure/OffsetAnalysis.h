@@ -51,35 +51,58 @@ struct PtrOffsetInfo {
   */
 
 public:
-  PtrOffsetInfo(Value ptr = nullptr, Value offset = nullptr);
+  explicit PtrOffsetInfo();
+  PtrOffsetInfo(const PtrOffsetInfo &other);
+
+  explicit PtrOffsetInfo(const Value &ptr);
+  explicit PtrOffsetInfo(ArrayRef<bool> structured);
+  explicit PtrOffsetInfo(const Value &ptr, bool structured);
+  explicit PtrOffsetInfo(const Value &ptr, ArrayRef<bool> structured);
+  explicit PtrOffsetInfo(const Value &ptr, const Value &offset, bool structured);
+  explicit PtrOffsetInfo(const Value &ptr, const Value &offset, ArrayRef<bool> structured);
+
+  PtrOffsetInfo &operator=(const PtrOffsetInfo &other);
 
   Value getPtr() const;
   Value getOffset() const;
   bool isScalarLike() const;
   SmallVector<bool> &getStructuredRef();
   const SmallVector<bool> &getStructured() const;
+  int getRank() const;
 
   void setPtr(const Value &ptr);
   void setOffset(const Value &offset);
-  void setUnstructured(int rank);
+  void setStructured();
   void setStructured(int rank);
+  void setUnstructured();
+  void setUnstructured(int rank);
+  void setStructured(ArrayRef<bool> structured);
+  void setStructured(const PtrOffsetInfo &other);
   void setScalarLike(bool scalarLike);
 
   bool isStructured(int dim) const;
   bool isStructured() const;
   bool isUnstructured() const;
 
+  void setZeroOffset();
 private:
   Value ptr;
   Value offset;
 
-  bool scalarLike;
+  bool scalarLike = false;
 
   SmallVector<bool> structured;
 };
 
+PtrOffsetInfo combineInfo(const PtrOffsetInfo &lhs, const PtrOffsetInfo &rhs);
+
 void parse(Value operand, const Location &loc, RewriterBase &rewriter,
            llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
+
+void parseLoopRegionIterArg(LoopLikeOpInterface loopOp, const Location &loc,
+                            RewriterBase &rewriter,
+                            llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap,
+                            BlockArgument regionIterArg);
 
 void parseArithOp(Operation *arithOp, const Location &loc,
                   RewriterBase &rewriter,
@@ -100,8 +123,9 @@ void parseAddPtr(triton::AddPtrOp op, const Location &loc,
 void parseSplat(triton::SplatOp op, const Location &loc, RewriterBase &rewriter,
                 llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
-void parseSubI(arith::SubIOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
+template <typename BinOpTy>
+void parseBinaryOp(BinOpTy op, const Location &loc, RewriterBase &rewriter,
+                   llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
 void parseAddI(arith::AddIOp op, const Location &loc, RewriterBase &rewriter,
                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
@@ -110,25 +134,10 @@ void parseIndexCast(arith::IndexCastOp op, const Location &loc,
                     RewriterBase &rewriter,
                     llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
-void parseConstantFloat(arith::ConstantFloatOp op, const Location &loc,
-                        RewriterBase &rewriter,
-                        llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseConstantInt(arith::ConstantIntOp op, const Location &loc,
-                      RewriterBase &rewriter,
-                      llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseConstant(arith::ConstantOp op, const Location &loc,
-                   RewriterBase &rewriter,
-                   llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseGetProgramId(triton::GetProgramIdOp op, const Location &loc,
-                       RewriterBase &rewriter,
-                       llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseGetNumPrograms(triton::GetNumProgramsOp op, const Location &loc,
-                         RewriterBase &rewriter,
-                         llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
+template <typename ConstOpTy>
+void parseConstantOp(ConstOpTy dst, const Location &loc,
+                     RewriterBase &rewriter,
+                     llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
 void parseMakeRange(triton::MakeRangeOp op, const Location &loc,
                     RewriterBase &rewriter,
@@ -146,12 +155,6 @@ void parseLoad(triton::LoadOp op, const Location &loc, RewriterBase &rewriter,
 
 void parseMulI(arith::MulIOp op, const Location &loc, RewriterBase &rewriter,
                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseRemSI(arith::RemSIOp op, const Location &loc, RewriterBase &rewriter,
-                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseDivSI(arith::DivSIOp op, const Location &loc, RewriterBase &rewriter,
-                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
 void parseBroadcast(triton::BroadcastOp op, const Location &loc,
                     RewriterBase &rewriter,
@@ -176,50 +179,6 @@ void parseFPToSI(arith::FPToSIOp op, const Location &loc,
 void parseSIToFP(arith::SIToFPOp op, const Location &loc,
                  RewriterBase &rewriter,
                  llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseMulF(arith::MulFOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseDivF(arith::DivFOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseAddF(arith::AddFOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseSubF(arith::SubFOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseMinNumF(arith::MinNumFOp op, const Location &loc,
-                  RewriterBase &rewriter,
-                  llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseMaxNumF(arith::MaxNumFOp op, const Location &loc,
-                  RewriterBase &rewriter,
-                  llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseMaxSI(arith::MaxSIOp op, const Location &loc, RewriterBase &rewriter,
-                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseMinSI(arith::MinSIOp op, const Location &loc, RewriterBase &rewriter,
-                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseCmpI(arith::CmpIOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseCmpF(arith::CmpFOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseAndI(arith::AndIOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseOrI(arith::OrIOp op, const Location &loc, RewriterBase &rewriter,
-              llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseFloor(math::FloorOp op, const Location &loc, RewriterBase &rewriter,
-                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
-
-void parseCeil(math::CeilOp op, const Location &loc, RewriterBase &rewriter,
-               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
 void parseMakeTensorDesc(triton::MakeTensorDescOp op, const Location &loc,
                          RewriterBase &rewriter,
@@ -247,11 +206,8 @@ void parseIf(scf::IfOp op, const Location &loc, RewriterBase &rewriter,
 void parseYield(scf::YieldOp op, const Location &loc, RewriterBase &rewriter,
                 llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
-void parseFor(scf::ForOp op, const Location &loc, RewriterBase &rewriter,
-              llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap, Value dst);
-
-void parseWhile(scf::WhileOp op, const Location &loc, RewriterBase &rewriter,
-                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap, Value dst);
+void parseLoopOp(LoopLikeOpInterface op, const Location &loc, RewriterBase &rewriter,
+                 llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap, Value dst);
 
 void parseExtractSlice(tensor::ExtractSliceOp op, const Location &loc,
                        RewriterBase &rewriter,
