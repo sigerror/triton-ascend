@@ -312,26 +312,21 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         if limit_auto_multi_buffer_only_for_local_buffer is not None:
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
-
-        nested_sub_block_num = metadata["nested_sub_block_num"]
-        if nested_sub_block_num is not None:
-            _compile_option_list += \
-                [f"--nested-sub-block-num={nested_sub_block_num}"]
                 
         set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
 
-        nested_vector_loop_num = metadata["nested_vector_loop_num"]
-        if nested_vector_loop_num is not None:
+        tile_mix_vector_loop = metadata["tile_mix_vector_loop"]
+        if tile_mix_vector_loop is not None:
             _compile_option_list += \
-                [f"--nested-vector-loop-num={nested_vector_loop_num}"]
+                [f"--tile-mix-vector-loop={tile_mix_vector_loop}"]
 
-        nested_cube_loop_num = metadata["nested_cube_loop_num"]
-        if nested_cube_loop_num is not None:
+        tile_mix_cube_loop = metadata["tile_mix_cube_loop"]
+        if tile_mix_cube_loop is not None:
             _compile_option_list += \
-                [f"--nested-cube-loop-num={nested_cube_loop_num}"]
+                [f"--tile-mix-cube-loop={tile_mix_cube_loop}"]
 
         auto_multi_buffer = metadata["limit_auto_multi_buffer_of_local_buffer"]
         if auto_multi_buffer is not None:
@@ -395,9 +390,8 @@ class NPUOptions:
     limit_auto_multi_buffer_only_for_local_buffer: bool = None
     limit_auto_multi_buffer_of_local_buffer: str = None
     set_workspace_multibuffer: int = None
-    nested_sub_block_num: int = None
-    nested_vector_loop_num: int = None
-    nested_cube_loop_num: int = None
+    tile_mix_vector_loop: int = None
+    tile_mix_cube_loop: int = None
 
     stream: int = None
 
