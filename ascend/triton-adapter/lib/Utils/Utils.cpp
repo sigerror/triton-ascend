@@ -46,6 +46,29 @@ namespace mlir {
 
 namespace ConverterUtils {
 
+bool isaPermutedMemRefType(MemRefType memRefType){
+  auto [ptrStrides, ptrOffsets] = getStridesAndOffset(memRefType);
+  switch (ptrStrides.size()) {
+    case 0: return false;
+    case 1: return false;
+    case 2: {
+      return ptrStrides[1]==1 && ptrStrides[0]!=1;
+    }
+    default: {
+      for (auto stride: ptrStrides) 
+        if (stride == ShapedType::kDynamic)
+          return false;
+
+      int last=INT_MAX;
+      for (auto stride: ptrStrides) {
+        if (last < stride)return true;
+        last=stride;
+      }
+      return false;
+    }
+  }
+}
+
 Value getTransposedValue(Value source, const Location loc,
                          ConversionPatternRewriter &rewriter,
                          llvm::ArrayRef<int> order) {

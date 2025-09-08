@@ -19,6 +19,8 @@ namespace ConverterUtils {
 
 const std::string discreteAttrName = "DiscreteMemAccess";
 
+bool isaPermutedMemRefType(MemRefType);
+
 Value getTransposedValue(Value source, const Location loc,
                          ConversionPatternRewriter &rewriter,
                          llvm::ArrayRef<int> order);

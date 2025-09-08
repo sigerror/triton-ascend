@@ -10,6 +10,7 @@
 #include "TritonToLinalg/MaskAnalysis.h"
 #include "Utils/InterleaveOptimization.h"
 #include "Utils/Utils.h"
+#include "bishengir/Dialect/Annotation/IR/Annotation.h"
 
 #include "mlir/Dialect/Affine/IR/AffineOps.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -62,9 +63,14 @@ AddPtrConverter::matchAndRewrite(triton::AddPtrOp op, OpAdaptor adaptor,
 
 LogicalResult LoadConverter::toTensorAndReplace(
     triton::LoadOp &op, RankedTensorType &tensorType, memref::AllocOp &allocOp,
-    const Location &loc, ConversionPatternRewriter &rewriter) const {
+    bool isPermuted, const Location &loc, ConversionPatternRewriter &rewriter) const {
+  
   Value loadedTensor = rewriter.create<bufferization::ToTensorOp>(
       loc, tensorType, allocOp, true, true);
+  if(isPermuted){
+    auto markOp = rewriter.create<annotation::MarkOp>(loc, loadedTensor);
+    markOp->setAttr("ToBeTransposed", UnitAttr::get(rewriter.getContext()));
+  }
   rewriter.replaceOp(op, loadedTensor);
   return success();
 }
@@ -213,6 +219,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     return rewriter.notifyMatchFailure(
         op, "LoadOp expects a memref, not a memref of pointers");
   }
+  bool isPermuted=mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
   auto memRefShape = memRefType.getShape();
   auto memRefElementType = memRefType.getElementType();
 
@@ -249,7 +256,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
         allocOp, boundarySizes, loc, rewriter);
     rewriter.create<memref::CopyOp>(loc, srcSubView, dstSubview);
 
-    return this->toTensorAndReplace(op, tensorType, allocOp, loc, rewriter);
+    return this->toTensorAndReplace(op, tensorType, allocOp, isPermuted, loc, rewriter);
   }
 
   if (!mask) {
@@ -269,7 +276,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
       rewriter.create<memref::CopyOp>(loc, ptr, allocOp);
     }
 
-    return this->toTensorAndReplace(op, tensorType, allocOp, loc, rewriter);
+    return this->toTensorAndReplace(op, tensorType, allocOp, isPermuted, loc, rewriter);
   }
 
   MaskState mstate;
@@ -316,7 +323,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     memref::SubViewOp dstSubView = mstate.getSubview(allocOp, loc, rewriter);
     rewriter.create<memref::CopyOp>(loc, srcSubView, dstSubView);
   }
-  return this->toTensorAndReplace(op, tensorType, allocOp, loc, rewriter);
+  return this->toTensorAndReplace(op, tensorType, allocOp, isPermuted, loc, rewriter);
 }
 
 AtomicRMWConverter::AtomicRMWConverter(MLIRContext *context)
