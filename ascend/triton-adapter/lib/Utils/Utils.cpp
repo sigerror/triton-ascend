@@ -48,11 +48,14 @@ namespace ConverterUtils {
 
 bool isaPermutedMemRefType(MemRefType memRefType){
   auto [ptrStrides, ptrOffsets] = getStridesAndOffset(memRefType);
+  llvm::dbgs()<<"---------- [BEG] ptrStrides ----------\n";
+  for(auto stride: ptrStrides)llvm::dbgs()<<stride<<" ";llvm::dbgs()<<"\n";
+  llvm::dbgs()<<"---------- [END] ptrStrides ----------\n";
   switch (ptrStrides.size()) {
     case 0: return false;
     case 1: return false;
     case 2: {
-      return ptrStrides[1]==1 && ptrStrides[0]!=1;
+      return ptrStrides[0]==1 && ptrStrides[1]!=1;
     }
     default: {
       for (auto stride: ptrStrides) 
