@@ -660,8 +660,9 @@ class JITFunction(KernelInterface[T]):
             grid_1 = grid[1] if grid_size > 1 else 1
             grid_2 = grid[2] if grid_size > 2 else 1
             grid_all_size = grid_0 * grid_1 * grid_2
-            if grid_all_size > 65535:
-                raise RuntimeError("grid should be less than 65536!")
+            if os.getenv("TRITON_ALL_BLOCKS_PARALLEL", "0") == "0":
+                if grid_all_size > 65535:
+                    raise RuntimeError("grid should be less than 65536! You can try \"export TRITON_ALL_BLOCKS_PARALLEL=1\" to avoid this problem.")
             if ('stream' in kwargs.keys()):
                 stream = kwargs["stream"]
             # launch kernel
