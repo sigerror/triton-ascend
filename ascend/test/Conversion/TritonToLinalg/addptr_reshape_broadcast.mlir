@@ -1,4 +1,4 @@
-// RUN: triton-adapter-opt --triton-to-linalg %s | FileCheck %s
+// RUN: triton-adapter-opt --triton-to-annotation --triton-to-linalg %s | FileCheck %s
 // TODO: expand this example to 3D
 module {
   tt.func @kernel(
@@ -38,6 +38,7 @@ module {
 // CHECK:           %[[VAL_8:.*]] = memref.alloc() : memref<256x128xbf16>
 // CHECK:           memref.copy %[[VAL_7]], %[[VAL_8]] : memref<256x128xbf16, strided<[1, 6], offset: 6656>> to memref<256x128xbf16>
 // CHECK:           %[[VAL_9:.*]] = bufferization.to_tensor %[[VAL_8]] restrict writable : memref<256x128xbf16>
+// CHECK:           annotation.mark %[[VAL_9]] {ToBeTransposed} : tensor<256x128xbf16>
 // CHECK:           bufferization.materialize_in_destination %[[VAL_9]] in writable %[[VAL_7]]
 // CHECK:           return
 // CHECK:         }

@@ -1,4 +1,4 @@
-// RUN: triton-adapter-opt --triton-to-linalg %s | FileCheck %s
+// RUN: triton-adapter-opt --triton-to-annotation --triton-to-linalg %s | FileCheck %s
 module {
   tt.func @kernel(
   %arg0 : !tt.ptr<bf16>,
@@ -71,6 +71,7 @@ module {
 // CHECK:           %[[VAL_46:.*]] = memref.alloc() : memref<256x128xbf16>
 // CHECK:           memref.copy %[[VAL_45]], %[[VAL_46]] : memref<256x128xbf16, strided<[1, 6], offset: 6656>> to memref<256x128xbf16>
 // CHECK:           %[[VAL_47:.*]] = bufferization.to_tensor %[[VAL_46]] restrict writable : memref<256x128xbf16>
+// CHECK:           annotation.mark %[[VAL_47]] {ToBeTransposed} : tensor<256x128xbf16>
 // CHECK:           bufferization.materialize_in_destination %[[VAL_47]] in writable %[[VAL_45]]
 // CHECK:           %[[VAL_48:.*]] = tensor.empty() : tensor<256x128xbf16>
 // CHECK:           %[[VAL_49:.*]] = linalg.generic {indexing_maps = [#map1, #map1], iterator_types = ["parallel", "parallel"]} ins(%[[VAL_50:.*]] : tensor<256x128xi32>) outs(%[[VAL_48]] : tensor<256x128xbf16>) {

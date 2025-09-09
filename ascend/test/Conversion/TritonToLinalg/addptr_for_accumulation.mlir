@@ -1,4 +1,4 @@
-// RUN: triton-adapter-opt --triton-to-linalg %s | FileCheck %s
+// RUN: triton-adapter-opt --triton-to-annotation --triton-to-linalg %s | FileCheck %s
 module {
   tt.func @kernel(
     %arg0 : !tt.ptr<bf16>,
@@ -71,6 +71,7 @@ module {
 // CHECK:           %[[VAL_15:.*]] = memref.alloc() : memref<4x256xbf16>
 // CHECK:           memref.copy %[[VAL_14]], %[[VAL_15]] : memref<4x256xbf16, strided<[1, 5], offset: ?>> to memref<4x256xbf16>
 // CHECK:           %[[VAL_16:.*]] = bufferization.to_tensor %[[VAL_15]] restrict writable : memref<4x256xbf16>
+// CHECK:           annotation.mark %[[VAL_16]] {ToBeTransposed} : tensor<4x256xbf16>
 // CHECK:           %[[VAL_18:.*]] = memref.reinterpret_cast %[[VAL_1]] to offset: {{\[}}%[[VAL_13]]], sizes: [4, 256], strides: {{\[}}%[[VAL_9]], %[[VAL_8]]] : memref<?xbf16> to memref<4x256xbf16, strided<[?, ?], offset: ?>>
 // CHECK:           %[[VAL_19:.*]]:4 = scf.for %[[VAL_20:.*]] = %[[VAL_12]] to %[[VAL_11]] step %[[VAL_10]] iter_args(%[[VAL_21:.*]] = %[[VAL_16]], %[[VAL_22:.*]] = %[[VAL_18]], %[[VAL_23:.*]] = %[[VAL_13]], %[[VAL_24:.*]] = %[[VAL_12]]) -> (tensor<4x256xbf16>, memref<4x256xbf16, strided<[?, ?], offset: ?>>, index, index) {
 // CHECK:             %[[VAL_25:.*]] = memref.alloc() : memref<4x256xbf16>

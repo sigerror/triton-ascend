@@ -1,4 +1,4 @@
-// RUN: triton-adapter-opt --triton-to-linalg %s | FileCheck %s
+// RUN: triton-adapter-opt --triton-to-annotation --triton-to-linalg %s | FileCheck %s
 module {
   tt.func @kernel(
     %arg0 : !tt.ptr<bf16>,
@@ -60,6 +60,7 @@ module {
 // CHECK-DAG:       [[RES_1_:%.+]] = memref.alloc() : memref<256x64xbf16>
 // CHECK:           memref.copy [[VAR_reinterpret_cast_0_]], [[RES_1_]] : memref<256x64xbf16, strided<[1, 256]>> to memref<256x64xbf16>
 // CHECK-DAG:       [[VAR_1_:%.+]] = bufferization.to_tensor [[RES_1_]] restrict writable : memref<256x64xbf16>
+// CHECK-DAG:       annotation.mark [[VAR_1_]] {ToBeTransposed} : tensor<256x64xbf16>
 // CHECK-DAG:       [[VAR_2_:%.+]] = tensor.empty() : tensor<64x256xbf16>
 // CHECK-DAG:       [[VAR_transposed_:%.+]] = linalg.transpose ins([[VAR_1_]] : tensor<256x64xbf16>) outs([[VAR_2_]] : tensor<64x256xbf16>) permutation = [1, 0]
 // CHECK-DAG:       [[VAR_reinterpret_cast_2_:%.+]] = memref.reinterpret_cast [[PARAM_2_]] to offset: [0], sizes: [128, 256], strides: [256, 1] : memref<?xbf16> to memref<128x256xbf16, strided<[256, 1]>>

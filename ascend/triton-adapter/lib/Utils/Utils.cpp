@@ -46,11 +46,14 @@ namespace mlir {
 
 namespace ConverterUtils {
 
-bool isaPermutedMemRefType(MemRefType memRefType){
+bool isaPermutedMemRefType(MemRefType memRefType) {
   auto [ptrStrides, ptrOffsets] = getStridesAndOffset(memRefType);
-  llvm::dbgs()<<"---------- [BEG] ptrStrides ----------\n";
-  for(auto stride: ptrStrides)llvm::dbgs()<<stride<<" ";llvm::dbgs()<<"\n";
-  llvm::dbgs()<<"---------- [END] ptrStrides ----------\n";
+  LLVM_DEBUG({
+    llvm::dbgs()<<"---------- [BEG] ptrStrides ----------\n";
+    for(auto stride: ptrStrides)llvm::dbgs()<<stride<<" ";llvm::dbgs()<<"\n";
+    llvm::dbgs()<<"---------- [END] ptrStrides ----------\n";
+  });
+
   switch (ptrStrides.size()) {
     case 0: return false;
     case 1: return false;
@@ -62,7 +65,7 @@ bool isaPermutedMemRefType(MemRefType memRefType){
         if (stride == ShapedType::kDynamic)
           return false;
 
-      int last=INT_MAX;
+      int last = INT_MAX;
       for (auto stride: ptrStrides) {
         if (last < stride)return true;
         last=stride;
