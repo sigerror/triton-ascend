@@ -7,6 +7,10 @@
 #include "TritonToLinalg/UseAnalysis.h"
 #include "Utils/InterleaveOptimization.h"
 #include "Utils/Utils.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
 #include "bishengir/Dialect/HIVM/IR/HIVM.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -28,13 +32,17 @@
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 #include "llvm/ADT/Twine.h"
 #include "llvm/Support/Casting.h"
 #include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LogicalResult.h"
 
+#include <cassert>
 #include <cstdint>
 #include <optional>
 
@@ -143,6 +151,101 @@ void TritonToLinalgPass::addTensorKindToArguments(OpTy op, triton::FuncOp func, 
     }
 }
 
+LogicalResult
+TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
+                                                    OpBuilder &builder) {
+  assert(isa<func::FuncOp>(funcOp));
+
+  SmallVector<Operation *> candidate;
+  SmallVector<Block *> eraseBlocks;
+  for (Block &block : dyn_cast<func::FuncOp>(funcOp).getBody()) {
+    auto curTerminator = block.getTerminator();
+    if (isa<cf::CondBranchOp>(curTerminator))
+      candidate.push_back(curTerminator);
+    else if (isa<triton::ReturnOp>(curTerminator))
+      assert(candidate.size() > 0);
+    else
+      return failure();
+
+    if (!block.isEntryBlock())
+      eraseBlocks.push_back(&block);
+  }
+
+  assert(!candidate.empty());
+
+  llvm::BitVector visitFlag(candidate.size(), false);
+
+  // Recursive function to convert all cf::CondBranchOp to scf::IfOp
+  std::function<void(Operation *, Operation *)> convertToSCF =
+      [&](Operation *op, Operation *insertPosOp) -> void {
+    auto condBranchOp = dyn_cast_if_present<cf::CondBranchOp>(op);
+    auto iter = llvm::find(candidate, condBranchOp);
+    assert(condBranchOp && iter != candidate.end());
+    visitFlag.set(iter - candidate.begin());
+
+    OpBuilder::InsertionGuard guard(builder);
+    builder.setInsertionPointAfter(insertPosOp);
+
+    // Well, here force to destory original control flow
+    builder.create<scf::IfOp>(
+        condBranchOp->getLoc(), condBranchOp.getCondition(),
+        /*thenBuilder=*/
+        [&](OpBuilder &builder, Location loc) {
+          SmallVector<Operation *> movedOps = llvm::map_to_vector(
+              condBranchOp.getTrueDest()->without_terminator(),
+              [](Operation &op) { return &op; });
+          for (auto *innerOp : movedOps) {
+            innerOp->moveBefore(builder.getInsertionBlock(),
+                                builder.getInsertionPoint());
+          }
+
+          auto blockTerm = condBranchOp.getTrueDest()->getTerminator();
+          if (isa<cf::CondBranchOp>(blockTerm)) {
+            assert(!movedOps.empty());
+            convertToSCF(blockTerm, movedOps.back());
+          }
+
+          builder.create<scf::YieldOp>(loc);
+        },
+        /*elseBuilder=*/
+        [&](OpBuilder &builder, Location loc) {
+          SmallVector<Operation *> movedOps = llvm::map_to_vector(
+              condBranchOp.getFalseDest()->without_terminator(),
+              [](Operation &op) { return &op; });
+          for (auto *innerOp : movedOps) {
+            innerOp->moveBefore(builder.getInsertionBlock(),
+                                builder.getInsertionPoint());
+          }
+
+          auto blockTerm = condBranchOp.getFalseDest()->getTerminator();
+          if (isa<cf::CondBranchOp>(blockTerm)) {
+            assert(!movedOps.empty());
+            convertToSCF(blockTerm, movedOps.back());
+          }
+
+          builder.create<scf::YieldOp>(loc);
+        });
+  };
+
+  Block::iterator insertOp(candidate.front());
+  --insertOp;
+  convertToSCF(candidate.front(), &(*insertOp));
+
+  if (!visitFlag.all())
+    return failure();
+
+  OpBuilder::InsertionGuard guard(builder);
+  builder.setInsertionPoint(candidate.front());
+  builder.create<triton::ReturnOp>(candidate.front()->getLoc());
+
+  for (Operation *eachTerm : candidate)
+    eachTerm->erase();
+  for (Block *block : llvm::reverse(eraseBlocks))
+    block->erase();
+
+  return success();
+}
+
 void TritonToLinalgPass::convertTTFunc(triton::FuncOp func,
                                        const bool existDot) {
   OpBuilder builder(func);
@@ -231,122 +334,21 @@ void TritonToLinalgPass::convertTTFunc(triton::FuncOp func,
   IRMapping map;
   funcBody.cloneInto(&funcFuncBody, map);
 
+  if (!funcFuncBody.hasOneBlock()) {
+    if (failed(convertMultipleBlockControlFlow(funcFunc, builder))) {
+      llvm_unreachable("Encounter unsupported control flow");
+    }
+  }
+
   for (Block &block : funcFuncBody.getBlocks()) {
     auto term = block.getTerminator();
-    if (auto condBranch = dyn_cast<cf::CondBranchOp>(term)) {
-        SmallVector<Operation*> trueOps;
-        SmallVector<Operation*> falseOps;
-        bool trueHasReturn = false;
-        bool falseHasReturn = false;
-        for (Operation &op : condBranch.getTrueDest()->without_terminator()) {
-            if (dyn_cast<cf::CondBranchOp>(&op)) {
-                transformNestedIfElse(op, builder);
-            }
-            trueOps.push_back(&op);
-            if (isa<func::ReturnOp>(op)) {
-                trueHasReturn = true;
-            }
-        }
-        for (Operation &op : condBranch.getFalseDest()->without_terminator()) {
-            if (dyn_cast<cf::CondBranchOp>(&op)) {
-                transformNestedIfElse(op, builder);
-            }
-            falseOps.push_back(&op);
-            if (isa<func::ReturnOp>(op)) {
-                falseHasReturn = true;
-            }
-        }
-        builder.setInsertionPoint(condBranch);
-        auto ifOp = builder.create<scf::IfOp> (
-            condBranch.getLoc(),
-            condBranch.getCondition(),
-            [&](OpBuilder &thenBuilder, Location loc) {
-                for (Operation *op : trueOps) {
-                    op->moveBefore(thenBuilder.getInsertionBlock(), thenBuilder.getInsertionPoint());
-                }
-                if (!trueHasReturn) {
-                    thenBuilder.create<scf::YieldOp>(loc);
-                }
-            },
-            [&](OpBuilder &elseBuilder, Location loc) {
-                for (Operation *op : falseOps) {
-                    op->moveBefore(elseBuilder.getInsertionBlock(), elseBuilder.getInsertionPoint());
-                }
-                if (!falseHasReturn) {
-                    elseBuilder.create<scf::YieldOp>(loc);
-                }
-            }
-        );
-        if (!trueHasReturn && !falseHasReturn) {
-            Block *afterBlock = condBranch->getBlock();
-            if (!afterBlock->empty()) {
-                builder.setInsertionPointToEnd(afterBlock);
-                builder.create<func::ReturnOp>(condBranch.getLoc());
-            }
-        }
-        condBranch.erase();
-        condBranch.getTrueDest()->erase();
-        condBranch.getFalseDest()->erase();
-      } else {
-        builder.setInsertionPoint(term);
-        builder.create<func::ReturnOp>(func.getLoc(), term->getOperands());
-        term->erase();
-      }
+    builder.setInsertionPoint(term);
+    builder.create<func::ReturnOp>(func.getLoc(), term->getOperands());
+    term->erase();
   }
   func.erase();
 }
 
-// 处理嵌套的if/else
-void TritonToLinalgPass::transformNestedIfElse(Operation &op, OpBuilder &builder) {
-    auto nestedBranch = dyn_cast<cf::CondBranchOp>(&op);
-    SmallVector<Operation*> nestedTrueOps;
-    SmallVector<Operation*> nestedFalseOps;
-    bool nestedTrueHasReturn = false;
-    bool nestedFalseHasReturn = false;
-
-    for (Operation &op : nestedBranch.getTrueDest()->without_terminator()) {
-        if (dyn_cast<cf::CondBranchOp>(&op)) {
-            transformNestedIfElse(op, builder);
-        }
-        nestedTrueOps.push_back(&op);
-        if (isa<func::ReturnOp>(op)) {
-            nestedTrueHasReturn = true;
-        }
-    }
-    for (Operation &op : nestedBranch.getFalseDest()->without_terminator()) {
-        if (dyn_cast<cf::CondBranchOp>(&op)) {
-            transformNestedIfElse(op, builder);
-        }
-        nestedFalseOps.push_back(&op);
-        if (isa<func::ReturnOp>(op)) {
-            nestedFalseHasReturn = true;
-        }
-    }
-    builder.setInsertionPoint(nestedBranch);
-    auto nestedIfOp = builder.create<scf::IfOp>(
-        nestedBranch.getLoc(),
-        nestedBranch.getCondition(),
-        [&](OpBuilder &thenBuilder, Location loc) {
-            for (Operation *op : nestedTrueOps) {
-                op->moveBefore(thenBuilder.getInsertionBlock(), thenBuilder.getInsertionPoint());
-            }
-            if (!nestedTrueHasReturn) {
-                thenBuilder.create<scf::YieldOp>(loc);
-            }
-        },
-        [&](OpBuilder &elseBuilder, Location loc) {
-            for (Operation *op : nestedFalseOps) {
-                op->moveBefore(elseBuilder.getInsertionBlock(), elseBuilder.getInsertionPoint());
-            }
-            if (!nestedTrueHasReturn) {
-                elseBuilder.create<scf::YieldOp>(loc);
-            }
-        }
-    );
-    nestedBranch.erase();
-    nestedBranch.getTrueDest()->erase();
-    nestedBranch.getFalseDest()->erase();
-}
 
 void TritonToLinalgPass::addDynamicLegal(
     ConversionTarget &target, TritonTypeConverter &tritonTypeConverter) {

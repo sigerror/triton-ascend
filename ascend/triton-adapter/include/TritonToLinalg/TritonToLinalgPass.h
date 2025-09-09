@@ -59,8 +59,9 @@ private:
   void addTensorKindToArguments(OpTy op, triton::FuncOp func, TensorKind tensorKind);
 
   void convertTTFunc(triton::FuncOp func, const bool existDot);
-  // 处理嵌套的if/else
-  void transformNestedIfElse(Operation &nestedBranch, OpBuilder &builder);
+
+  LogicalResult convertMultipleBlockControlFlow(Operation *funcOp,
+                                                OpBuilder &builder);
 
   void addDynamicLegal(ConversionTarget &target,
                        TritonTypeConverter &tritonTypeConverter);
