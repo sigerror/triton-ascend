@@ -25,6 +25,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Transforms/Passes.h"
 #include "mlir/Dialect/Utils/ReshapeOpsUtils.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/ValueRange.h"
@@ -1929,6 +1930,29 @@ DotScaledConverter::matchAndRewrite(triton::DotScaledOp op, OpAdaptor adaptor,
   }
 
   rewriter.replaceOp(op, matmulOp->getResults());
+  return success();
+}
+
+LogicalResult
+PtrToIntConverter::matchAndRewrite(triton::PtrToIntOp op, OpAdaptor adaptor,
+                                   ConversionPatternRewriter &rewriter) const {
+  auto loc = op.getLoc();
+  Value ptr = adaptor.getSrc();
+
+  if (!mlir::isa<MemRefType>(ptr.getType())) {
+    return rewriter.notifyMatchFailure(op, "input is not a memref type");
+  }
+
+  auto resultType = op.getType();
+
+  // memref.extract_aligned_pointer_as_index is used to obtain the integer representation of the base address.
+  auto ptrToIndexOp = rewriter.create<memref::ExtractAlignedPointerAsIndexOp>(
+      loc, ptr);
+
+  Value intResult = rewriter.create<arith::IndexCastOp>(
+      loc, resultType, ptrToIndexOp);
+
+  rewriter.replaceOp(op, intResult);
   return success();
 }
 

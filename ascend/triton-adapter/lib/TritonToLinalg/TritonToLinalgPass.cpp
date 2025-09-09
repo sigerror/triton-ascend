@@ -531,6 +531,7 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::MatmulConverter>(patterns.getContext());
   patterns.add<TTOpConverters::SortOpConverter>(patterns.getContext());
   patterns.add<TTOpConverters::DotScaledConverter>(patterns.getContext());
+  patterns.add<TTOpConverters::PtrToIntConverter>(patterns.getContext());
 
   if (!this->namedOps) {
     linalg::populateElementwiseToLinalgConversionPatterns(patterns);
