@@ -342,47 +342,6 @@ LogicalResult PreciseDivConverter::matchAndRewrite(
   return success();
 }
 
-LogicalResult
-SelectCanonicalizer::matchAndRewrite(arith::SelectOp op,
-                                     PatternRewriter &rewriter) const {
-  auto loc = op.getLoc();
-
-  // 0. Shortcut for scalars
-  auto type = dyn_cast<TensorType>(op.getResult().getType());
-  if (!type) {
-    // do nothing non-tensor select
-    return failure();
-  }
-  auto mask = op.getCondition();
-  if (!isa<ShapedType>(mask.getType())) {
-    // do nothing for scalar mask
-    return failure();
-  }
-
-  // 1. Check for continuous masked loads.
-  // Analyze the mask operand to determine at runtime the size of the data we
-  // are moving.
-  MaskState mstate;
-  auto isContMask = mstate.parse(mask, loc, rewriter);
-
-  if (isContMask.failed()) {
-    mstate.eraseInsertedOps(op, rewriter);
-    return rewriter.notifyMatchFailure(
-        op, "Cannot lower continuous masked selects");
-  }
-
-  // 2. Slice out the masked part of true tensor
-  auto trueTensor = op.getTrueValue();
-  auto trueSlice = mstate.getExtractSlice(trueTensor, loc, rewriter);
-
-  // 3. Insert out the sliced true tensor into false tensor
-  auto falseTensor = op.getFalseValue();
-  auto result = mstate.getInsertSlice(trueSlice, falseTensor, loc, rewriter);
-
-  rewriter.replaceOp(op, result);
-  return success();
-}
-
 /*
  * Move tt.bitcast to a previous location if tt.bitcast is not directly applied
  * on function arguments

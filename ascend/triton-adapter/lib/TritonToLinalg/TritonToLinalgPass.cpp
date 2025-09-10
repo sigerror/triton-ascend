@@ -430,7 +430,6 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::StoreOp>,
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicRMWOp>,
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicCASOp>>(patterns.getContext());
-    patterns.add<TTOpConverters::SelectCanonicalizer>(patterns.getContext());
     patterns.add<TTOpConverters::BitcastCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::ScalarStoreCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::ScalarAtomicRMWCanonicalizer>(patterns.getContext());

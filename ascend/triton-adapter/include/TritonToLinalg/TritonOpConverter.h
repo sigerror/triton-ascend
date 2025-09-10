@@ -44,17 +44,6 @@ public:
 };
 
 /*
- * Rewrite arith.select with contiguouse mask to
- * tensor.extract_slice/insert_slice.
- */
-class SelectCanonicalizer : public OpRewritePattern<arith::SelectOp> {
-public:
-  using OpRewritePattern<arith::SelectOp>::OpRewritePattern;
-  LogicalResult matchAndRewrite(arith::SelectOp op,
-                                PatternRewriter &rewriter) const override;
-};
-
-/*
  * Move tt.bitcast to a previous location if tt.bitcast is not directly applied
  * on function arguments
  */

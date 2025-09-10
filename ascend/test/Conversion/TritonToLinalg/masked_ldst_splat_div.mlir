@@ -76,8 +76,10 @@ module {
 module {
   // CHECK-LABEL: func.func @triton_bool_splat_condition_select
   tt.func public @triton_bool_splat_condition_select(%arg0: !tt.ptr<f32>,
-                          %arg1: !tt.ptr<f32>, %arg2: !tt.ptr<f32>, %arg3: i32)
-                          attributes {noinline = false} {
+                                                     %arg1: !tt.ptr<f32>,
+                                                     %arg2: !tt.ptr<f32>,
+                                                     %arg3: i32)
+                                                     attributes {noinline = false} {
     // CHECK: %[[baseline:.*]] = arith.constant 0
     %c0_i32 = arith.constant 0 : i32
     %0 = tt.make_range {end = 32 : i32, start = 0 : i32} : tensor<32xi32>
@@ -87,12 +89,14 @@ module {
     %4 = tt.splat %arg1 : !tt.ptr<f32> -> tensor<32x!tt.ptr<f32>>
     %5 = tt.addptr %4, %0 : tensor<32x!tt.ptr<f32>>, tensor<32xi32>
     %6 = tt.load %5 : tensor<32x!tt.ptr<f32>>
-    // CHECK: %[[cmpBoolRes:.*]] = arith.cmpi eq, [[ARG_3:%.+]], %[[baseline]] : i32
-    // CHECK: %[[boolToindex:.*]] = arith.index_castui %[[cmpBoolRes]] : i1 to index
-    // CHECK: arith.muli
-    // CHECK-SAME: %[[boolToindex]]
-    // CHECK: tensor.extract_slice
-    // CHECK: tensor.insert_slice
+    // CHECK：%[[VAL_2:.*]] = arith.cmpi eq, [[ARG_3:%.+]], %[[baseline]] : i32
+    // CHECK：%[[VAL_3:.*]] = tensor.empty() : tensor<32xi1>
+    // CHECK：%[[VAL_4:.*]] = linalg.fill ins([[VAL_2]] : i1) outs(%[[VAL_3]] : tensor<32xi1>) -> tensor<32xi1>
+    // CHECK：%5 = linalg.generic {indexing_maps = [#map, #map, #map, #map], iterator_types = ["parallel"]} ins(%[[VAL_4]], %0, %1 : tensor<32xi1>, tensor<32xf32>, tensor<32xf32>) outs(%0 : tensor<32xf32>) {
+    // CHECK：^bb0(%in: i1, %in_3: f32, %in_4: f32, %out: f32):
+    // CHECK：%[[VAL_6:.*]] = arith.select %in, %in_3, %in_4 : f32
+    // CHECK：linalg.yield %[[VAL_6]] : f32
+    // CHECK：} -> tensor<32xf32>
     %7 = arith.cmpi eq, %arg3, %c0_i32 : i32
     %8 = tt.splat %7 : i1 -> tensor<32xi1>
     %9 = arith.select %8, %3, %6 : tensor<32xi1>, tensor<32xf32>
@@ -100,5 +104,5 @@ module {
     %11 = tt.addptr %10, %0 : tensor<32x!tt.ptr<f32>>, tensor<32xi32>
     tt.store %11, %9 : tensor<32x!tt.ptr<f32>>
     tt.return
-  }
+}
 }

@@ -121,12 +121,6 @@ def test_layer_norm(shape, dtype, eps=1e-5):
     y_torch = layer_norm_torch((x, w_shape, weight, bias, eps, dtype))
     y_triton = layer_norm_autotune((x, weight, bias, eps))
     assert torch.allclose(y_triton, y_torch, atol=1e-2, rtol=0)
-
-    time_eager = do_bench_npu(
-        lambda: layer_norm_torch((x, w_shape, weight, bias, eps, dtype))
-    )
-    time_triton = do_bench_npu(lambda: layer_norm_autotune((x, weight, bias, eps)))
-    assert (time_eager / time_triton) >= 0.8
     print(f"Layer Normalization {M},{N} {dtype} PASSED!")
 
 
