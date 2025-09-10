@@ -282,6 +282,14 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
   });
   // Post-process
   funcOp.walk([&](Operation *op) {
+    auto propagateCondFn = [](Operation *curOp) {
+      for (auto res: curOp->getResults()) {
+        auto tensorType = dyn_cast<RankedTensorType>(res.getType());
+        if (tensorType && isa<triton::PointerType>(tensorType.getElementType()))
+          return false;
+      }
+      return isMetaUse(curOp);
+    };
     // Handle indirect load case.
     // For example, load(1st) -> computeOp -> load(2nd).
     // The first load is IndirectLoadInterfaceOp.
@@ -331,8 +339,8 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
         auto stopOp = *it;
         traverseBackwardUpdateOperandChainIf(
             stopOp,
-            [stopOp](Operation *curOp) {
-              return isMetaUse(curOp) && !isMixUse(curOp) && curOp != stopOp;
+            [stopOp, &propagateCondFn](Operation *curOp) {
+              return propagateCondFn(curOp) && curOp != stopOp;
             },
             [](OpBuilder &b, Operation *op) {
               op->setAttr("MixUse", UnitAttr::get(op->getContext()));
@@ -340,7 +348,7 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
       }
       LLVM_DEBUG({
         os << "[UseAnalysis] After traceback of stopOp, funcOp is " << *funcOp
-           << "\n";
+          << "\n";
       });
       // Modify this op.
       op->setAttr("MixUse", UnitAttr::get(op->getContext()));
@@ -349,8 +357,8 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
       op->removeAttr(ConverterUtils::discreteAttrName);
       traverseBackwardUpdateOperandChainIf(
           op,
-          [op](Operation *curOp) {
-            return isMetaUse(curOp) && !isMixUse(curOp) && curOp != op;
+          [op, &propagateCondFn](Operation *curOp) {
+            return propagateCondFn(curOp) && curOp != op;
           },
           [](OpBuilder &b, Operation *op) {
             op->setAttr("MixUse", UnitAttr::get(op->getContext()));

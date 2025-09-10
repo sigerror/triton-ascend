@@ -61,7 +61,8 @@ public:
   using OpRewritePattern<MemAccOpTy>::OpRewritePattern;
 
   explicit UnstructuredMemAccessConverter(
-      MLIRContext *context, const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
+      MLIRContext *context,
+      const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
   LogicalResult matchAndRewrite(MemAccOpTy op,
                                 PatternRewriter &rewriter) const override;
 
@@ -70,7 +71,12 @@ private:
                         PatternRewriter &rewriter) const;
   template <typename U = MemAccOpTy>
   typename std::enable_if<std::is_same_v<U, triton::LoadOp>, void>::type
-  splatAndLoadScenario(MemAccOpTy op, int rank, PatternRewriter &rewriter) const;
+  splatAndLoadScenario(MemAccOpTy op, int rank,
+                       PatternRewriter &rewriter) const;
+
+  MemAccOpTy createMemAccOp(MemAccOpTy op, Value ptrToAccess, Location loc,
+                            ArrayRef<Value> iterIdx,
+                            PatternRewriter &rewriter) const;
 
   const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap;
 };

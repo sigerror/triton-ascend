@@ -390,7 +390,8 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
   // Well, linalg structure op wouldn't support mixed tensor/buffer semantics
   // any more in latest LLVM(triton LLVM dependency has involed this), so we
   // need to convert tensor to buffer early.
-  auto dstType = dstMemref.getType();
+  auto dstOriType = cast<MemRefType>(dstMemref.getType());
+  MemRefType dstType = MemRefType::get(dstOriType.getShape(), dstOriType.getElementType());
   Value inputMemref =
       rewriter.create<bufferization::ToMemrefOp>(loc, dstType, val);
 
@@ -555,7 +556,8 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
   // Well, linalg structure op wouldn't support mixed tensor/buffer semantics
   // any more in latest LLVM(triton LLVM dependency has involed this), so we
   // need to convert tensor to buffer early.
-  auto dstType = dstMemref.getType();
+  auto dstOriType = cast<MemRefType>(dstMemref.getType());
+  MemRefType dstType = MemRefType::get(dstOriType.getShape(), dstOriType.getElementType());
   Value inputMemref =
       rewriter.create<bufferization::ToMemrefOp>(loc, dstType, val);
 

@@ -696,12 +696,6 @@ LogicalResult
 SplatConverter::matchAndRewrite(triton::SplatOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const {
   auto loc = op.getLoc();
-  if (isa<triton::PointerType>(op.getSrc().getType())) {
-    rewriter.modifyOpInPlace(op, [&]() {
-      op->setAttr("MetaUse", rewriter.getUnitAttr());
-    });
-    return success();
-  }
   auto init = rewriter.create<tensor::EmptyOp>(loc, op.getType().getShape(),
                                                op.getType().getElementType());
   rewriter.replaceOpWithNewOp<linalg::FillOp>(op, ValueRange{adaptor.getSrc()},
