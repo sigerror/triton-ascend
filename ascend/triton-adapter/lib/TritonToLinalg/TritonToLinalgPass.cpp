@@ -154,7 +154,10 @@ void TritonToLinalgPass::addTensorKindToArguments(OpTy op, triton::FuncOp func, 
 LogicalResult
 TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
                                                     OpBuilder &builder) {
-  assert(isa<func::FuncOp>(funcOp));
+  if (!isa<func::FuncOp>(funcOp)) {
+    funcOp->emitError("convertMultipleBlockControlFlow can only process func::FuncOp!");
+    return failure();
+  }
 
   SmallVector<Operation *> candidate;
   SmallVector<Block *> eraseBlocks;
@@ -162,8 +165,12 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
     auto curTerminator = block.getTerminator();
     if (isa<cf::CondBranchOp>(curTerminator))
       candidate.push_back(curTerminator);
-    else if (isa<triton::ReturnOp>(curTerminator))
-      assert(candidate.size() > 0);
+    else if (isa<triton::ReturnOp>(curTerminator)){
+      if(candidate.empty()){
+        curTerminator->emitError("funcOp has more than one Block but got a early 'tt.return' Op.");
+        return failure();
+      }
+    }
     else
       return failure();
 
@@ -171,7 +178,10 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
       eraseBlocks.push_back(&block);
   }
 
-  assert(!candidate.empty());
+  if(candidate.empty()){
+    funcOp->emitError("funcOp has more than one Block but no candidate Terminator was found!");
+    return failure();
+  }
 
   llvm::BitVector visitFlag(candidate.size(), false);
 
@@ -180,7 +190,10 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
       [&](Operation *op, Operation *insertPosOp) -> void {
     auto condBranchOp = dyn_cast_if_present<cf::CondBranchOp>(op);
     auto iter = llvm::find(candidate, condBranchOp);
-    assert(condBranchOp && iter != candidate.end());
+    if (!(condBranchOp && iter != candidate.end())) {
+      op->emitError("convertToSCF must process with condBranchOp in candidates!");
+      return;
+    }
     visitFlag.set(iter - candidate.begin());
 
     OpBuilder::InsertionGuard guard(builder);
@@ -201,7 +214,10 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
 
           auto blockTerm = condBranchOp.getTrueDest()->getTerminator();
           if (isa<cf::CondBranchOp>(blockTerm)) {
-            assert(!movedOps.empty());
+            if (movedOps.empty()) {
+              blockTerm->emitError("movedOps can not be empty before entering convertToSCF!");
+              return;
+            }
             convertToSCF(blockTerm, movedOps.back());
           }
 
@@ -219,7 +235,10 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
 
           auto blockTerm = condBranchOp.getFalseDest()->getTerminator();
           if (isa<cf::CondBranchOp>(blockTerm)) {
-            assert(!movedOps.empty());
+            if (movedOps.empty()) {
+              blockTerm->emitError("movedOps can not be empty before entering convertToSCF!");
+              return;
+            }
             convertToSCF(blockTerm, movedOps.back());
           }
 
