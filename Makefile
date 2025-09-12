@@ -16,8 +16,8 @@ LLVM_COMMIT_SHORT := $(shell cut -c1-8 llvm-hash.txt)
 LLVM_INSTALL_DIR := llvm-$(LLVM_COMMIT_SHORT)-$(OS_ID)-$(ARCH_NAME)
 LLVM_TARBALL := $(LLVM_INSTALL_DIR).tar.gz
 SUDO := $(shell command -v sudo >/dev/null 2>&1 && echo sudo || echo)
-TOOLKIT_URL  := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/Milan-ASL/Milan-ASL%20V100R001C22B800TP026/Ascend-cann-toolkit_8.2.RC1.alpha002_linux-$(ARCH).run
-KERNEL_URL   := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/Milan-ASL/Milan-ASL%20V100R001C22B800TP026/Ascend-cann-kernels-910b_8.2.RC1.alpha002_linux-$(ARCH).run
+TOOLKIT_URL  := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-toolkit_8.2.RC1_linux-$(ARCH).run
+KERNEL_URL   := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-kernels-910b_8.2.RC1_linux-$(ARCH).run
 CANN_TOOLKIT := Ascend-cann-toolkit.run
 CANN_KERNELS := Ascend-cann-kernels.run
 DEPS_STAMP := .deps_installed
@@ -158,7 +158,7 @@ llvm: ## Conditional build and upload of LLVM
 	@if [ -z "$(BASE_COMMIT)" ]; then \
 		echo "BASE_COMMIT not set, forcing LLVM upload..."; \
 		$(MAKE) upload-llvm; \
-	elif git diff --name-only $(BASE_COMMIT)..HEAD | grep -q '^llvm-hash.txt$$'; then \
+	elif [ -n "$$filenames" ] && echo "$$filenames" | grep -q '\bllvm-hash\.txt\b'; then \
 		echo "llvm-hash.txt changed. Uploading LLVM..."; \
 		$(MAKE) upload-llvm; \
 	else \
@@ -171,7 +171,7 @@ llvm: ## Conditional build and upload of LLVM
 # ======================
 .PHONY: test-unit
 test-unit: ## Run unit tests
-	cd ascend/examples/pytest_ut && $(PYTEST) -s -v -n $(NUM_PROCS) --dist=load
+	cd ascend/examples/pytest_ut && $(PYTEST) -s -v -n $(NUM_PROCS) --dist=loadfile
 
 .PHONY: test-inductor
 test-inductor: ## Run inductor tests
@@ -196,7 +196,7 @@ image: ## Build dev Docker image if relevant files changed
 	if [ -z "$(BASE_COMMIT)" ]; then \
 		echo "BASE_COMMIT not set. Forcing Docker image build..."; \
 		BUILD_IMAGE=1; \
-	elif git diff --name-only $(BASE_COMMIT)..HEAD | grep -Eq '^(docker/Dockerfile|Makefile|requirements(_dev)?\.txt)$$'; then \
+	elif [ -n "$$filenames" ] && echo "$$filenames" | grep -Eq '\b(docker/Dockerfile|Makefile|requirements(_dev)?\.txt)\b'; then \
 		echo "Relevant files changed. Building Docker image..."; \
 		BUILD_IMAGE=1; \
 	else \

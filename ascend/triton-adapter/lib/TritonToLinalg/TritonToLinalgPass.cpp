@@ -616,12 +616,12 @@ void TritonToLinalgPass::runOnOperation() {
 
   RewritePatternSet canonicalizerPatterns(&getContext());
 
-  // 0. 首先执行 tensor descriptor 操作转换
+  // Execute tensor descriptor operations conversion
   if (failed(processDescriptorOperations(moduleOp))) {
     signalPassFailure();
   }
 
-  // 遍历所有的triton::FuncOp，添加tensor_kind属性
+  // Traverse all the triton::FuncOp to add tensor_kind attribute
   moduleOp.walk([&](triton::FuncOp func) {
     func.walk([&](triton::LoadOp loadOp) {
       addTensorKindToArguments(loadOp, func, TensorKind::INPUT);

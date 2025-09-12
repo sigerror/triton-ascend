@@ -9,3 +9,5 @@ pytest
 pytest-xdist
 twine
 wheel
+pandas
+setuptools
