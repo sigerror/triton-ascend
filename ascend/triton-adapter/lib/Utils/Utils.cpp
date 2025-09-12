@@ -377,6 +377,7 @@ findFirstMatchingOperandDef(mlir::Operation *rootOp,
 
 void traverseBackwardUpdateOperandChainIf(
     Operation *op, std::function<bool(Operation *)> conditionFn,
+    std::function<bool(Operation *)> stopFn,
     std::function<void(OpBuilder &, Operation *)> actionFn, OpBuilder &builder,
     DenseSet<Operation *> &handledOperation) {
 
@@ -385,9 +386,11 @@ void traverseBackwardUpdateOperandChainIf(
 
   handledOperation.insert(op);
 
-  if (conditionFn(op)) {
+  if (stopFn(op))
+    return;
+
+  if (conditionFn(op))
     actionFn(builder, op);
-  }
 
   DenseSet<Value> handledOperand;
 
@@ -396,7 +399,7 @@ void traverseBackwardUpdateOperandChainIf(
       return;
     handledOperand.insert(operand);
     if (Operation *defOp = operand.getDefiningOp()) {
-      traverseBackwardUpdateOperandChainIf(defOp, conditionFn, actionFn,
+      traverseBackwardUpdateOperandChainIf(defOp, conditionFn, stopFn, actionFn,
                                            builder, handledOperation);
     } else {
       auto blockArgument = cast<BlockArgument>(operand);
@@ -427,12 +430,13 @@ void traverseBackwardUpdateOperandChainIf(
 // Note: rootOp will also be processed.
 void traverseBackwardUpdateOperandChainIf(
     Operation *rootOp, std::function<bool(Operation *)> conditionFn,
+    std::function<bool(Operation *)> stopFn,
     std::function<void(OpBuilder &, Operation *)> actionFn) {
 
   OpBuilder builder(rootOp->getContext());
   DenseSet<Operation *> handledOperation;
 
-  traverseBackwardUpdateOperandChainIf(rootOp, conditionFn, actionFn, builder,
+  traverseBackwardUpdateOperandChainIf(rootOp, conditionFn, stopFn, actionFn, builder,
                                        handledOperation);
 }
 

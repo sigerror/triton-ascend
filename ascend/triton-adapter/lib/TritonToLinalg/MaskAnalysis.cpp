@@ -27,15 +27,9 @@ LogicalResult MaskState::parse(Value operand, const Location &loc,
     return parseIntScalar(operand, loc, builder);
   }
   auto definingOp = operand.getDefiningOp();
-  if (!definingOp) {
-    auto blockArgument = cast<BlockArgument>(operand);
-    auto argNum = blockArgument.getArgNumber();
-    assert(argNum > 0 && "Must be iter args to be handled");
-    auto parentForOp =
-        cast<scf::ForOp>(blockArgument.getOwner()->getParentOp());
-    auto iterArg = parentForOp.getInitArgs()[argNum - 1];
-    return this->parse(iterArg, loc, builder);
-  }
+  if (!definingOp)
+    return failure();
+
   LLVM_DEBUG({
     llvm::dbgs() << "[MaskState]==> parse op\n"
                  << *definingOp << "\n[MaskState]<==\n";

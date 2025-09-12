@@ -63,11 +63,13 @@ findFirstMatchingOperandDef(mlir::Operation *rootOp,
 
 void traverseBackwardUpdateOperandChainIf(
     Operation *op, std::function<bool(Operation *)> conditionFn,
+    std::function<bool(Operation *)> stopFn,
     std::function<void(OpBuilder &, Operation *)> actionFn, OpBuilder &builder,
     DenseSet<Operation *> &handledOperation);
 
 void traverseBackwardUpdateOperandChainIf(
     Operation *rootOp, std::function<bool(Operation *)> conditionFn,
+    std::function<bool(Operation *)> stopFn,
     std::function<void(OpBuilder &, Operation *)> actionFn);
 
 void traverseForwardUpdateUserChainIf(

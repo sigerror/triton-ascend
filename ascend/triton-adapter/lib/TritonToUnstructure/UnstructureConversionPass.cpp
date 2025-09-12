@@ -237,11 +237,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     }
     offsets.push_back(forOp.getInductionVar());
     iterIdx.push_back(forOp.getInductionVar());
-    if (!isExtractedAttrInserted) {
-      forOp->setAttr("ExtractedLoadOrStore",
-                     UnitAttr::get(rewriter.getContext()));
-      isExtractedAttrInserted = true;
-    }
+    forOp->setAttr("ExtractedLoadOrStore",
+                    UnitAttr::get(rewriter.getContext()));
     rewriter.setInsertionPointToStart(forOp.getBody());
   }
 
@@ -322,7 +319,6 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
   if (!loopResults)
     return;
   for (OpResult res : *loopResults) {
-    // FIXME: support preparse for all tensors
     if (auto tensorType = dyn_cast<RankedTensorType>(res.getType())) {
       auto loc = op.getLoc();
       LLVM_DEBUG({
@@ -372,8 +368,8 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
       LLVM_DEBUG({
         auto &os = llvm::dbgs();
         os << "Pre-parsing result of\n" << regionIterArg << "\nis ";
-        for (size_t i = 0; i < resOffset.size(); i++)
-          os << resOffset[i];
+        for (size_t i = 0; i < regionIterArgOffset.size(); i++)
+          os << regionIterArgOffset[i];
         os << '\n';
       });
     }
@@ -394,13 +390,18 @@ void TritonToUnstructurePass::runOnOperation() {
   ModuleOp moduleOp = getOperation();
   MLIRContext *ctx = &getContext();
 
-  moduleOp->walk([this](scf::ForOp op) { runPreparse(op); });
-  moduleOp->walk([this](scf::WhileOp op) { runPreparse(op); });
-
-  moduleOp->walk([this](triton::LoadOp op) { runParse(op); });
-  moduleOp->walk([this](triton::StoreOp op) { runParse(op); });
-  moduleOp->walk([this](triton::AtomicRMWOp op) { runParse(op); });
-  moduleOp->walk([this](triton::AtomicCASOp op) { runParse(op); });
+  moduleOp->walk([this](LoopLikeOpInterface op) { runPreparse(op); });
+  moduleOp->walk([this](Operation *op) {
+    if (auto loadOp = dyn_cast<triton::LoadOp>(op)) {
+      runParse(loadOp);
+    } else if (auto storeOp = dyn_cast<triton::StoreOp>(op)) {
+      runParse(storeOp);
+    } else if (auto atomicRMWOp = dyn_cast<triton::AtomicRMWOp>(op)) {
+      runParse(atomicRMWOp);
+    } else if (auto atomicCASOp = dyn_cast<triton::AtomicCASOp>(op)) {
+      runParse(atomicCASOp);
+    }
+  });
 
   RewritePatternSet patterns(ctx);
 

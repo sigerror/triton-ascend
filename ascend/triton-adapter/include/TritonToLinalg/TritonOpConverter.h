@@ -403,13 +403,22 @@ public:
                   ConversionPatternRewriter &rewriter) const override;
 };
 
-class LoopConverter : public OpConversionPattern<scf::ForOp> {
+template <typename LoopOpTy, typename =
+    std::enable_if_t<std::is_same_v<LoopOpTy, scf::ForOp> ||
+                     std::is_same_v<LoopOpTy, scf::WhileOp>>>
+class LoopConverter : public OpConversionPattern<LoopOpTy> {
 public:
-  using OpConversionPattern<scf::ForOp>::OpConversionPattern;
+  using OpConversionPattern<LoopOpTy>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override;
+  matchAndRewrite(LoopOpTy op, typename OpConversionPattern<LoopOpTy>::OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override {
+    llvm::SmallDenseMap<Value, BlockData> known;
+
+    op->removeAttr("UnhandledLoopOp");
+    BlockDataParser::rewriteLoopOp(op, rewriter, known);
+    return success();
+  }
 };
 
 class AdvanceConverter : public OpConversionPattern<triton::AdvanceOp> {

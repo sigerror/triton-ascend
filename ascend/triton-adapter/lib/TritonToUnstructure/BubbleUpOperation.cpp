@@ -21,7 +21,7 @@ BubbleUpExtract::matchAndRewrite(tensor::ExtractOp op,
       SmallVector<Value>(op.getIndices().begin(), op.getIndices().end());
   auto loc = op.getLoc();
 
-  if (!parentOp || !op->hasAttr(ConverterUtils::discreteAttrName) ||
+  if (!parentOp ||
       (!enableAggressiveMode && !parentOp->hasOneUse())) {
     return failure();
   }

@@ -542,7 +542,8 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::JoinConverter>(patterns.getContext());
   patterns.add<TTOpConverters::CatConverter>(patterns.getContext());
   patterns.add<TTOpConverters::BitcastConverter>(patterns.getContext());
-  patterns.add<TTOpConverters::LoopConverter>(patterns.getContext());
+  patterns.add<TTOpConverters::LoopConverter<scf::ForOp>>(patterns.getContext());
+  patterns.add<TTOpConverters::LoopConverter<scf::WhileOp>>(patterns.getContext());
   patterns.add<TTOpConverters::YieldConverter>(patterns.getContext());
   patterns.add<TTOpConverters::GatherConverter>(patterns.getContext());
 
@@ -660,7 +661,13 @@ void TritonToLinalgPass::runOnOperation() {
   this->addDynamicLegal(target, tritonTypeConverter);
 
   // 4：标记必须转换的op，包括tt.scan
+  auto loopOpLegalFn = [](LoopLikeOpInterface op) {
+    return !op.getOperation()->hasAttr("UnhandledLoopOp");
+  };
+
   target.addIllegalOp<triton::ScanOp>();
+  target.addDynamicallyLegalOp<scf::ForOp>(loopOpLegalFn);
+  target.addDynamicallyLegalOp<scf::WhileOp>(loopOpLegalFn);
 
   // 5.对非法Op注册Converter
   this->populateTritonToLinalgConversionPatterns(tritonTypeConverter, patterns,
@@ -670,6 +677,22 @@ void TritonToLinalgPass::runOnOperation() {
   for (auto func : getOperation().getOps<triton::FuncOp>()) {
     addProgramInfo(func, globalKernel);
   }
+
+  moduleOp.walk([this](LoopLikeOpInterface loopOp) {
+    auto *op = loopOp.getOperation();
+    if (!op->hasAttr("ExtractedLoadOrStore"))
+      op->setAttr("UnhandledLoopOp", UnitAttr::get(op->getContext()));
+
+    for (auto res: loopOp->getResults()) {
+      if (auto tensorType = dyn_cast<RankedTensorType>(res.getType());
+          tensorType && !isa<triton::PointerType>(tensorType.getElementType())) {
+        IRRewriter rewriter(op->getContext());
+        rewriter.setInsertionPointAfter(op);
+        auto newVal = rewriter.create<tensor::CastOp>(op->getLoc(), res.getType(), res);
+        rewriter.replaceAllUsesExcept(res, newVal, newVal);
+      }
+    }
+  });
 
   // 7.做Op转换
   if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {

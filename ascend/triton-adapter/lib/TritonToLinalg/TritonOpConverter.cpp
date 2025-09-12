@@ -81,15 +81,6 @@ YieldConverter::matchAndRewrite(scf::YieldOp op, OpAdaptor adaptor,
 }
 
 LogicalResult
-LoopConverter::matchAndRewrite(scf::ForOp op, OpAdaptor adaptor,
-                               ConversionPatternRewriter &rewriter) const {
-  llvm::SmallDenseMap<Value, BlockData> known;
-
-  BlockDataParser::rewriteForOp(op, rewriter, known);
-  return success();
-}
-
-LogicalResult
 AdvanceConverter::matchAndRewrite(triton::AdvanceOp op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const {
   llvm::SmallDenseMap<Value, BlockData> known;

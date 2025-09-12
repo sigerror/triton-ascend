@@ -223,13 +223,13 @@ public:
 
   static void
   rewriteYieldOp(scf::YieldOp op, ConversionPatternRewriter &rewriter,
-                 const std::set<int> blockArgIdxSet,
+                 const llvm::SmallDenseSet<size_t> &blockArgIdxSet, ArrayRef<int64_t> iterArgIdxMap,
                  const llvm::SmallDenseMap<Value, BlockData> &known);
 
-  /// @param known is mainly designed for `rewriteFor`, and is just non-const in
-  /// `rewriteFor`, `rewriteAddPtr` and `rewriteAdvance`
-  static void rewriteForOp(scf::ForOp op, ConversionPatternRewriter &rewriter,
-                           llvm::SmallDenseMap<Value, BlockData> &known);
+  /// @param known is mainly designed for `rewriteLoop`, and is just non-const in
+  /// `rewriteLoop`, `rewriteAddPtr` and `rewriteAdvance`
+  static void rewriteLoopOp(LoopLikeOpInterface op, ConversionPatternRewriter &rewriter,
+                            llvm::SmallDenseMap<Value, BlockData> &known);
 
   static void rewriteAddPtrToUnstrucMemAcc(triton::AddPtrOp op,
                                            triton::AddPtrOp::Adaptor &adaptor,
