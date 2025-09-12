@@ -57,20 +57,8 @@ bool isaPermutedMemRefType(MemRefType memRefType) {
   switch (ptrStrides.size()) {
     case 0: return false;
     case 1: return false;
-    case 2: {
-      return ptrStrides[0]==1 && ptrStrides[1]!=1;
-    }
     default: {
-      for (auto stride: ptrStrides) 
-        if (stride == ShapedType::kDynamic)
-          return false;
-
-      int last = INT_MAX;
-      for (auto stride: ptrStrides) {
-        if (last < stride)return true;
-        last=stride;
-      }
-      return false;
+      return ptrStrides[ptrStrides.size()-1] != 1;
     }
   }
 }
