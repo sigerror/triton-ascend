@@ -247,8 +247,8 @@ def do_bench_npu(fn, warmup=5, active=30, prof_dir=None, keep_res=False):
         for _ in range(total):
             fn()
             prof.step()
+            torch.npu.synchronize()
 
-    torch.npu.synchronize()
     time = collect_single(torch_path)
 
     if not keep_res:
