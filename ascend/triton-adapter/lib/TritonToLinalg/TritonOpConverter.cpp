@@ -442,7 +442,7 @@ void rewriteUserWithNewOrder(mlir::OpOperand *use, PatternRewriter &rewriter, ll
         blkShapeI64, loadResShapedTy.getElementType());
     auto newLoadOp = rewriter.create<triton::LoadOp>(
         loc, newLoadTy, loadOp->getOperands(), loadOp->getAttrs());
-    newLoadOp->setAttr("GeneratedFromMakeTensorPtr", UnitAttr::get(rewriter.getContext()));
+    newLoadOp->setAttr("GeneratedByMakeTensorPtr", UnitAttr::get(rewriter.getContext()));
     rewriter.replaceOp(loadOp, newLoadOp);
     // load contiguous data then permute. thus the permute order is as
     // follows.
@@ -508,6 +508,37 @@ void rewriteUserWithNewOrder(mlir::OpOperand *use, PatternRewriter &rewriter, ll
   }
 }
 
+void markLoadUsers(mlir::OpOperand *use, PatternRewriter &rewriter)
+{
+  Operation *user = use->getOwner();
+  if (auto loadOp = dyn_cast<triton::LoadOp>(user)) {
+    loadOp->setAttr("GeneratedByMakeTensorPtr", UnitAttr::get(rewriter.getContext()));
+  } else if (auto storeOp = dyn_cast<triton::StoreOp>(user)) {
+    return;
+  } else if (auto advanceOp = dyn_cast<triton::AdvanceOp>(user)) {
+    SmallVector<OpOperand *> resUses;
+    for (auto &use: advanceOp->getUses())
+      resUses.push_back(&use);
+    for (auto resUse : resUses)
+      markLoadUsers(resUse, rewriter);
+  } else if (auto loopOp = dyn_cast<LoopLikeOpInterface>(user)) {
+    auto initArg = use->get();
+    auto iterArg = loopOp.getTiedLoopRegionIterArg(use);
+    auto resultValue = loopOp.getTiedLoopResult(use);
+    iterArg.setType(initArg.getType());
+    resultValue.setType(initArg.getType());
+    for (auto &argUse : iterArg.getUses())
+      markLoadUsers(&argUse, rewriter);
+    for (auto &resUse : resultValue.getUses())
+      markLoadUsers(&resUse, rewriter);
+  } else if (isa<scf::YieldOp>(user)) {
+    return;
+  } else {
+    llvm_unreachable("[MakeTensorPtrCanonicalizer] tt.make_tensor_ptr's result is "
+                     "not used by load/store/advance op");
+  }
+}
+
 LogicalResult
 MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
                                             PatternRewriter &rewriter) const {
@@ -526,10 +557,6 @@ MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
       break;
     }
   }
-  if (!isPermuted) {
-    return rewriter.notifyMatchFailure(
-        op, "make_tensor_ptr's order is contiguous.");
-  }
 
   auto loc = op.getLoc();
   auto base = op.getBase();
@@ -541,6 +568,13 @@ MakeTensorPtrCanonicalizer::matchAndRewrite(triton::MakeTensorPtrOp op,
 
   for (auto &use: result.getUses())
     opUses.push_back(&use);
+  for (auto use : opUses)
+    markLoadUsers(use, rewriter);
+
+  if (!isPermuted) {
+    return rewriter.notifyMatchFailure(
+        op, "make_tensor_ptr's order is contiguous.");
+  }
 
   llvm::SmallVector<int32_t, 8> blkShapeI32;
   llvm::SmallVector<int64_t, 8> blkShapeI64;

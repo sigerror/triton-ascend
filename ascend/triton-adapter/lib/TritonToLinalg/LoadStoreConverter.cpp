@@ -219,7 +219,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     return rewriter.notifyMatchFailure(
         op, "LoadOp expects a memref, not a memref of pointers");
   }
-  bool mayBePermuted = (!op->hasAttr("GeneratedFromMakeTensorPtr")) && mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
+  bool mayBePermuted = (!op->hasAttr("GeneratedByMakeTensorPtr")) && mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
   auto memRefShape = memRefType.getShape();
   auto memRefElementType = memRefType.getElementType();
 
