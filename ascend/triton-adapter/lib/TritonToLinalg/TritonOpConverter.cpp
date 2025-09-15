@@ -442,6 +442,7 @@ void rewriteUserWithNewOrder(mlir::OpOperand *use, PatternRewriter &rewriter, ll
         blkShapeI64, loadResShapedTy.getElementType());
     auto newLoadOp = rewriter.create<triton::LoadOp>(
         loc, newLoadTy, loadOp->getOperands(), loadOp->getAttrs());
+    newLoadOp->setAttr("GeneratedFromMakeTensorPtr", UnitAttr::get(rewriter.getContext()));
     rewriter.replaceOp(loadOp, newLoadOp);
     // load contiguous data then permute. thus the permute order is as
     // follows.

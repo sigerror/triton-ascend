@@ -63,13 +63,13 @@ AddPtrConverter::matchAndRewrite(triton::AddPtrOp op, OpAdaptor adaptor,
 
 LogicalResult LoadConverter::toTensorAndReplace(
     triton::LoadOp &op, RankedTensorType &tensorType, memref::AllocOp &allocOp,
-    bool isPermuted, const Location &loc, ConversionPatternRewriter &rewriter) const {
+    bool mayBePermuted, const Location &loc, ConversionPatternRewriter &rewriter) const {
   
   Value loadedTensor = rewriter.create<bufferization::ToTensorOp>(
       loc, tensorType, allocOp, true, true);
-  if(isPermuted){
+  if(mayBePermuted){
     auto markOp = rewriter.create<annotation::MarkOp>(loc, loadedTensor);
-    markOp->setAttr("ToBeTransposed", UnitAttr::get(rewriter.getContext()));
+    markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
   }
   rewriter.replaceOp(op, loadedTensor);
   return success();
@@ -219,7 +219,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     return rewriter.notifyMatchFailure(
         op, "LoadOp expects a memref, not a memref of pointers");
   }
-  bool isPermuted = mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
+  bool mayBePermuted = (!op->hasAttr("GeneratedFromMakeTensorPtr")) && mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
   auto memRefShape = memRefType.getShape();
   auto memRefElementType = memRefType.getElementType();
 
@@ -255,8 +255,11 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     auto dstSubview = mlir::ConverterUtils::makeSubViewOp(
         allocOp, boundarySizes, loc, rewriter);
     rewriter.create<memref::CopyOp>(loc, srcSubView, dstSubview);
-
-    return this->toTensorAndReplace(op, tensorType, allocOp, isPermuted, loc, rewriter);
+    if (mayBePermuted) {
+      auto markOp = rewriter.create<annotation::MarkOp>(loc, dstSubview);
+      markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
+    }
+    return this->toTensorAndReplace(op, tensorType, allocOp, mayBePermuted, loc, rewriter);
   }
 
   if (!mask) {
@@ -265,6 +268,8 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
             ptr.getDefiningOp<UnrealizedConversionCastOp>()) {
       // TODO : not support handle  associate with "module"
       // hint : can be handled in Linearize
+      op->emitError("meeting unexpected UCC in LoadConverter!");
+      return failure();
     } else {
       // If last dimension stride equals 2, try deinterleave optimization.
       auto [ptrStrides, ptrOffsets] = getStridesAndOffset(memRefType);
@@ -274,9 +279,13 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
         return success();
       }
       rewriter.create<memref::CopyOp>(loc, ptr, allocOp);
+      if (mayBePermuted) {
+        auto markOp = rewriter.create<annotation::MarkOp>(loc, allocOp);
+        markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
+      }
     }
 
-    return this->toTensorAndReplace(op, tensorType, allocOp, isPermuted, loc, rewriter);
+    return this->toTensorAndReplace(op, tensorType, allocOp, mayBePermuted, loc, rewriter);
   }
 
   MaskState mstate;
@@ -318,12 +327,18 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
   if (auto unrealizedCastOp = ptr.getDefiningOp<UnrealizedConversionCastOp>()) {
     // TODO : not support handle  associate with "module"
     // hint : can be handled in Linearize
+    op->emitError("meeting unexpected UCC in LoadConverter!");
+    return failure();
   } else {
     memref::SubViewOp srcSubView = mstate.getSubview(ptr, loc, rewriter);
     memref::SubViewOp dstSubView = mstate.getSubview(allocOp, loc, rewriter);
     rewriter.create<memref::CopyOp>(loc, srcSubView, dstSubView);
+    if (mayBePermuted) {
+      auto markOp = rewriter.create<annotation::MarkOp>(loc, dstSubView);
+      markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
+    }
   }
-  return this->toTensorAndReplace(op, tensorType, allocOp, isPermuted, loc, rewriter);
+  return this->toTensorAndReplace(op, tensorType, allocOp, mayBePermuted, loc, rewriter);
 }
 
 AtomicRMWConverter::AtomicRMWConverter(MLIRContext *context)

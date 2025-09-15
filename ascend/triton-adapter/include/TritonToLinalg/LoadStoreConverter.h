@@ -35,7 +35,7 @@ private:
   LogicalResult toTensorAndReplace(triton::LoadOp &op,
                                    RankedTensorType &tensorType,
                                    memref::AllocOp &allocOp,
-                                   bool isPermuted,
+                                   bool mayBePermuted,
                                    const Location &loc,
                                    ConversionPatternRewriter &rewriter) const;
 
