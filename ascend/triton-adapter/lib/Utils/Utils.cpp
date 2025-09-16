@@ -237,6 +237,8 @@ getBoundarySizes(llvm::ArrayRef<int32_t> boundaryCheck, Value ptr,
     for (OpOperand &use : initReCastOffset.getUses()) {
       if (use.getOwner() == initReCastOfLoop)
         continue;
+      else if (isa<memref::ReinterpretCastOp>(use.getOwner()))
+        continue;
       else if (use.getOwner() == forOp)
         curPtrOffset = OpFoldResult(forOp.getTiedLoopRegionIterArg(&use));
       else
