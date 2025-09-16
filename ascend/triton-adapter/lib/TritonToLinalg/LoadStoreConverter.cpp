@@ -53,6 +53,8 @@ namespace LoadStoreConverter {
 using namespace mlir;
 using namespace triton;
 
+const std::string MayImplicitTransposeWithLastAxisTAG = "MayImplicitTransposeWithLastAxis";
+
 LogicalResult
 AddPtrConverter::matchAndRewrite(triton::AddPtrOp op, OpAdaptor adaptor,
                                  ConversionPatternRewriter &rewriter) const {
@@ -63,13 +65,13 @@ AddPtrConverter::matchAndRewrite(triton::AddPtrOp op, OpAdaptor adaptor,
 
 LogicalResult LoadConverter::toTensorAndReplace(
     triton::LoadOp &op, RankedTensorType &tensorType, memref::AllocOp &allocOp,
-    bool mayBePermuted, const Location &loc, ConversionPatternRewriter &rewriter) const {
+    bool mayImplicitTransposeWithLastAxis, const Location &loc, ConversionPatternRewriter &rewriter) const {
   
   Value loadedTensor = rewriter.create<bufferization::ToTensorOp>(
       loc, tensorType, allocOp, true, true);
-  if(mayBePermuted){
+  if(mayImplicitTransposeWithLastAxis){
     auto markOp = rewriter.create<annotation::MarkOp>(loc, loadedTensor);
-    markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
+    markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
   }
   rewriter.replaceOp(op, loadedTensor);
   return success();
@@ -219,7 +221,8 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     return rewriter.notifyMatchFailure(
         op, "LoadOp expects a memref, not a memref of pointers");
   }
-  bool mayBePermuted = (!op->hasAttr("GeneratedByMakeTensorPtr")) && mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
+  bool mayImplicitTransposeWithLastAxis = (!op->hasAttr(ConverterUtils::GeneratedByMakeTensorPtrTAG)) &&
+    mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
   auto memRefShape = memRefType.getShape();
   auto memRefElementType = memRefType.getElementType();
 
@@ -255,11 +258,11 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     auto dstSubview = mlir::ConverterUtils::makeSubViewOp(
         allocOp, boundarySizes, loc, rewriter);
     rewriter.create<memref::CopyOp>(loc, srcSubView, dstSubview);
-    if (mayBePermuted) {
+    if (mayImplicitTransposeWithLastAxis) {
       auto markOp = rewriter.create<annotation::MarkOp>(loc, dstSubview);
-      markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
+      markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
     }
-    return this->toTensorAndReplace(op, tensorType, allocOp, mayBePermuted, loc, rewriter);
+    return this->toTensorAndReplace(op, tensorType, allocOp, mayImplicitTransposeWithLastAxis, loc, rewriter);
   }
 
   if (!mask) {
@@ -279,13 +282,13 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
         return success();
       }
       rewriter.create<memref::CopyOp>(loc, ptr, allocOp);
-      if (mayBePermuted) {
+      if (mayImplicitTransposeWithLastAxis) {
         auto markOp = rewriter.create<annotation::MarkOp>(loc, allocOp);
-        markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
+        markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
       }
     }
 
-    return this->toTensorAndReplace(op, tensorType, allocOp, mayBePermuted, loc, rewriter);
+    return this->toTensorAndReplace(op, tensorType, allocOp, mayImplicitTransposeWithLastAxis, loc, rewriter);
   }
 
   MaskState mstate;
@@ -333,12 +336,12 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     memref::SubViewOp srcSubView = mstate.getSubview(ptr, loc, rewriter);
     memref::SubViewOp dstSubView = mstate.getSubview(allocOp, loc, rewriter);
     rewriter.create<memref::CopyOp>(loc, srcSubView, dstSubView);
-    if (mayBePermuted) {
+    if (mayImplicitTransposeWithLastAxis) {
       auto markOp = rewriter.create<annotation::MarkOp>(loc, dstSubView);
-      markOp->setAttr("MayImplicitTransposeWithLastAxis", UnitAttr::get(rewriter.getContext()));
+      markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
     }
   }
-  return this->toTensorAndReplace(op, tensorType, allocOp, mayBePermuted, loc, rewriter);
+  return this->toTensorAndReplace(op, tensorType, allocOp, mayImplicitTransposeWithLastAxis, loc, rewriter);
 }
 
 AtomicRMWConverter::AtomicRMWConverter(MLIRContext *context)

@@ -17,6 +17,7 @@ namespace mlir {
 
 namespace ConverterUtils {
 
+const std::string GeneratedByMakeTensorPtrTAG = "GeneratedByMakeTensorPtr";
 const std::string discreteAttrName = "DiscreteMemAccess";
 
 bool isaPermutedMemRefType(MemRefType);
