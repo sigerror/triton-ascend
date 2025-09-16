@@ -431,19 +431,8 @@ public:
 
 class MakeTensorPtrConverter
     : public OpConversionPattern<triton::MakeTensorPtrOp> {
-private:
-  using OpConversionPattern<triton::MakeTensorPtrOp>::OpConversionPattern;
-
-  memref::ReinterpretCastOp
-  createRedundantOp(triton::MakeTensorPtrOp op,
-                    ConversionPatternRewriter &rewriter, BlockData &data) const;
-
-  OpFoldResult
-  accumulatePotentialOffsetOnBase(triton::MakeTensorPtrOp op, Value base,
-                                  OpFoldResult offset,
-                                  ConversionPatternRewriter &rewriter) const;
-
 public:
+  using OpConversionPattern<triton::MakeTensorPtrOp>::OpConversionPattern;
   explicit MakeTensorPtrConverter(MLIRContext *context)
       : OpConversionPattern<triton::MakeTensorPtrOp>(context) {}
 

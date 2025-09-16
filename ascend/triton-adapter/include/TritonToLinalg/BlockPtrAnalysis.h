@@ -217,6 +217,11 @@ public:
                             ConversionPatternRewriter &rewriter,
                             llvm::SmallDenseMap<Value, BlockData> &known);
 
+  static void rewriteMakeTensorPtrOp(triton::MakeTensorPtrOp op,
+                                     Value base,
+                                     ConversionPatternRewriter &rewriter,
+                                     llvm::SmallDenseMap<Value, BlockData> &known);
+
   static void rewriteAdvanceOp(triton::AdvanceOp op,
                                ConversionPatternRewriter &rewriter,
                                llvm::SmallDenseMap<Value, BlockData> &known);
