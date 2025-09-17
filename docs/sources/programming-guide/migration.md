@@ -1,10 +1,71 @@
 # 迁移指南
 
-在将Triton内核从GPU迁移到NPU的过程中，开发者通常会遇到一些特有的技术挑战。本章节将详细介绍三类最常见的问题及其解决方案，帮助您顺利完成迁移工作。
+在将Triton内核从GPU迁移到NPU的过程中，开发者通常会遇到一些特有的技术挑战。本章节由基本迁移步骤、常见问题概览、解决 coreDim 超限问题、
+处理复合问题：coreDim + UB 溢出、IR转换不兼容五部分构成，以帮助您顺利完成迁移工作。
+
+# 0 基本迁移步骤
+
+首先需要了解从 GPU 迁移到 NPU 的基本步骤。以下是一个可在 GPU 上正常运行的 Triton 内核示例：
+
+```python
+import pytest
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def fn_broadcast_1d(output_ptr, x_ptr, XS: tl.constexpr, YS: tl.constexpr):
+    xidx = tl.arange(0, XS)[None, :]
+    base = tl.load(x_ptr + xidx)
+    out = base.broadcast_to((YS, XS))
+    oidx = tl.arange(0, YS)[:, None] * XS + tl.arange(0, XS)[None, :]
+    tl.store(output_ptr + oidx, out)
+
+@pytest.mark.parametrize('shape', [(1,), (2,), (4,)])
+@pytest.mark.parametrize('dtype', [torch.int32])
+def test_npu_1d(shape, dtype):
+    XS = shape[0]
+    YS = 4
+
+    x = torch.randint(-1000, 1000, (XS,), dtype=dtype, device='cuda')
+    std = torch.broadcast_to(x, (YS, XS))
+    output = torch.randint(-1000, 1000, (YS, XS), dtype=dtype, device='cuda')
+    fn_broadcast_1d[(1,)](output, x, XS, YS)
+    assert torch.allclose(std, output)
+```
+
+迁移到 NPU 的第一步，只需将 device='cuda' 改为 device='npu'，即可尝试在 NPU 上运行：
+
+```python
+import pytest
+import torch
+import triton
+import triton.language as tl
+
+@triton.jit
+def fn_broadcast_1d(output_ptr, x_ptr, XS: tl.constexpr, YS: tl.constexpr):
+    xidx = tl.arange(0, XS)[None, :]
+    base = tl.load(x_ptr + xidx)
+    out = base.broadcast_to((YS, XS))
+    oidx = tl.arange(0, YS)[:, None] * XS + tl.arange(0, XS)[None, :]
+    tl.store(output_ptr + oidx, out)
+
+@pytest.mark.parametrize('shape', [(1,), (2,), (4,)])
+@pytest.mark.parametrize('dtype', [torch.int32])
+def test_npu_1d(shape, dtype):
+    XS = shape[0]
+    YS = 4
+
+    x = torch.randint(-1000, 1000, (XS,), dtype=dtype, device='npu')
+    std = torch.broadcast_to(x, (YS, XS))
+    output = torch.randint(-1000, 1000, (YS, XS), dtype=dtype, device='npu')
+    fn_broadcast_1d[(1,)](output, x, XS, YS)
+    assert torch.allclose(std, output)
+```
 
 # 1 常见问题概览
 
-迁移过程中的主要问题可归纳为以下三类：
+完成迁移基础步骤后，可能会遇到新的问题，新问题可归纳为以下三类：
 
 1. **coreDim限制问题**  
    当网格维度超过NPU硬件限制时触发。  
@@ -19,8 +80,6 @@
 
 接下来我们将通过具体示例来详细说明前两类问题的解决方法。
 
----
-
 # 2 解决 coreDim 超限问题
 
 ## 问题分析
@@ -34,10 +93,18 @@ NPU的 `coreDim` 参数不能超过 `UINT16_MAX`（65535）。当处理大规模
 - 原始 `BLOCK_SIZE = 2048`
 - 计算得到的 `coreDim = 524,288 > 65535`（超限）
 
-**解决思路：**  
+**解决思路1：**  
+昇腾编译器针对coreDim超限问题，有对应的解决方案，只需将环境变量'TRITON_ALL_BLOCKS_PARALLEL'和'ENABLE_UNPUBLISHED_FEATURE'设为1。设置命令如下：
+
+```bash
+export TRITON_ALL_BLOCKS_PARALLEL=1
+export ENABLE_UNPUBLISHED_FEATURE=1
+```
+
+**解决思路2：**  
 通过增大 `BLOCK_SIZE` 来减少所需的核心数量，确保 `coreDim` 不超过限制。
 
-**计算公式：**
+***计算公式：***
 coreDim = ceil(N / BLOCK_SIZE)
 => 需满足：ceil(N / BLOCK_SIZE) <= 65535
 => BLOCK_SIZE >= ceil(N / 65535)
@@ -119,6 +186,7 @@ def zeros_like(x, *, dtype=None, layout=None, device=None, pin_memory=None, memo
     zeros_kernel[grid_fn](out, N, BLOCK_SIZE=optimal_block_size)
     return out
 ```
+
 # 3 处理复合问题：coreDim + UB 溢出
 
 ## 问题分析
@@ -228,6 +296,6 @@ def masked_fill(inp, mask, value):
     return out
 ```
 
-# 3 IR转换不兼容
+# 4 IR转换不兼容
 
 对于triton-ascend不支持IR转换场景，可以重写kernel规避该场景，也可以提issue来解决。
