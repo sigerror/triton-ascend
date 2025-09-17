@@ -259,7 +259,7 @@ LogicalResult DeinterleaveStatusWithMaskOptimization(
       auto newFillOp = ifOp.getThenBodyBuilder().create<linalg::FillOp>(
           originFillOp.getLoc(), originFillOp.getInputs(),
           ValueRange{newAllocOp});
-      rewriter.eraseOp(originFillOp);
+      rewriter.replaceOp(newFillOp, originFillOp);
     }
 
     // 5. Implement new subview, memref copy and bufferization back to tensor

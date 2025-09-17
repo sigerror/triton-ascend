@@ -27,7 +27,7 @@ class NPUUtils(object):
     def __init__(self):
         dirname = os.path.dirname(os.path.realpath(__file__))
         src = Path(os.path.join(dirname, "npu_utils.cpp")).read_text()
-        key = hashlib.md5(src.encode("utf-8")).hexdigest()
+        key = hashlib.sha256(src.encode("utf-8")).hexdigest()
         cache = get_cache_manager(key)
         fname = "npu_utils.so"
         cache_path = cache.get_file(fname)

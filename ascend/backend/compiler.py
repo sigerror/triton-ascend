@@ -46,7 +46,7 @@ def min_dot_size(target: GPUTarget):
 
 def make_ttir(mod, metadata, opt):
     if "hash" not in metadata:
-        metadata["hash"] = hashlib.md5(f"{mod}-{metadata}".encode()).hexdigest()
+        metadata["hash"] = hashlib.sha256(f"{mod}-{metadata}".encode()).hexdigest()
     # the same optimize pass for triton-ir as all other backends
     pm = ir.pass_manager(mod.context)
     pm.enable_debug()
@@ -397,7 +397,7 @@ class NPUOptions:
 
     def hash(self):
         key = "_".join([f"{name}-{val}" for name, val in self.__dict__.items()])
-        return hashlib.md5(key.encode("utf-8")).hexdigest()
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -421,7 +421,7 @@ class CPUOptions:
 
     def hash(self):
         key = "_".join([f"{name}-{val}" for name, val in self.__dict__.items()])
-        return hashlib.md5(key.encode("utf-8")).hexdigest()
+        return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
 
 @register_descriptor

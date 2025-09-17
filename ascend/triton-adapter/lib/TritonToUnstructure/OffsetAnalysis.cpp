@@ -394,7 +394,6 @@ void parseSplat(triton::SplatOp op, const Location &loc, RewriterBase &rewriter,
   auto src = op.getSrc();
   parse(src, op.getLoc(), rewriter, offsetMap);
   PtrOffsetInfo srcOffsetInfo = offsetMap.at(src);
-  SmallVector<bool> &srcStructured = srcOffsetInfo.getStructuredRef();
   auto dst = op.getResult();
   auto dstType = cast<RankedTensorType>(dst.getType());
   PtrOffsetInfo dstOffsetInfo(srcOffsetInfo.getPtr());
@@ -530,7 +529,6 @@ void parseLoad(triton::LoadOp op, const Location &loc, RewriterBase &rewriter,
   auto dst = op.getResult();
   offsetMap[dst] = PtrOffsetInfo();
   offsetMap[dst].setScalarLike(offsetMap[ptr].isScalarLike());
-  auto &dstStructured = offsetMap[dst].getStructuredRef();
   auto tensorType = dyn_cast<RankedTensorType>(dst.getType());
   if (!tensorType)
     return;
@@ -676,7 +674,6 @@ void parseSelect(arith::SelectOp op, const Location &loc,
   auto condition = op.getCondition();
   parse(condition, op.getLoc(), rewriter, offsetMap);
   PtrOffsetInfo conditionOffsetInfo = offsetMap.at(condition);
-  SmallVector<bool> &conditionStructured = conditionOffsetInfo.getStructuredRef();
   bool conditionScalarLike = conditionOffsetInfo.isScalarLike();
   // Get select trueValue
   auto trueValue = op.getTrueValue();

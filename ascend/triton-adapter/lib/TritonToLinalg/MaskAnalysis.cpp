@@ -74,7 +74,6 @@ tensor::ExtractSliceOp MaskState::getExtractSlice(Value source,
 tensor::InsertSliceOp MaskState::getInsertSlice(Value source, Value dest,
                                                 const Location &loc,
                                                 OpBuilder &builder) const {
-  auto sourceType = cast<RankedTensorType>(source.getType());
   SmallVector<OpFoldResult> strides(getRank(), builder.getIndexAttr(1));
   return builder.create<tensor::InsertSliceOp>(loc, source, dest, offsets, dims,
                                                strides);

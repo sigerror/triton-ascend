@@ -768,7 +768,6 @@ addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter,
                                linalg::ReduceOp reduceOp) {
   // To verify whether the operation of the reduceOp is ReduceWithIndex
   // TODO: maybe a better way of judging?
-  auto ctx = reduceOp.getContext();
   Block &body = reduceOp.getCombiner().front();
   auto yieldOp = dyn_cast<linalg::YieldOp>(body.getTerminator());
 

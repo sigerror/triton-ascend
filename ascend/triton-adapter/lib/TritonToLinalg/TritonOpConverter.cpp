@@ -65,7 +65,6 @@ LogicalResult
 TransposeConverter::matchAndRewrite(triton::TransOp op, OpAdaptor adaptor,
                                     ConversionPatternRewriter &rewriter) const {
   auto src = adaptor.getSrc();
-  auto srcRank = cast<ShapedType>(src.getType()).getRank();
   auto res = ConverterUtils::getTransposedValue(src, op.getLoc(), rewriter,
                                                 op.getOrder());
   rewriter.replaceOp(op, res);
@@ -597,7 +596,6 @@ BroadcastConverter::matchAndRewrite(triton::BroadcastOp op, OpAdaptor adaptor,
       cast<RankedTensorType>(adaptor.getSrc().getType());
   RankedTensorType resultType = cast<RankedTensorType>(op.getType());
   auto elementType = resultType.getElementType();
-  size_t resultRank = resultType.getRank();
   auto loc = op.getLoc();
 
   auto initEmpty =
@@ -806,10 +804,10 @@ LogicalResult ScanConverter::convertToTargetOp(
     auto scanAxis = op.getAxis();
     auto scanReverse = op.getReverse();
     Value axis = rewriter.create<arith::ConstantIntOp>(loc, scanAxis, 32);
-    Value reverse = rewriter.create<arith::ConstantIntOp>(loc, scanReverse, 1);
+    Value reverseVal = rewriter.create<arith::ConstantIntOp>(loc, scanReverse, 1);
     auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
                                                 TypeRange({resTy}),
-                                                ValueRange({src, axis, reverse}));
+                                                ValueRange({src, axis, reverseVal}));
 
     rewriter.replaceOp(op, callOp);
 

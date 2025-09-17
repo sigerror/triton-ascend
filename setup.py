@@ -381,11 +381,11 @@ class BuildExt(build_ext):
         return [f"-DPYBIND11_INCLUDE_DIR={pybind11_include_dir}"]
 
     def get_ext_name(self, index):
-        assert index <= len(BuildExt.library_path), "Invalid index"
+        assert index < len(BuildExt.library_path), "Invalid index"
         return BuildExt.library_path[index].split("/")[-1]
 
     def get_ext_path(self, index):
-        assert index <= len(BuildExt.library_path), "Invalid index"
+        assert index < len(BuildExt.library_path), "Invalid index"
         loc = BuildExt.library_path[index].rfind("/")
         return os.path.abspath(
             os.path.dirname(

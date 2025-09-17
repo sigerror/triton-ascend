@@ -246,7 +246,6 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   auto scalarLikeType =
       RankedTensorType::get(scalarLikeShape, resultElementType);
 
-  auto offsetType = cast<RankedTensorType>(offset.getType());
   auto extractedOffset = createExtractOp(loc, offset, iterIdx, rewriter);
   if (isa<RankedTensorType>(srcPtr.getType())) {
     srcPtr = createExtractOp(loc, srcPtr, iterIdx, rewriter);

@@ -120,13 +120,12 @@ def _check_bishengir_api_change() -> bool:
     bishengir_path = _get_npucompiler_path()
     try:
         result = subprocess.run(
-            f"{bishengir_path} --help | grep 'limit-auto-multi-buffer-buffer'",
-            shell=True,
+            [bishengir_path, "--help"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        if result.returncode == 0:
+        if result.returncode == 0 and 'limit-auto-multi-buffer-buffer' in result.stdout:
             # bishengir-compile is newer version
             return True
         else:
@@ -141,13 +140,12 @@ def _check_bishengir_is_regbased() -> bool:
     bishengir_path = _get_npucompiler_path()
     try:
         result = subprocess.run(
-            f"{bishengir_path} --help | grep 'reg-based'",
-            shell=True,
+            [bishengir_path, "--help"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        if result.returncode == 0:
+        if result.returncode == 0 and 'reg-based' in result.stdout:
             # bishengir-compile is regbased version
             return True
         else:

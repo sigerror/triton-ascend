@@ -53,7 +53,6 @@ Descriptor unpackDescriptor(TensorDescType type, Value desc, ConversionPatternRe
     assert(makeDescOp && "Descriptor must be defined by MakeTensorDescOp");
 
     Descriptor res;
-    int rank = type.getBlockType().getRank();
 
     // 直接回溯处理的 tt.make_tensor_descriptor
     res.base = makeDescOp.getBase();
@@ -85,7 +84,6 @@ LogicalResult DescriptorLoadConverter::matchAndRewrite(triton::DescriptorLoadOp 
     auto loc = op.getLoc();
     const auto blockShape = op.getDesc().getType().getBlockType().getShape();
     auto descTy = op.getDesc().getType();
-    auto resultTy = descTy.getSignlessBlockType();
     auto indices = op.getIndices();
 
     // 1. 解包 descriptor
@@ -142,13 +140,12 @@ LogicalResult DescriptorStoreConverter::matchAndRewrite(triton::DescriptorStoreO
     Value valueToStore = adaptor.getSrc();
 
     auto maskType = RankedTensorType::get(blockShape, rewriter.getI1Type());
-    Value mask = rewriter.create<arith::ConstantOp>(loc, DenseElementsAttr::get(maskType, true));
+    rewriter.create<arith::ConstantOp>(loc, DenseElementsAttr::get(maskType, true));
 
     // 创建属性
     auto boundaryCheck = rewriter.getDenseI32ArrayAttr({}); // 空的边界检查
     auto cacheModifier = triton::CacheModifierAttr::get(rewriter.getContext(), triton::CacheModifier::NONE);
     auto evictionPolicy = triton::EvictionPolicyAttr::get(rewriter.getContext(), triton::EvictionPolicy::NORMAL);
-    auto isVolatile = rewriter.getBoolAttr(false);
 
     // 创建 store 操作并替换原始操作
     auto newStore = rewriter.replaceOpWithNewOp<triton::StoreOp>(op,            // 要替换的操作

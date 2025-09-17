@@ -186,7 +186,6 @@ void BubbleUpExtract::bubbleUpOperation<triton::ExpandDimsOp>(
     Operation *op, triton::ExpandDimsOp parentOp, ArrayRef<Value> indices,
     Location loc, PatternRewriter &rewriter) const {
   auto src = parentOp.getSrc();
-  auto srcShape = cast<RankedTensorType>(src.getType()).getShape();
   SmallVector<Value> newIndices;
   for (const auto index : llvm::enumerate(indices)) {
     if (index.index() != parentOp.getAxis()) {
