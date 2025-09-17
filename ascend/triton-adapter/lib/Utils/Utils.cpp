@@ -134,6 +134,10 @@ Value getScalarValue(Value operand, Location loc,
             rewriter, elemValue, attr.getElementType(), op.getLoc());
         return reconstructScalarValue(constOp.getResult());
       }
+      InFlightDiagnostic diag = emitError(loc)
+                                << "other value used in masked load produced "
+                                   "by unsupported instruction";
+      return nullptr;
     } else if (auto op = operand.getDefiningOp<triton::SplatOp>()) {
       operand = op.getSrc();
     } else if (auto op = operand.getDefiningOp<arith::SIToFPOp>()) {
