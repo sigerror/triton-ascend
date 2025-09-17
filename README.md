@@ -29,6 +29,13 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 - #### Triton Ascend 安装或编译
 Triton Ascend还在频繁更新。为能使用最新功能特性，建议您拉取代码进行源码安装。详细安装步骤请参考 [安装指南](./docs/sources/getting-started/installation.md) 。
 
+- #### Triton Ascend nightly包安装
+我们为用户提供了每日更新的nightly包，用户可以方便的使用以下命令来安装。3.2.0是当前Triton的大版本号，请用户根据实际修改。
+```shell
+pip install -i https://test.pypi.org/simple/ "triton-ascend<3.2.0rc" --pre --no-cache-dir
+```
+同时用户也能在[历史列表](https://test.pypi.org/project/triton-ascend/#history)中找到所有的nightly包。
+
 - #### Triton Python API支持情况与约束
 目前Triton Ascend已经使能了85%以上Triton社区官方提供的Python API，详细的功能支持情况（包括数据类型支持度、使用约束等）请参考 [API 支持情况总览](./docs/sources/python-api/outline.md) 。
 
