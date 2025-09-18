@@ -164,7 +164,7 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     os << ptrOffsetInfo.isStructured() << "\n";
   });
 
-  if (ptrOffsetInfo.isStructured() && !ptrOffsetInfo.isScalarLike()) {
+  if (ptrOffsetInfo.isStructured() && (!ptrOffsetInfo.isScalarLike() || ptrType.getRank() == 1 && ptrType.getShape()[0] == 1)) {
     return failure();
   }
 

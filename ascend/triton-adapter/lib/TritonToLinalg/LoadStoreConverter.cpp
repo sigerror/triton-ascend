@@ -211,7 +211,12 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
         rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0));
     auto loadOp = rewriter.create<memref::LoadOp>(loc, resTy, scalarMemref,
                                                   idxZero.getResult());
-    rewriter.replaceOp(op, loadOp.getResult());
+    if (mask && other) {
+      rewriter.replaceOpWithNewOp<arith::SelectOp>(
+        op, mask, loadOp, other);
+    } else {
+      rewriter.replaceOp(op, loadOp.getResult());
+    }
     return success();
   }
 
