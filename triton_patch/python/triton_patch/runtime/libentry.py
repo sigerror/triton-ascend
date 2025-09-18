@@ -36,6 +36,7 @@ from .code_cache import config_cache_dir
 DEVICE_COUNT = torch_device_fn.device_count()
 major_version = int(triton.__version__.split(".")[0])
 
+
 def quote_identifier(name: str) -> str:
     if not name:
         raise ValueError("empty identifier")
@@ -45,6 +46,7 @@ def quote_identifier(name: str) -> str:
     if not all(ch in allowed for ch in name):
         raise ValueError("identifier contains illegal char")
     return '"' + name.replace('"', '""') + '"'
+
 
 class LibTuner(triton.runtime.Autotuner):
     def __init__(
