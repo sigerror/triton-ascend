@@ -24,7 +24,7 @@ DEVICE = "npu"
 
 
 @triton.jit
-def _attn_fwd_inner(acc, l_i, m_i, q,  # Accumulator, local l, local m, query vector
+def _attn_fwd_inner(acc_ptr, l_i, m_i, q,  # Accumulator, local l, local m, query vector
                     K_block_ptr, V_block_ptr,  # Key and value block pointers for current stage
                     start_m, qk_scale,  # Starting position of current query block, qk scale factor
                     BLOCK_M: tl.constexpr, HEAD_DIM: tl.constexpr, BLOCK_N: tl.constexpr,  # Block size constants
@@ -40,9 +40,13 @@ def _attn_fwd_inner(acc, l_i, m_i, q,  # Accumulator, local l, local m, query ve
     # Causal attention ensures sequential order and prevents "leakage of future information."
     # But the following logic will also be triggered
     if STAGE == 1:
-        lo, hi = 0, start_m * BLOCK_M  # Stage 1: process all tokens before the query block
+        # Stage 1: process all tokens before the query block
+        tl.static_assert(BLOCK_M >= BLOCK_N)
+        lo, hi = 0, start_m * BLOCK_M
     elif STAGE == 2:
-        lo, hi = start_m * BLOCK_M, (start_m + 1) * BLOCK_M  # Stage 2: process the current query block
+        # Stage 2: process the current query block
+        tl.static_assert(BLOCK_M >= BLOCK_N)
+        lo, hi = start_m * BLOCK_M, (start_m + 1) * BLOCK_M
         lo = tl.multiple_of(lo, BLOCK_M)  # Align starting position
     # causal = False (no need for masking)
     else:
@@ -51,6 +55,11 @@ def _attn_fwd_inner(acc, l_i, m_i, q,  # Accumulator, local l, local m, query ve
     # Adjust K and V block pointers to the starting position `lo`
     K_block_ptr = tl.advance(K_block_ptr, (lo, 0))  # K is [HEAD_DIM, N_CTX], shift along the second dim by lo
     V_block_ptr = tl.advance(V_block_ptr, (lo, 0))  # V is [N_CTX, HEAD_DIM], shift along the first dim by lo
+
+    # Index mapping for the accumulator , used for slicing when HEAD_DIM >= 256
+    row = tl.arange(0, BLOCK_M)[:, None]
+    col_head_dim = tl.arange(0, HEAD_DIM)[None, :]
+    block2d_acc = row * HEAD_DIM + col_head_dim
 
     # Iterate over all k, v blocks in the current stage and accumulate the output
     for start_n in range(lo, hi, BLOCK_N):  # Process BLOCK_N columns at a time
@@ -67,34 +76,57 @@ def _attn_fwd_inner(acc, l_i, m_i, q,  # Accumulator, local l, local m, query ve
             m_ij = tl.maximum(m_i, tl.max(qk, 1))  # Update m_ij = max(m_i, max(qk))
             qk -= m_ij[:, None]  # Subtract max for softmax stability
         else:
-            m_ij = tl.maximum(m_i, tl.max(qk, 1) * qk_scale)  # Scaled max
-            qk = qk * qk_scale - m_ij[:, None]  # Stabilize
+            qk = qk * qk_scale
+            m_ij = tl.maximum(m_i, tl.max(qk, 1))  # Scaled max
+            qk = qk - m_ij[:, None]  # Stabilize
+
         # Softmax weights p = exp(qk)
-        p = tl.math.exp2(qk)  # Use base-2 exponent for better numerical stability
-        l_ij = tl.sum(p, 1)  # Softmax denominator (sum of each row)
-        # -- Update m_i and l_i
-        alpha = tl.math.exp2(m_i - m_ij)  # Update factor: exp difference between old and new max
-        l_i = l_i * alpha + l_ij  # Update softmax denominator
-        # -- Update output accumulator --
-        acc = acc * alpha[:, None]  # Scale accumulator by alpha to maintain consistency
-        # update acc
-        v = tl.load(V_block_ptr)  # Load corresponding V block
+        p = tl.math.exp(qk)
+
         # Convert softmax weight type depending on FP8 usage
         if fp8_v:
-            p = p.to(tl.float8e5)  # Convert to FP8 format (save memory)
+            p_cast = p.to(tl.float8e5)  # Convert to FP8 format (save memory)
         else:
-            p = p.to(tl.float16) 
-        # -------------------------------
-        acc = tl.dot(p, v, acc)  # Multiply softmax weights with V and accumulate to acc
+            p_cast = p.to(k.dtype)
+
+        v = tl.load(V_block_ptr)  # Load corresponding V block
+        pv = tl.dot(p_cast, v)
+        l_ij = tl.sum(p, 1)  # Softmax denominator (sum of each row)
+        # -- Update m_i and l_i
+        alpha = tl.math.exp(m_i - m_ij)  # Update factor: exp difference between old and new max
+        l_i = l_i * alpha + l_ij  # Update softmax denominator
+        # -- Update output accumulator --
+        if HEAD_DIM < 256:
+            acc_ptr = acc_ptr * alpha[:, None]
+            acc_ptr = tl.dot(p_cast, v, acc_ptr)
+        else:
+            # 1. Load current slice of accumulator
+            acc = tl.load(acc_ptr + block2d_acc)
+            # 2. Update in slices (split by 1/4 of BLOCK_M to avoid ub overflow)
+            for i in range(4):
+                # Calculate start/end rows for current slice
+                offset = i * (BLOCK_M // 4)
+                # Extract slice data
+                acc_i = tl.extract_slice(acc, (offset, 0), (BLOCK_M // 4, HEAD_DIM), (1, 1))
+                alpha_i = tl.extract_slice(alpha, [offset], [BLOCK_M // 4], [1])
+                pv_i = tl.extract_slice(pv, (offset, 0), (BLOCK_M // 4, HEAD_DIM), (1, 1))
+                # Incrementally update slice: acc = acc * alpha + pv
+                acc_i = acc_i * alpha_i[:, None] + pv_i
+                # Write updated slice back to accumulator
+                acc = tl.insert_slice(acc, acc_i, (offset, 0), (BLOCK_M // 4, HEAD_DIM), (1, 1))
+            # 3. updated accumulator
+            tl.store(acc_ptr + block2d_acc, acc)
+
         m_i = m_ij  # Update current block max
         # Advance V and K block pointers to next BLOCK_N range
         V_block_ptr = tl.advance(V_block_ptr, (BLOCK_N, 0))
         K_block_ptr = tl.advance(K_block_ptr, (BLOCK_N, 0))
-    return acc, l_i, m_i  # Return accumulated output acc, softmax denominator l_i, and max value m_i
+    # Return accumulated output acc_ptr, softmax denominator l_i, and max value m_i
+    return acc_ptr, l_i, m_i
 
 
 @triton.jit
-def _attn_fwd(Q, K, V, M, Out, sm_scale,  
+def _attn_fwd(Q, K, V, M, Out, acc, sm_scale,
               stride_qz: tl.constexpr, stride_qh: tl.constexpr, stride_qm: tl.constexpr, stride_qk: tl.constexpr, 
               stride_kz: tl.constexpr, stride_kh: tl.constexpr, stride_kn: tl.constexpr, stride_kk: tl.constexpr, 
               stride_vz: tl.constexpr, stride_vh: tl.constexpr, stride_vn: tl.constexpr, stride_vk: tl.constexpr, 
@@ -106,32 +138,29 @@ def _attn_fwd(Q, K, V, M, Out, sm_scale,
               BLOCK_N: tl.constexpr,
               STAGE: tl.constexpr
               ):
-    # Assert that BLOCK_N does not exceed HEAD_DIM
-    tl.static_assert(BLOCK_N <= HEAD_DIM)
+    # Total number of blocks in sequence dimension (M)
+    NUM_BLOCKS_M = N_CTX // BLOCK_M
+    # Total tasks = number of sequence blocks × batch size (Z) × number of attention heads (H)
+    NUM_BLOCKS = NUM_BLOCKS_M * Z * H
 
     # Current M-dimension block index
-    start_m = tl.program_id(0)
+    pid = tl.program_id(0)
 
-    # Loop through all (Z * H) attention groups
-    for off_hz in range(0,Z*H):
-        # Compute batch and head index
-        off_z = off_hz // H
-        off_h = off_hz % H
-
-        # Offset for current batch and head
+    for block_idx in range(pid, NUM_BLOCKS, 20):
+        task_hz_idx = block_idx // NUM_BLOCKS_M
+        task_m_idx = block_idx % NUM_BLOCKS_M
+        off_z = task_hz_idx // H
+        off_h = task_hz_idx % H
         qvk_offset = off_z.to(tl.int64) * stride_qz + off_h.to(tl.int64) * stride_qh
-
-        # Construct Q block pointer (BLOCK_M, HEAD_DIM)
+        # Create block pointers for Q, K, V, Output
         Q_block_ptr = tl.make_block_ptr(
             base=Q + qvk_offset,
             shape=(N_CTX, HEAD_DIM),
             strides=(stride_qm, stride_qk),
-            offsets=(start_m * BLOCK_M, 0),
+            offsets=(task_m_idx * BLOCK_M, 0),
             block_shape=(BLOCK_M, HEAD_DIM),
             order=(1, 0),
         )
-
-        # Construct V block pointer (starts from 0,0; advanced in inner)
         V_block_ptr = tl.make_block_ptr(
             base=V + qvk_offset,
             shape=(N_CTX, HEAD_DIM),
@@ -140,8 +169,6 @@ def _attn_fwd(Q, K, V, M, Out, sm_scale,
             block_shape=(BLOCK_N, HEAD_DIM),
             order=(1, 0),
         )
-
-        # Construct K block pointer
         K_block_ptr = tl.make_block_ptr(
             base=K + qvk_offset,
             shape=(N_CTX, HEAD_DIM),
@@ -150,72 +177,88 @@ def _attn_fwd(Q, K, V, M, Out, sm_scale,
             block_shape=(BLOCK_N, HEAD_DIM),
             order=(1, 0),
         )
-
-        # Construct Out block pointer
         O_block_ptr = tl.make_block_ptr(
             base=Out + qvk_offset,
             shape=(N_CTX, HEAD_DIM),
             strides=(stride_om, stride_on),
-            offsets=(start_m * BLOCK_M, 0),
+            offsets=(task_m_idx * BLOCK_M, 0),
             block_shape=(BLOCK_M, HEAD_DIM),
             order=(1, 0),
         )
-
-        # Construct offset indices along M and N
-        offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
+        # Initialize offsets
+        offs_m = task_m_idx * BLOCK_M + tl.arange(0, BLOCK_M)
         offs_n = tl.arange(0, BLOCK_N)
 
-        # Initialize m_i and l_i for softmax normalization
         m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
         l_i = tl.zeros([BLOCK_M], dtype=tl.float32) + 1.0
-        acc = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)
 
-        # Apply softmax scale and convert to log2 base
-        qk_scale = sm_scale
-        qk_scale *= 1.44269504  # 1 / log(2)
+        # Initialize accumulator
+        if HEAD_DIM < 256:
+            acc_ptr = tl.zeros([BLOCK_M, HEAD_DIM], dtype=tl.float32)
+        else:
+            acc_offset = (
+                off_z.to(tl.int64) * stride_qz // stride_qm * HEAD_DIM +
+                off_h.to(tl.int64) * stride_qh // stride_qm * HEAD_DIM +
+                task_m_idx * BLOCK_M * HEAD_DIM
+            )
+            acc_ptr = acc + acc_offset
 
-        # Load current Q block
+        # load q: it will stay in SRAM throughout
         q = tl.load(Q_block_ptr)
 
-        # STAGE controls whether to run stage 1 (off-band) or stage 2 (on-band)
         # stage 1: off-band
-        # For causal = True, STAGE = 3 and _attn_fwd_inner gets 1
-        # For causal = False, STAGE = 1 and _attn_fwd_inner gets 3
+        # For causal = True, STAGE = 3 and _attn_fwd_inner gets 1 as its STAGE
+        # For causal = False, STAGE = 1, and _attn_fwd_inner gets 3 as its STAGE
         if STAGE & 1:
-            # Off-diagonal attention computation
-            acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q, K_block_ptr, V_block_ptr,  
-                                            start_m, qk_scale,  
-                                            BLOCK_M, HEAD_DIM, BLOCK_N,  
-                                            4 - STAGE,  # STAGE=1 -> inner=3, STAGE=3 -> inner=1
-                                            offs_m, 
-                                            offs_n, 
-                                            N_CTX, 
-                                            V.dtype.element_ty == tl.float8e5  # whether to use fp8
-                                            )
-
+            acc_ptr, l_i, m_i = _attn_fwd_inner(acc_ptr, l_i, m_i, q, K_block_ptr, V_block_ptr,  #
+                                                task_m_idx, sm_scale,  #
+                                                BLOCK_M, HEAD_DIM, BLOCK_N,  #
+                                                4 - STAGE, offs_m, offs_n, N_CTX, V.dtype.element_ty == tl.float8e5  #
+                                                )
         # stage 2: on-band
         if STAGE & 2:
-            # Diagonal block attention computation
-            acc, l_i, m_i = _attn_fwd_inner(acc, l_i, m_i, q, K_block_ptr, V_block_ptr,
-                                            start_m, qk_scale,
-                                            BLOCK_M, HEAD_DIM, BLOCK_N,
-                                            2, offs_m, offs_n, N_CTX, V.dtype.element_ty == tl.float8e5
-                                            )
+            # barrier makes it easier for compielr to schedule the
+            # two loops independently
+            acc_ptr, l_i, m_i = _attn_fwd_inner(acc_ptr, l_i, m_i, q, K_block_ptr, V_block_ptr,  #
+                                                task_m_idx, sm_scale,  #
+                                                BLOCK_M, HEAD_DIM, BLOCK_N,  #
+                                                2, offs_m, offs_n, N_CTX, V.dtype.element_ty == tl.float8e5  #
+                                                )
 
-        # Epilogue: normalize and compute logsumexp
-        m_i += tl.math.log2(l_i)  # compute logsumexp
-        acc = acc / l_i[:, None]  # normalize output
+        m_i += tl.math.log(l_i)
+        if HEAD_DIM < 256:
+            accumulator = acc_ptr / l_i[:, None]
+        else:
+            row = tl.arange(0, BLOCK_M)[:, None]
+            col_head_dim = tl.arange(0, HEAD_DIM)[None, :]
+            block2d_acc = row * HEAD_DIM + col_head_dim
+            accumulator = tl.load(acc_ptr + block2d_acc)
+            accumulator = accumulator / l_i[:, None]
 
-        # Store logsumexp to M and final output to Out
-        m_ptrs = M + off_hz * N_CTX + offs_m
+        m_ptrs = M + task_hz_idx * N_CTX + offs_m
+
         tl.store(m_ptrs, m_i)
-        tl.store(O_block_ptr, acc.to(Out.type.element_ty))
+        tl.store(O_block_ptr, accumulator.to(Out.type.element_ty))
 
 
 class _attention(torch.autograd.Function):
 
     @staticmethod
     def forward(ctx, q, k, v, causal, sm_scale, BM, BN):
+        """
+        Forward computation interface:
+        Args:
+            ctx: Context object
+            q: Query tensor (Q), shape [Z, H, N_CTX, HEAD_DIM]
+            k: Key tensor (K), shape [Z, H, N_CTX, HEAD_DIM]
+            v: Value tensor (V), shape [Z, H, N_CTX, HEAD_DIM]
+            causal: Whether to enable causal attention
+            sm_scale: Scaling factor for QK product
+            BM: Q block size (BLOCK_M)
+            BN: K/V block size (BLOCK_N)
+        Returns:
+            o: Attention output tensor, shape [Z, H, N_CTX, HEAD_DIM]
+        """
         # shape constraints
         HEAD_DIM_Q, HEAD_DIM_K = q.shape[-1], k.shape[-1]
         # when v is in float8_e5m2 it is transposed.
@@ -224,20 +267,17 @@ class _attention(torch.autograd.Function):
         assert HEAD_DIM_K in {16, 32, 64, 128, 256}
 
         o = torch.empty_like(q)
-
-        # stage = 3
         stage = 3 if causal else 1
         extra_kern_args = {}
+        
 
-        # grid = lambda args: (triton.cdiv(q.shape[2], args["BLOCK_M"]), q.shape[0] * q.shape[1], 1)
-        grid = (triton.cdiv(q.shape[2], BM), 1, 1)
-
-        # (1, 2, 1024)
-        # Allocate a temporary buffer M used during softmax computation
+        # Number of NPU cores (adjust based on hardware)
+        num_cores = 20
+        acc = torch.zeros((q.shape[0], q.shape[1], q.shape[2], HEAD_DIM_K), dtype=torch.float32, device=q.device)
         M = torch.empty((q.shape[0], q.shape[1], q.shape[2]), device=q.device, dtype=torch.float32)
 
-        _attn_fwd[grid](
-            q, k, v, M, o, sm_scale,
+        _attn_fwd[(num_cores,)](
+            q, k, v, M, o, acc, sm_scale,
             q.stride(0), q.stride(1), q.stride(2), q.stride(3),
             k.stride(0), k.stride(1), k.stride(2), k.stride(3),
             v.stride(0), v.stride(1), v.stride(2), v.stride(3),
@@ -247,7 +287,6 @@ class _attention(torch.autograd.Function):
             BLOCK_M=BM,
             BLOCK_N=BN,
             STAGE=stage,
-            debug=True,
             **extra_kern_args)
 
         ctx.save_for_backward(q, k, v, o, M)
@@ -259,44 +298,57 @@ class _attention(torch.autograd.Function):
 attention = _attention.apply
 
 
-@pytest.mark.parametrize("Z, H, N_CTX, HEAD_DIM, causal, dtype, BM , BN",[
-    (4, 32, 32, 64, False, torch.float16, 32, 32),
-    (4, 32, 64, 64, False, torch.float16, 32, 64),
-    (1, 2, 128, 128, False, torch.float16, 32, 128),
-    (1, 1, 128, 128, False, torch.float16, 64, 128),
+@pytest.mark.parametrize("Z, H, N_CTX, HEAD_DIM, causal, dtype, BM, BN", [
     (1, 1, 128, 128, False, torch.float16, 32, 128),
-    (2, 2, 128, 256, False, torch.float16, 32, 128),
-    (1, 2, 256, 256, False, torch.float16, 32, 256),
+    (1, 1, 128, 128, False, torch.bfloat16, 64, 128),
+    (1, 2, 128, 128, False, torch.float16, 32, 128),
+    (1, 2, 256, 256, False, torch.bfloat16, 32, 256),
+    (2, 2, 128, 256, False, torch.float16, 64, 128),
+    (4, 32, 32, 64, False, torch.bfloat16, 32, 32),
+    (4, 32, 64, 64, False, torch.float16, 32, 64),
+    (4, 32, 1024, 64, False, torch.bfloat16, 64, 64),
+    (4, 32, 4096, 64, False, torch.float16, 64, 64),
 ])
-def test_op(Z, H, N_CTX, HEAD_DIM, causal, dtype,BM ,BN ):
+def test_op(Z, H, N_CTX, HEAD_DIM, causal, dtype, BM, BN):
+    # 过滤非整切案例, N_CTX 需整除 BM 和 BN, 且 HEAD_DIM 需整除 16
+    if N_CTX % BM != 0 or N_CTX % BN != 0 or HEAD_DIM % 16 != 0:
+        pytest.skip("Skipping non-divisible case")
+
     torch.manual_seed(20)
     q = (torch.empty((Z, H, N_CTX, HEAD_DIM), dtype=dtype, device=DEVICE).normal_(mean=0.0, std=0.5).requires_grad_())
     k = (torch.empty((Z, H, N_CTX, HEAD_DIM), dtype=dtype, device=DEVICE).normal_(mean=0.0, std=0.5).requires_grad_())
     v = (torch.empty((Z, H, N_CTX, HEAD_DIM), dtype=dtype, device=DEVICE).normal_(mean=0.0, std=0.5).requires_grad_())
-  
+
     sm_scale = 0.5
 
-    M = torch.tril(torch.ones((N_CTX, N_CTX), device=DEVICE))
-    p = torch.matmul(q, k.transpose(2, 3)) * sm_scale
-    
-    if causal:
-        p[:, :, M == 0] = float("-inf")
-    p = torch.softmax(p.float(), dim=-1).half()
-    ref_out = torch.matmul(p, v)
-    tri_out = attention(q, k, v, causal, sm_scale,BM,BN ).half()
+    tri_out = attention(q, k, v, causal, sm_scale, BM, BN)
+    ref_out = torch_npu.npu_fusion_attention(
+            q, k, v, H,
+            padding_mask=None,
+            atten_mask=None,
+            scale=sm_scale,
+            keep_prob=1.0,
+            input_layout="BNSD",
+            pre_tockens=65535,
+            next_tockens=65535,
+            sparse_mode=0,
+            )[0]
     
     try:
-        torch.testing.assert_close(ref_out, tri_out, atol=1e-2, rtol=1e-2)
+        torch.testing.assert_close(ref_out, tri_out, atol=1e-2, rtol=1e-2, equal_nan=True)
         print(f"Test Fused-Attention PASS!")
     except AssertionError as e:
-        print(f"Test Fused-Attention FAILED with ({Z},{H},{N_CTX},{HEAD_DIM}), causal={causal}, dtype={dtype}, BM={BM}, BN={BN} ! ERROR:{e}")
+        print(f"Test Fused-Attention FAILED: ({Z},{H},{N_CTX},{HEAD_DIM}), causal={causal}, dtype={dtype}, BM={BM}, BN={BN}")
+        print(f"Error: {e}")
 
 
 if __name__ == "__main__":
-   test_op(4,32,32,64, causal=False, dtype=torch.float16, BM = 32,BN = 32)
-   test_op(4,32,64,64, causal=False, dtype=torch.float16, BM = 32,BN = 64)
-   test_op(1,2,128,128, causal=False, dtype=torch.float16, BM = 32,BN = 128)
-   test_op(1,1,128,128, causal=False, dtype=torch.float16, BM = 64,BN = 128)
-   test_op(1,1,128,128, causal=False, dtype=torch.float16, BM = 32,BN = 128)
-   test_op(2,2,128,256, causal=False, dtype=torch.float16, BM = 32,BN = 128)
-   test_op(1,2,256,256, causal=False, dtype=torch.float16, BM = 32,BN = 256)
+    test_op(1, 1, 128, 128, causal=False, dtype=torch.float16, BM=32, BN=128)
+    test_op(1, 1, 128, 128, causal=False, dtype=torch.bfloat16, BM=64, BN=128)
+    test_op(1, 2, 128, 128, causal=False, dtype=torch.float16, BM=32, BN=128)
+    test_op(1, 2, 256, 256, causal=False, dtype=torch.bfloat16, BM=32, BN=256)
+    test_op(2, 2, 128, 256, causal=False, dtype=torch.float16, BM=64, BN=128)
+    test_op(4, 32, 32, 64, causal=False, dtype=torch.bfloat16, BM=32, BN=32)
+    test_op(4, 32, 64, 64, causal=False, dtype=torch.float16, BM=32, BN=64)
+    test_op(4, 32, 1024, 64, causal=False, dtype=torch.bfloat16, BM=64, BN=64)
+    test_op(4, 32, 4096, 64, causal=False, dtype=torch.float16, BM=64, BN=64)
