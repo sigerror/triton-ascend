@@ -133,7 +133,7 @@ def test_permute(para_type,data_type,XB,YB,ZB):
     output = torch.randint(1, (ZB,XB,YB), dtype=data_type).npu()
     torch_201 = torch.permute(x,(2,0,1))
     fn_npu_201[1,1,1](output, x, XB, YB, ZB)
-    torch.testing.assert_close(output,torch_201)#11111
+    torch.testing.assert_close(output,torch_201)
 
     print(" test permute 201 passed")
 
