@@ -211,7 +211,6 @@ def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) ->
     cc_cmd += [f"-I{py_include_dir}"]
     # device_print.h
     cc_cmd += [f"-I{os.path.dirname(os.path.realpath(__file__))}"]
-    # find the ascend library
     asc_path = _get_ascend_path()
     cc_cmd += [
         f"-I{os.path.join(asc_path, 'include')}",

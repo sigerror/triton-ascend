@@ -40,7 +40,6 @@ from triton.runtime.cache import get_dump_manager
 
 # TODO: materialize the concrete min shape
 def min_dot_size(target: GPUTarget):
-    # return lambda lhsType, rhsType: (16, 16, 16)
     return lambda lhsType, rhsType: (1, 1, 1)
 
 
@@ -431,30 +430,6 @@ class AscendAttrsDescriptor(AttrsDescriptor):
     # We comment out the following func but keep it for future reference.
     def _add_backend_properties(self, params=None, values=None):
         pass
-        # if params is None or values is None:
-        #     return
-
-        # for i in range(len(values)):
-        #     if params[i].is_constexpr:
-        #         continue
-        #     val = values[i]
-
-        #     if hasattr(val, "shape"):
-        #         self.arg_properties[f"tt.shape_{i}"] = list(val.shape)
-        #         self.property_values[f"tt.shape_{i}"] = 0
-        #     else:
-        #         # Scalar
-        #         pass
-
-    # For now we collect shapes of tensor at runtime.
-    # We comment out the following func but keep it for future reference.
-    # def get_shapes(self):
-    #     shapes = {}
-    #     for name, val in self.arg_properties.items():
-    #         if name.startswith("tt.shape"):
-    #             idx = int(name.split("_")[-1])
-    #             shapes[idx] = val
-    #     return shapes
 
 
 class AscendBackend(BaseBackend):
@@ -499,11 +474,6 @@ class AscendBackend(BaseBackend):
         kernel_name_orig, mix_mode = metadata.name.split()
         if len(kernel_name_orig) > KERNEL_NAME_MAX_LEN:
             kernel_name = kernel_name_orig[-KERNEL_NAME_MAX_LEN:]
-            # import warnings
-            # # red = "\x1b[31;20m"
-            # # reset = "\x1b[0m"
-            # warnings.warn(kernel_name_orig + " is truncated to " + kernel_name)
-            # warnings.warn("because '" + kernel_name_orig + "' exceeds torchnpu profiler's length limit < 50")
         else:
             kernel_name = kernel_name_orig
         return {

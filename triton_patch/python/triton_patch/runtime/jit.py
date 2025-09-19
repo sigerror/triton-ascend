@@ -329,7 +329,6 @@ class KernelInterface(Generic[T]):
         memorizes the grid.
         """
         return lambda *args, **kwargs: self.run(grid=grid, warmup=False, *args, **kwargs)
-        # return cast(T, functools.partial(cast(Callable, self.run), grid=grid))
 
 
 def serialize_specialization_data(name, signature, constants, attrs, options, key):

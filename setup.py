@@ -232,8 +232,6 @@ def get_llvm_package_info():
             "LLVM_LIBRARY_DIR",
             "LLVM_SYSPATH",
         )
-    # use_assert_enabled_llvm = check_env_flag("TRITON_USE_ASSERT_ENABLED_LLVM", "False")
-    # release_suffix = "assert" if use_assert_enabled_llvm else "release"
     llvm_hash_path = os.path.join(root_dir, "llvm-hash.txt")
     with open(llvm_hash_path, "r") as llvm_hash_file:
         rev = llvm_hash_file.read(8)
