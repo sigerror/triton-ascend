@@ -215,6 +215,24 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     return success();
   }
 
+  int64_t lastStride=-1;
+  if (isa<BlockArgument>(ptr)) {
+    auto u = ptr;
+    while (auto blkArg = dyn_cast<BlockArgument>(u)) {
+      if (auto forOp = dyn_cast<scf::ForOp>(blkArg.getOwner()->getParentOp())) {
+        auto prt = forOp->getOperand(3+blkArg.getArgNumber()-1);
+        u = prt;
+      } else {
+        u=nullptr;
+        break;
+      }
+    }
+    if (u && isa<memref::ReinterpretCastOp>(u.getDefiningOp())) {
+      auto ret = mlir::ConverterUtils::getLastStrideOfReinterpretCastOp(dyn_cast<memref::ReinterpretCastOp>(u.getDefiningOp()));
+      if (ret.has_value()) lastStride = *ret;
+    }
+  }
+
   // handling no mask
   auto memRefType = dyn_cast<MemRefType>(ptr.getType());
   if (!memRefType) {
@@ -222,7 +240,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
         op, "LoadOp expects a memref, not a memref of pointers");
   }
   bool mayImplicitTransposeWithLastAxis = (!op->hasAttr(ConverterUtils::GeneratedByMakeTensorPtrTAG)) &&
-    mlir::ConverterUtils::isaPermutedMemRefType(memRefType);
+    (lastStride != 1 && mlir::ConverterUtils::isaPermutedMemRefType(memRefType));
   auto memRefShape = memRefType.getShape();
   auto memRefElementType = memRefType.getElementType();
 
