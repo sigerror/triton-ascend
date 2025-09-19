@@ -44,7 +44,44 @@
 
 namespace mlir {
 
+static Value createConstIndexValueOp(const Location &loc, OpBuilder &b,
+                                     int64_t value) {
+  return b.create<arith::ConstantOp>(loc, b.getIndexAttr(value)).getResult();
+}
+
+static std::optional<int64_t> getConstantOfAttr(const OpFoldResult &arg) {
+  if (isa<Attribute>(arg)) {
+    return getConstantIntValue(arg);
+  }
+
+  return std::nullopt;
+}
+
 namespace ConverterUtils {
+
+std::optional<int64_t> getLastStrideOfReinterpretCastOp(memref::ReinterpretCastOp op) {
+  SmallVector<OpFoldResult> mixedStrides = op.getMixedStrides();
+  if (mixedStrides.empty()) {
+      op->emitError("ReinterpretCastOp has no strides");
+      return std::nullopt;
+  }
+
+  OpFoldResult lastStride = mixedStrides.back();
+  if (auto attr = lastStride.dyn_cast<Attribute>()) {
+    return getConstantOfAttr(lastStride);
+  } else if (auto value = lastStride.dyn_cast<Value>()) {
+    auto defOp = value.getDefiningOp();
+    if (auto constIndexOp = dyn_cast<arith::ConstantIndexOp>(defOp)) {
+      int64_t constValue = constIndexOp.value();
+      return constValue;
+    }
+    else if (auto constIntOp = dyn_cast<arith::ConstantIntOp>(defOp)) {
+      int64_t constValue = constIntOp.value();
+      return constValue;
+    }
+  } 
+  return std::nullopt;
+}
 
 bool isaPermutedMemRefType(MemRefType memRefType) {
   auto [ptrStrides, ptrOffsets] = getStridesAndOffset(memRefType);
@@ -550,18 +587,6 @@ ModuleOp getModuleOpFromOperation(Operation *op) {
 
 } // namespace triton
 
-static Value createConstIndexValueOp(const Location &loc, OpBuilder &b,
-                                     int64_t value) {
-  return b.create<arith::ConstantOp>(loc, b.getIndexAttr(value)).getResult();
-}
-
-static std::optional<int64_t> getConstantOfAttr(const OpFoldResult &arg) {
-  if (isa<Attribute>(arg)) {
-    return getConstantIntValue(arg);
-  }
-
-  return std::nullopt;
-}
 
 // TODO: imply these function below
 OpFoldResult addOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
