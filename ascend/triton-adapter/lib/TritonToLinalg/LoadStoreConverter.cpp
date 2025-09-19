@@ -209,13 +209,16 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     auto resTy = op.getResult().getType();
     auto idxZero =
         rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0));
-    auto loadOp = rewriter.create<memref::LoadOp>(loc, resTy, scalarMemref,
-                                                  idxZero.getResult());
+    auto loadedValue = rewriter.create<memref::LoadOp>(loc, resTy, scalarMemref,
+                                                  idxZero.getResult()).getResult();
     if (mask && other) {
-      rewriter.replaceOpWithNewOp<arith::SelectOp>(
-        op, mask, loadOp, other);
+      mask = rewriter.create<triton::SplatOp>(loc, RankedTensorType::get({1}, mask.getType()), mask);
+      loadedValue = rewriter.create<triton::SplatOp>(loc, RankedTensorType::get({1}, loadedValue.getType()), loadedValue);
+      other = rewriter.create<triton::SplatOp>(loc, RankedTensorType::get({1}, other.getType()), other);
+      loadedValue = rewriter.create<arith::SelectOp>(loc, mask, loadedValue, other);
+      rewriter.replaceOpWithNewOp<tensor::ExtractOp>(op, loadedValue, ValueRange({idxZero}));
     } else {
-      rewriter.replaceOp(op, loadOp.getResult());
+      rewriter.replaceOp(op, loadedValue);
     }
     return success();
   }

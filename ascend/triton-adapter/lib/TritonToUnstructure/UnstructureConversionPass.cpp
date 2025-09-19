@@ -157,6 +157,11 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
 
   auto ptrOffsetInfo = offsetMap.at(ptr);
 
+  if (ptrOffsetInfo.isStructured() &&
+      (!ptrOffsetInfo.isScalarLike() ||
+       llvm::all_of(ptrType.getShape(), [](int64_t dim) { return dim == 1; })))
+    return failure();
+
   LLVM_DEBUG({
     auto &os = llvm::dbgs();
     os << "Converting " << op->getName() << "\n";
@@ -164,13 +169,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     os << ptrOffsetInfo.isStructured() << "\n";
   });
 
-  if (ptrOffsetInfo.isStructured() && (!ptrOffsetInfo.isScalarLike() || ptrType.getRank() == 1 && ptrType.getShape()[0] == 1)) {
-    return failure();
-  }
-
   if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>)
-    if (ptrOffsetInfo.isScalarLike() &&
-        !(ptrType.getRank() == 1 && ptrType.getShape()[0] == 1)) {
+    if (ptrOffsetInfo.isScalarLike()) {
       splatAndLoadScenario(op, ptrOffsetInfo.getRank(), rewriter);
       return success();
     }
@@ -238,7 +238,7 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     offsets.push_back(forOp.getInductionVar());
     iterIdx.push_back(forOp.getInductionVar());
     forOp->setAttr("ExtractedLoadOrStore",
-                    UnitAttr::get(rewriter.getContext()));
+                   UnitAttr::get(rewriter.getContext()));
     rewriter.setInsertionPointToStart(forOp.getBody());
   }
 
