@@ -22,6 +22,8 @@ const std::string discreteAttrName = "DiscreteMemAccess";
 
 bool isaPermutedMemRefType(MemRefType);
 
+std::optional<int64_t> getLastStrideOfReinterpretCastOp(memref::ReinterpretCastOp op);
+
 Value getTransposedValue(Value source, const Location loc,
                          ConversionPatternRewriter &rewriter,
                          llvm::ArrayRef<int> order);
