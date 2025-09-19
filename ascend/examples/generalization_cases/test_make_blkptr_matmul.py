@@ -59,6 +59,6 @@ def test_matmul(shape, dtype):
     accumulator_type = tl.float32
     
     matmul_kernel[1, ](a.npu(), b.npu(), triton_res, M, N, K, accumulator_type,
-                        BLOCK_M, BLOCK_N, BLOCK_K, enable_nd2nz_on_vector=True)
+                        BLOCK_M, BLOCK_N, BLOCK_K, enable_nd2nz_on_vector=False)
 
     print("PASSED")
