@@ -54,11 +54,6 @@ private:
                                          PatternRewriter &rewriter) const;
 
   template <>
-  void bubbleUpOperation<arith::SelectOp>(Operation *op, arith::SelectOp parentOp,
-                                          ArrayRef<Value> indices, Location loc,
-                                          PatternRewriter &rewriter) const;
-
-  template <>
   void bubbleUpOperation<arith::CmpIOp>(Operation *op, arith::CmpIOp parentOp,
                                         ArrayRef<Value> indices, Location loc,
                                         PatternRewriter &rewriter) const;

@@ -44,12 +44,8 @@ template <>
 triton::LoadOp UnstructuredMemAccessConverter<triton::LoadOp>::createMemAccOp(
     triton::LoadOp op, Value ptrToAccess, Location loc, ArrayRef<Value> iterIdx,
     PatternRewriter &rewriter) const {
-  auto extractedMask = createExtractOp(loc, op.getMask(), iterIdx, rewriter);
-  auto extractedOther = createExtractOp(loc, op.getOther(), iterIdx, rewriter);
-  return rewriter.create<triton::LoadOp>(loc, ptrToAccess, extractedMask,
-                                         extractedOther,
-                                         /*boundaryCheck=*/ArrayRef<int32_t>(),
-                                         /*PaddingOptionAttr=*/nullptr);
+  return rewriter.create<triton::LoadOp>(loc, ptrToAccess, op.getCache(),
+                                         op.getEvict(), false);
 }
 
 template <>
@@ -273,7 +269,20 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
                   UnitAttr::get(rewriter.getContext()));
 
     rewriter.restoreInsertionPoint(insertPoint);
-    rewriter.replaceOp(op, newOpResult);
+    if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
+      if (op.getMask() && op.getOther()) {
+        rewriter
+            .replaceOpWithNewOp<arith::SelectOp>(op, op.getMask(), newOpResult,
+                                                 op.getOther())
+            ->setAttr(ConverterUtils::discreteAttrName,
+                      UnitAttr::get(rewriter.getContext()));
+        ;
+      } else {
+        rewriter.replaceOp(op, newOpResult);
+      }
+    } else {
+      rewriter.replaceOp(op, newOpResult);
+    }
   } else {
     rewriter.eraseOp(op);
   }

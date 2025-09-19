@@ -42,8 +42,6 @@ BubbleUpExtract::matchAndRewrite(tensor::ExtractOp op,
     bubbleUpIntBinaryOp(op, maxSIOp, indices, loc, rewriter);
   } else if (auto minSIOp = dyn_cast<arith::MinSIOp>(parentOp)) {
     bubbleUpIntBinaryOp(op, minSIOp, indices, loc, rewriter);
-  } else if (auto selectOp = dyn_cast<arith::SelectOp>(parentOp)) {
-    bubbleUpOperation(op, selectOp, indices, loc, rewriter);
   } else if (auto andIOp = dyn_cast<arith::AndIOp>(parentOp)) {
     bubbleUpIntBinaryOp(op, andIOp, indices, loc, rewriter);
   } else if (auto orIOp = dyn_cast<arith::OrIOp>(parentOp)) {
@@ -139,17 +137,6 @@ void BubbleUpExtract::bubbleUpOperation<arith::ExtSIOp>(
   auto resultType = cast<RankedTensorType>(parentOp.getOut().getType());
   rewriter.replaceOpWithNewOp<arith::ExtSIOp>(op, resultType.getElementType(),
                                               in);
-}
-
-template <>
-void BubbleUpExtract::bubbleUpOperation<arith::SelectOp>(
-    Operation *op, arith::SelectOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto condition = createExtractOp(parentOp.getCondition(), indices, loc, rewriter);
-  auto trueValue = createExtractOp(parentOp.getTrueValue(), indices, loc, rewriter);
-  auto falseValue = createExtractOp(parentOp.getFalseValue(), indices, loc, rewriter);
-  rewriter.replaceOpWithNewOp<arith::SelectOp>(op, condition,
-                                               trueValue, falseValue);
 }
 
 template <>
