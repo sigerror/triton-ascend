@@ -171,13 +171,21 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
       return success();
     }
 
+  if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
+    if (op->hasAttr(ConverterUtils::discreteMaskAttrName)) {
+      auto selectOp = op.getValue().template getDefiningOp<arith::SelectOp>();
+      op = rewriter.replaceOpWithNewOp<triton::StoreOp>(
+          op, op.getPtr(), selectOp.getTrueValue(), selectOp.getCondition(),
+          op.getCache(), op.getEvict());
+      rewriter.setInsertionPoint(op);
+    }
+  }
+
   auto srcPtr = ptrOffsetInfo.getPtr();
   auto offset = ptrOffsetInfo.getOffset();
 
   // LoadLike is operation with result
   bool isLoadLike = !op->use_empty();
-
-  // Check if offsetShape is equal to localMem shape
 
   Value zeroIdx =
       rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0));

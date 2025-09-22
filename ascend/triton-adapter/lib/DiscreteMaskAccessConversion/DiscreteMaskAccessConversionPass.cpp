@@ -4,6 +4,7 @@
  */
 
 #include "DiscreteMaskAccessConversion/Passes.h"
+#include "Utils/Utils.h"
 
 #include "bishengir/Dialect/HIVM/IR/HIVM.h"
 #include "mlir/IR/Attributes.h"
@@ -52,6 +53,7 @@ LogicalResult matchAndRewrite(triton::StoreOp op,
   auto selOp = rewriter.create<arith::SelectOp>(loc, mask, src, loadFromDstOp.getResult());
   auto newStore = rewriter.create<triton::StoreOp>(
               loc, dst, selOp, op.getCache(), op.getEvict());
+  newStore->setAttr(ConverterUtils::discreteMaskAttrName, UnitAttr::get(rewriter.getContext()));
   rewriter.replaceOp(op, newStore);
   return success();
 }
