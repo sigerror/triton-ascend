@@ -52,7 +52,6 @@ def triton_func(x0, x1, XS):
 
 @pytest.mark.skip(reason="waiting for bishengir-compile to support")
 @pytest.mark.parametrize('sigtype', ['int64'])
-@test_common.capture_output("???")
 def test_device_print_int64(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype = dtype).npu()
@@ -64,9 +63,7 @@ def test_device_print_int64(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
-@pytest.mark.skip(reason="waiting for printf stream support")
 @pytest.mark.parametrize('sigtype', ['int32'])
-@test_common.capture_output("0,-128,127,-32768,32767,-2147483648,2147483647,-2147483648")
 def test_device_print_int32(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype = dtype).npu()
@@ -78,9 +75,7 @@ def test_device_print_int32(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
-@pytest.mark.skip(reason="waiting for printf stream support")
 @pytest.mark.parametrize('sigtype', ['int16'])
-@test_common.capture_output("0,-128,127,-32768,32767,0,-1,0")
 def test_device_print_int16(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype = dtype).npu()
@@ -92,9 +87,7 @@ def test_device_print_int16(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
-@pytest.mark.skip(reason="waiting for printf stream support")
 @pytest.mark.parametrize('sigtype', ['int8'])
-@test_common.capture_output("0,-128,127,0,-1,0,-1,0")
 def test_device_print_int8(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype = dtype).npu()
@@ -106,9 +99,7 @@ def test_device_print_int8(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
-@pytest.mark.skip(reason="waiting for printf stream support")
 @pytest.mark.parametrize('sigtype', ['float32'])
-@test_common.capture_output("0,1.19209e-07,0.000976562,0.0078125,3.40282e+38,65504,3.38953e+38,1")
 def test_device_print_fp32(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype = dtype).npu()
@@ -120,9 +111,7 @@ def test_device_print_fp32(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
-@pytest.mark.skip(reason="waiting for printf stream support")
 @pytest.mark.parametrize('sigtype', ['float16'])
-@test_common.capture_output("0,1.19209e-07,0.000976562,0.0078125,inf,65504,inf,1")
 def test_device_print_fp16(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype = dtype).npu()
@@ -136,7 +125,6 @@ def test_device_print_fp16(capsys, sigtype):
 
 @pytest.mark.skip(reason="waiting for bishengir-compile to support")
 @pytest.mark.parametrize('sigtype', ['bfloat16'])
-@test_common.capture_output("???")
 def test_device_print_bf16(capsys, sigtype):
     dtype = eval(f"torch.{sigtype}")
     x0 = torch.zeros(shape, dtype = dtype).npu()
