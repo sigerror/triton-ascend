@@ -146,3 +146,10 @@ def fmod(arg0, arg1, _builder=None):
 def trunc(arg0, _builder=None):
     core.static_print("tl.trunc is unsupported for now. Use libdevice.trunc instead.")
     core.static_assert(False)
+
+@core.extern
+def round(arg0, _builder=None):
+    return core.extern_elementwise(
+        "", "", [arg0], {
+            (core.dtype("fp32"), ): ("__hmf_roundf", core.dtype("fp32")),            
+        }, is_pure=True, _builder=_builder)
