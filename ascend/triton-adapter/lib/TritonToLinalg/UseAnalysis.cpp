@@ -171,7 +171,7 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
       LLVM_DEBUG({ op->setAttr("Undefined", UnitAttr::get(context)); });
       return;
     } else if (useType == UseType::MetaUse) {
-      if (!isa<mlir::scf::IfOp, mlir::scf::ForOp, mlir::scf::WhileOp>(op)) {
+      if (!isa<mlir::scf::IfOp, mlir::scf::ForOp, mlir::scf::WhileOp, triton::ReduceOp>(op)) {
         assert(op->getNumResults() == 1 &&
                "Ops used for meta computation are expected to have one result");
       }
@@ -367,7 +367,10 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
       LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(context)); });
       op->removeAttr("MetaUse");
     }
-    if (op->hasAttr(ConverterUtils::discreteAttrName)) {
+    if (op->hasAttr(ConverterUtils::discreteAttrName) ||
+        (op->getNumResults() > 1 && isMetaUse(op))) {
+      LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(op->getContext())); });
+      op->removeAttr("MetaUse");
       traverseBackwardUpdateOperandChainIf(
           op,
           [op, &propagateCondFn](Operation *curOp) {
