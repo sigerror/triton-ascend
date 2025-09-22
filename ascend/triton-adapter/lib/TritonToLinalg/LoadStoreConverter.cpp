@@ -717,24 +717,24 @@ ScalarStoreCanonicalizer::matchAndRewrite(triton::StoreOp op,
     return rewriter.notifyMatchFailure(
         op, "ScalarStoreCanonicalizer handles scalar store scene!");
   }
-
   auto ptr = op.getPtr();
-  auto ptrTy = RankedTensorType::get({(int64_t)1}, ptr.getType());
-  auto ptrSplat = rewriter.create<triton::SplatOp>(op.getLoc(), ptrTy, ptr);
-  auto valTy = RankedTensorType::get({(int64_t)1}, op.getValue().getType());
-  auto valSplat =
-      rewriter.create<triton::SplatOp>(op.getLoc(), valTy, op.getValue());
   auto mask = op.getMask();
+  auto value = op.getValue();
   if (mask) {
-    auto maskTy = RankedTensorType::get({(int64_t)1}, mask.getType());
-    auto maskSplat =
-        rewriter.create<triton::SplatOp>(op.getLoc(), maskTy, mask);
-    auto newStoreOp = rewriter.create<triton::StoreOp>(
-        op.getLoc(), ptrSplat, valSplat, maskSplat, op.getCache(),
-        op.getEvict());
-    rewriter.replaceOp(op, newStoreOp);
+    rewriter.replaceOpWithNewOp<scf::IfOp>(op, mask,
+      [&](OpBuilder &b, Location loc) {
+        b.create<triton::StoreOp>(
+          loc, ptr, value, op.getCache(), op.getEvict());
+        b.create<scf::YieldOp>(loc);
+    });
     return success();
   }
+
+  auto ptrTy = RankedTensorType::get({(int64_t)1}, ptr.getType());
+  auto ptrSplat = rewriter.create<triton::SplatOp>(op.getLoc(), ptrTy, ptr);
+  auto valTy = RankedTensorType::get({(int64_t)1}, value.getType());
+  auto valSplat =
+      rewriter.create<triton::SplatOp>(op.getLoc(), valTy, value);
   auto newStoreOp = rewriter.create<triton::StoreOp>(
       op.getLoc(), ptrSplat, valSplat, op.getCache(), op.getEvict());
   rewriter.replaceOp(op, newStoreOp);
