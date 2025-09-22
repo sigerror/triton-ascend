@@ -8,7 +8,7 @@ script_dir=$(dirname "$script")
 source /usr/local/CANN_8.2.RC1.alpha002/ascend-toolkit/set_env.sh
 export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
-COMPILER_ROOT=/home/shared/bisheng_toolkit_20250820
+COMPILER_ROOT=/home/shared/bisheng_toolkit_20250922
 BSIR_COMPILE_PATH=$(find "$COMPILER_ROOT" -name "bishengir-compile" | xargs dirname)
 export PATH=${COMPILER_ROOT}:${BSIR_COMPILE_PATH}:$PATH
 # FIXME: the 20250812 bishengir-compile requires the pairing bisheng compiler

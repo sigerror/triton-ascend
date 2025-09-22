@@ -157,7 +157,7 @@ export LLVM_BUILD_DIR=/opt/llvm-b5cc222
 
 # FIXME: 20250508 the bishengir-compile in the CANN 8.0.T115 fails lots of cases
 #        So we need to use another version of compiler.
-COMPILER_ROOT=/home/shared/bisheng_toolkit_20250820
+COMPILER_ROOT=/home/shared/bisheng_toolkit_20250922
 BSIR_COMPILE_PATH=$(find "$COMPILER_ROOT" -name "bishengir-compile" | xargs dirname)
 export PATH=${COMPILER_ROOT}:${BSIR_COMPILE_PATH}:$PATH
 # FIXME: the 20250812 bishengir-compile requires the pairing bisheng compiler
