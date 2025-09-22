@@ -131,22 +131,22 @@ def test_permute(para_type,data_type,XB,YB,ZB):
     print(" test permute 102 passed")
 
     output = torch.randint(1, (ZB,XB,YB), dtype=data_type).npu()
-    torch_201 = torch.permute(x,(2,0,1))
+    torch_201 = torch.permute(x, (2,0,1))
     fn_npu_201[1,1,1](output, x, XB, YB, ZB)
-    torch.testing.assert_close(output,torch_201)
+    torch.testing.assert_close(output, torch_201)
 
     print(" test permute 201 passed")
 
     output = torch.randint(1, (ZB,YB,XB), dtype=data_type).npu()
-    torch_210 = torch.permute(x,(2,1,0))
+    torch_210 = torch.permute(x, (2,1,0))
     fn_npu_210[1,1,1](output, x, XB, YB, ZB)
-    torch.testing.assert_close(output,torch_210)
+    torch.testing.assert_close(output, torch_210)
 
     print(" test permute 210 passed")
 
     output = torch.randint(1, (YB,ZB,XB), dtype=data_type).npu()
-    torch_120 = torch.permute(x,(1,2,0))
+    torch_120 = torch.permute(x, (1,2,0))
     fn_npu_120[1,1,1](output, x, XB, YB, ZB)
-    torch.testing.assert_close(output,torch_120)
+    torch.testing.assert_close(output, torch_120)
 
     print(" test permute 120 passed")
