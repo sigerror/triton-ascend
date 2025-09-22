@@ -130,6 +130,72 @@ void triton::UseAnalysis::visitOperation(Operation *op,
 #endif
 }
 
+void setMixUseRecursively(Operation *rootOp, bool applyRoot = true) {
+  traverseBackwardUpdateOperandChainIf(
+    rootOp,
+    // ConditionFn
+    [rootOp, applyRoot](Operation *curOp) {
+      for (auto res : curOp->getResults()) {
+        auto tensorType = dyn_cast<RankedTensorType>(res.getType());
+        if (tensorType && isa<triton::PointerType>(tensorType.getElementType()))
+          return false;
+      }
+      return isMetaUse(curOp) && (curOp != rootOp || applyRoot);
+    },
+    // StopFn
+    [rootOp](Operation *curOp) {
+      return isa<triton::LoadOp>(curOp) && curOp != rootOp;
+    },
+    // ActionFn
+    [](OpBuilder &b, Operation *op) {
+      LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(b.getContext())); });
+      op->removeAttr("MetaUse");
+    });
+}
+
+void postProcessLoopOp(LoopLikeOpInterface loopOp, const DataFlowSolver &solver) {
+  for (const auto &[res, yield, regionArg] :
+        llvm::zip_equal(loopOp->getResults(), loopOp.getYieldedValues(),
+                        loopOp.getRegionIterArgs())) {
+    auto *defOp = yield.getDefiningOp();
+    bool isMixUse = false;
+    if (!defOp)
+      continue;
+    std::function<std::optional<bool>(Value, Value)> isIterArgMixUse =
+        [&](Value v, Value target) -> std::optional<bool> {
+      auto defOp = v.getDefiningOp();
+      auto *use = solver.lookupState<UseInfo>(v);
+      if (use && use->type == UseType::DataUse)
+          return true;
+      if (v == target)
+        return false;
+      if (!defOp)
+        return std::nullopt;
+      if (auto loopOp = dyn_cast<LoopLikeOpInterface>(defOp)) {
+        auto resNum = cast<OpResult>(v).getResultNumber();
+        auto res = isIterArgMixUse(loopOp.getInits()[resNum], target);
+        if (res.has_value()) {
+          bool isMixUse = res.value();
+          Value yieldedValue = loopOp.getYieldedValues()[resNum];
+          if (auto yieldDefOp = yieldedValue.getDefiningOp())
+            isMixUse = isMixUse || !isMetaUse(yieldDefOp);
+          return isMixUse;
+        }
+        return std::nullopt;
+      }
+      for (auto oper : defOp->getOperands()) {
+        auto res = isIterArgMixUse(oper, target);
+        if (res.has_value())
+          return res.value() || !isMetaUse(defOp);
+      }
+      return std::nullopt;
+    };
+    if (solver.lookupState<UseInfo>(res)->type == UseType::DataUse ||
+        isIterArgMixUse(yield, regionArg).value_or(false))
+      setMixUseRecursively(defOp);
+  }
+}
+
 LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
   MLIRContext *context = funcOp.getContext();
   SymbolTableCollection symbolTable;
@@ -290,14 +356,6 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
   });
   // Post-process
   funcOp.walk([&](Operation *op) {
-    auto propagateCondFn = [](Operation *curOp) {
-      for (auto res: curOp->getResults()) {
-        auto tensorType = dyn_cast<RankedTensorType>(res.getType());
-        if (tensorType && isa<triton::PointerType>(tensorType.getElementType()))
-          return false;
-      }
-      return isMetaUse(curOp);
-    };
     // Handle indirect load case.
     // For example, load(1st) -> computeOp -> load(2nd).
     // The first load is IndirectLoadInterfaceOp.
@@ -326,7 +384,7 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
             // We need to ensure the intermediate ops are marked MixUse
             // so that they will be replaced instead of be erased without
             // conversion.
-            return isa<triton::LoadOp>(curOp) && !curOp->hasAttr("MetaUse");
+            return isa<triton::LoadOp>(curOp) && !isMetaUse(curOp);
           },
           /*actionFn*/
           [](OpBuilder &b, Operation *op) {
@@ -336,102 +394,33 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
           stopOps);
       LLVM_DEBUG({
         os << "[UseAnalysis] stopOps are \n";
-        int i = 0;
-        for (auto it = stopOps.begin(); it != stopOps.end(); it++) {
-          os << i++ << ": " << *(*it) << "\n";
-        }
+        for (auto [idx, stopOp] : llvm::enumerate(stopOps))
+          os << idx << ": " << *stopOp << "\n";
       });
       LLVM_DEBUG({
         os << "[UseAnalysis] After trace, funcOp is " << *funcOp << "\n";
       });
-      for (auto it = stopOps.begin(); it != stopOps.end(); it++) {
-        auto stopOp = *it;
-        traverseBackwardUpdateOperandChainIf(
-            stopOp,
-            [stopOp, &propagateCondFn](Operation *curOp) {
-              return propagateCondFn(curOp) && curOp != stopOp;
-            },
-            [op](Operation *curOp) {
-              return isa<triton::LoadOp>(curOp) && curOp != op;
-            },
-            [](OpBuilder &b, Operation *op) {
-              LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(b.getContext())); });
-              op->removeAttr("MetaUse");
-            });
-      }
+      for (auto *stopOp : stopOps)
+        setMixUseRecursively(stopOp, /*applyRoot=*/false);
       LLVM_DEBUG({
         os << "[UseAnalysis] After traceback of stopOp, funcOp is " << *funcOp
-          << "\n";
+           << "\n";
       });
       // Modify this op.
       LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(context)); });
       op->removeAttr("MetaUse");
     }
-    if (op->hasAttr(ConverterUtils::discreteAttrName) ||
-        (op->getNumResults() > 1 && isMetaUse(op))) {
-      LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(op->getContext())); });
-      op->removeAttr("MetaUse");
-      traverseBackwardUpdateOperandChainIf(
-          op,
-          [op, &propagateCondFn](Operation *curOp) {
-            return propagateCondFn(curOp) && curOp != op;
-          },
-          [op](Operation *curOp) {
-            return isa<triton::LoadOp>(curOp) && curOp != op;
-          },
-          [](OpBuilder &b, Operation *op) {
-            LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(b.getContext())); });
-            op->removeAttr("MetaUse");
-          });
-    }
+    if (op->hasAttr(ConverterUtils::discreteAttrName))
+      setMixUseRecursively(op);
     if (auto loopOp = dyn_cast<LoopLikeOpInterface>(op)) {
-      for (const auto &[yield, regionArg]: llvm::zip_equal(loopOp.getYieldedValues(), loopOp.getRegionIterArgs())) {
-        auto *defOp = yield.getDefiningOp();
-        bool isMixUse = false;
-        if (!defOp)
-          continue;
-        std::function<std::optional<bool>(Value, Value)> checkMixUse = [&](Value v, Value target) -> std::optional<bool> {
-          auto defOp = v.getDefiningOp();
-          if (v == target)
-            return false;
-          if (!defOp)
-            return std::nullopt;
-          if (auto loopOp = dyn_cast<LoopLikeOpInterface>(defOp)) {
-            auto resNum = cast<OpResult>(v).getResultNumber();
-            auto res = checkMixUse(loopOp.getInits()[resNum], target);
-            if (res.has_value()) {
-              bool isMixUse = res.value();
-              Value yieldedValue = loopOp.getYieldedValues()[resNum];
-              if (auto yieldDefOp = yieldedValue.getDefiningOp()) {
-                isMixUse = isMixUse || !yieldDefOp->hasAttr("MetaUse");
-              }
-              return isMixUse;
-            }
-            return std::nullopt;
-          }
-          for (auto oper: defOp->getOperands()) {
-            auto res = checkMixUse(oper, target);
-            if (res.has_value()) {
-              return res.value() || !defOp->hasAttr("MetaUse");
-            }
-          }
-          return std::nullopt;
-        };
-        
-        if (checkMixUse(yield, regionArg).value_or(false)) {
-          traverseBackwardUpdateOperandChainIf(
-            defOp,
-            [&propagateCondFn](Operation *curOp) {
-              return propagateCondFn(curOp);
-            },
-            [op](Operation *curOp) {
-              return isa<triton::LoadOp>(curOp);
-            },
-            [](OpBuilder &b, Operation *op) {
-              LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(b.getContext())); });
-              op->removeAttr("MetaUse");
-            });
-        }
+      postProcessLoopOp(loopOp, solver);
+    } else if (auto ifOp = dyn_cast<scf::IfOp>(op)) {
+      SmallVector<Value> yields(ifOp.thenYield().getOperands());
+      if (!ifOp.getElseRegion().empty())
+        yields.append(llvm::to_vector(ifOp.elseYield().getOperands()));
+      for (auto yield : yields) {
+        if (auto *defOp = yield.getDefiningOp())
+          setMixUseRecursively(defOp);
       }
     }
   });
