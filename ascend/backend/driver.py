@@ -355,6 +355,9 @@ def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, loc
     ) if mix_mode == "aiv" else npu_utils.get_aicore_num()
     task_type = "MSPROF_GE_TASK_TYPE_AIV" if mix_mode == "aiv" else "MSPROF_GE_TASK_TYPE_AI_CORE"
     LINE_CHANGE_CHAR = chr(10)  # it is \n
+    alloc_success_code = 'return 1;'
+    sync_lock_fail_code = 'fprintf(stderr, "Error: syncBlockLock allocation failed\\n"); return;'
+    workspace_fail_code = 'fprintf(stderr, "Error: workspace allocation failed\\n"); return;'
 
     cpp_device_pointer = """
 typedef struct _DevicePtrInfo {
@@ -529,6 +532,7 @@ extern "C" {
 #include <Python.h>
 {'#include <torch_npu/csrc/framework/OpCommand.h>' if enable_taskqueue else ''}
 #include "experiment/runtime/runtime/rt.h"
+#include <torch_npu/csrc/core/npu/NPUCachingAllocator.h>
 {extract_device_print_code_from_cann() if enable_device_print else ''}
 
 #define TENSOR_KIND_INPUT 0
@@ -545,7 +549,7 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   // base_ptr offset shape and stride are not used, arbitrarily set for now
   std::string name = "";
   name.append(kernelName);
-  {'auto launch_call = [=]()' if enable_taskqueue else ''} {{
+  {'auto launch_call = [=]() -> rtError_t' if enable_taskqueue else ''} {{
     uint32_t blockNum = gridX * gridY * gridZ;
     {'blockNum = std::min(blockNum, (uint32_t)' + str(num_physical_blocks) + ');' if enable_auto_map_parallel_blocks else ''}
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
@@ -555,30 +559,31 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     if (ret != RT_ERROR_NONE) {{
       return {'ret' if enable_taskqueue else ''};
     }}
-    // stub argument for workspace
-    void *syncBlockLock = NULL;
-    void *workspace_addr = NULL;
+    c10::DataPtr syncBlockLock_ptr;
+    c10::DataPtr workspace_addr_ptr;
     uint16_t ModuleId = 0;
+    auto* npu_allocator = c10_npu::NPUCachingAllocator::get();
     {f'''
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
-    ret = rtMalloc(reinterpret_cast<void **>(&syncBlockLock),
-                   syncBlockLockSize, RT_MEMORY_HBM, 0);
-    if (ret != RT_ERROR_NONE) {{
-      return {'ret' if enable_taskqueue else ''};
+    syncBlockLock_ptr = npu_allocator->allocate(syncBlockLockSize);
+    if (!syncBlockLock_ptr) {{
+      {alloc_success_code if enable_taskqueue else sync_lock_fail_code}
     }}
     std::vector<int64_t> lockInitData({lock_num}, {lock_ini_val});
-    ret = rtMemcpy(syncBlockLock, syncBlockLockSize, reinterpret_cast<void *>(lockInitData.data()),
-                   syncBlockLockSize, RT_MEMCPY_HOST_TO_DEVICE);
+    ret = rtMemcpy(
+        syncBlockLock_ptr.get(), syncBlockLockSize,
+        reinterpret_cast<void *>(lockInitData.data()), syncBlockLockSize,
+        RT_MEMCPY_HOST_TO_DEVICE
+    );
     if (ret != RT_ERROR_NONE) {{
       return {'ret' if enable_taskqueue else ''};
     }}
     ''' if lock_num > 0 else ''}
     {f'''
     uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
-    ret = rtMalloc(reinterpret_cast<void **>(&workspace_addr),
-                   totalWorkSpaceSize, RT_MEMORY_HBM, ModuleId);
-    if (ret != RT_ERROR_NONE) {{
-      return {'ret' if enable_taskqueue else ''};
+    workspace_addr_ptr = npu_allocator->allocate(totalWorkSpaceSize);
+    if (!workspace_addr_ptr) {{
+      {alloc_success_code if enable_taskqueue else workspace_fail_code}
     }}
     ''' if workspace_size > 0 else ''}
     struct __attribute__((packed)) {{
@@ -590,8 +595,8 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       {'void* DTData __attribute__((aligned(8)));' if enable_device_print else ''}
     }} args = {{
       static_cast<void*>(ffts_addr),
-      static_cast<void*>(syncBlockLock),
-      static_cast<void*>(workspace_addr),
+      {f'syncBlockLock_ptr.get()' if lock_num > 0 else 'nullptr'},
+      {f'workspace_addr_ptr.get()' if workspace_size > 0 else 'nullptr'},
       {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants)},
       {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(grid{mark})' for mark, ty in grid_info.items())}
       {', static_cast<void*>(DTData)' if enable_device_print else ''}
