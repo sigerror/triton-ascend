@@ -96,7 +96,6 @@ module {
 // CHECK:           %[[VAL_28:.*]] = memref.subview %[[VAL_18]][0, 0] {{\[}}%[[VAL_25]], %[[VAL_26]]] [1, 1] : memref<128x256xbf16> to memref<?x?xbf16, strided<[256, 1]>>
 // CHECK:           memref.copy %[[VAL_27]], %[[VAL_28]] : memref<?x?xbf16, strided<[1, 1024], offset: 3074>> to memref<?x?xbf16, strided<[256, 1]>>
 // CHECK:           %[[VAL_32:.*]] = bufferization.to_tensor %[[VAL_18]] restrict writable : memref<128x256xbf16>
-// CHECK:           annotation.mark %[[VAL_32]] {MayImplicitTransposeWithLastAxis} : tensor<128x256xbf16>
 // CHECK:           %[[VAL_41:.*]] = tensor.extract_slice %[[VAL_32]][0, 0] {{\[}}%[[VAL_25]], %[[VAL_26]]] [1, 1] : tensor<128x256xbf16> to tensor<?x?xbf16>
 // CHECK:           %[[VAL_42:.*]] = memref.subview %[[VAL_17]][0, 0] {{\[}}%[[VAL_25]], %[[VAL_26]]] [1, 1] : memref<128x256xbf16, strided<[1, 1024], offset: 3074>> to memref<?x?xbf16, strided<[1, 1024], offset: 3074>>
 // CHECK:           bufferization.materialize_in_destination %[[VAL_41]] in writable %[[VAL_42]]

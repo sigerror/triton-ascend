@@ -52,6 +52,7 @@ using namespace mlir;
 using namespace triton;
 
 int nd2nzFlag = 0;
+bool existDotFlag = false;
 
 TritonTypeConverter::TritonTypeConverter() {
   addConversion([](Type type) { return type; });
@@ -614,6 +615,7 @@ void TritonToLinalgPass::runOnOperation() {
         existDot = true;
         return WalkResult::interrupt();
     });
+  existDotFlag = existDot;
 
   RewritePatternSet canonicalizerPatterns(&getContext());
 

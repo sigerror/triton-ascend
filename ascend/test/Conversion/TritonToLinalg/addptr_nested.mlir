@@ -48,7 +48,6 @@ module {
 // CHECK:           %[[VAL_10:.*]] = memref.alloc() : memref<4x256xbf16>
 // CHECK:           memref.copy %[[VAL_9]], %[[VAL_10]] : memref<4x256xbf16, strided<[1, 5], offset: ?>> to memref<4x256xbf16>
 // CHECK:           %[[VAL_11:.*]] = bufferization.to_tensor %[[VAL_10]] restrict writable : memref<4x256xbf16>
-// CHECK:           annotation.mark %[[VAL_11]] {MayImplicitTransposeWithLastAxis} : tensor<4x256xbf16>
 // CHECK:           %[[VAL_14:.*]] = arith.addi %[[VAL_8]], %[[VAL_8]] : index
 // CHECK:           %[[VAL_15:.*]] = memref.reinterpret_cast %[[VAL_0]] to offset: {{\[}}%[[VAL_14]]], sizes: [4, 256], strides: [2, 10] : memref<?xbf16> to memref<4x256xbf16, strided<[2, 10], offset: ?>>
 // CHECK:           %[[VAL_16:.*]] = memref.alloc() : memref<4x256xbf16>

@@ -8,6 +8,7 @@
 #include "TritonToLinalg/BlockPtrAnalysis.h"
 #include "TritonToLinalg/LoadStoreConverter.h"
 #include "TritonToLinalg/MaskAnalysis.h"
+#include "TritonToLinalg/TritonToLinalgPass.h"
 #include "Utils/InterleaveOptimization.h"
 #include "Utils/Utils.h"
 #include "bishengir/Dialect/Annotation/IR/Annotation.h"
@@ -247,7 +248,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     return rewriter.notifyMatchFailure(
         op, "LoadOp expects a memref, not a memref of pointers");
   }
-  bool mayImplicitTransposeWithLastAxis = (!op->hasAttr(ConverterUtils::GeneratedByMakeTensorPtrTAG)) &&
+  bool mayImplicitTransposeWithLastAxis = (existDotFlag) && (!op->hasAttr(ConverterUtils::GeneratedByMakeTensorPtrTAG)) &&
     (lastStride != 1 && mlir::ConverterUtils::isaPermutedMemRefType(memRefType));
   auto memRefShape = memRefType.getShape();
   auto memRefElementType = memRefType.getElementType();

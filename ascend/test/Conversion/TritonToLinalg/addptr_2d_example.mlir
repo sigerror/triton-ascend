@@ -53,12 +53,10 @@ module {
 // CHECK:           %[[VAL_10:.*]] = memref.alloc() : memref<4x256xbf16>
 // CHECK:           memref.copy %[[VAL_9]], %[[VAL_10]] : memref<4x256xbf16, strided<[1, 5], offset: ?>> to memref<4x256xbf16>
 // CHECK:           %[[VAL_11:.*]] = bufferization.to_tensor %[[VAL_10]] restrict writable : memref<4x256xbf16>
-// CHECK:           annotation.mark %[[VAL_11]] {MayImplicitTransposeWithLastAxis} : tensor<4x256xbf16>
 // CHECK:           %[[VAL_13:.*]] = memref.reinterpret_cast %[[VAL_1]] to offset: {{\[}}%[[VAL_8]]], sizes: [4, 256], strides: [1, 5] : memref<?xbf16> to memref<4x256xbf16, strided<[1, 5], offset: ?>>
 // CHECK:           %[[VAL_14:.*]] = memref.alloc() : memref<4x256xbf16>
 // CHECK:           memref.copy %[[VAL_13]], %[[VAL_14]] : memref<4x256xbf16, strided<[1, 5], offset: ?>> to memref<4x256xbf16>
 // CHECK:           %[[VAL_15:.*]] = bufferization.to_tensor %[[VAL_14]] restrict writable : memref<4x256xbf16>
-// CHECK:           annotation.mark %[[VAL_15]] {MayImplicitTransposeWithLastAxis} : tensor<4x256xbf16>
 // CHECK:           %[[VAL_16:.*]] = linalg.generic {indexing_maps = [#map, #map, #map], iterator_types = ["parallel", "parallel"]} ins(%[[VAL_11]], %[[VAL_15]] : tensor<4x256xbf16>, tensor<4x256xbf16>) outs(%[[VAL_11]] : tensor<4x256xbf16>) {
 // CHECK:           ^bb0(%[[VAL_17:.*]]: bf16, %[[VAL_18:.*]]: bf16, %[[VAL_19:.*]]: bf16):
 // CHECK:             %[[VAL_20:.*]] = arith.addf %[[VAL_17]], %[[VAL_18]] : bf16
