@@ -480,36 +480,6 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
     }
   }
 
-  // 3. If needed, handle the return value of atomic op
-  //
-  // tt.atomicRMW op has two part of feature
-  // 1. load the old data at the ptr
-  // 2. atomically store the data on ub to the ptr
-  //    at the same time it perform the action it has been assigned
-  // So we lower this op to load + atomically store
-  //
-  // The first part is not necessary when the returned value of atomic op
-  // is not used, it will be deleted cause it's meaningless
-  // Here, we preemptively determine whether it will be used
-  // and decide whether it is necessary to create the load process based on
-  // this assessment.
-  //
-  // logic of handling is copied
-  // TODO: decoupling the logic of load, put it in the Utils
-  if (!op.getResult().use_empty()) {
-    auto tensorType =
-        RankedTensorType::get(type.getShape(), type.getElementType());
-    auto alloc = rewriter.create<memref::AllocOp>(
-        loc, MemRefType::get(type.getShape(), type.getElementType()));
-
-    // For the return value, don't need to care about mask for now
-    // this op don't support other, so we best not fill it
-    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
-    Value tensor = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, alloc, true /* restrict */, true /* writable */);
-    rewriter.replaceOp(op, tensor);
-  }
-
   // create element-wise map
   int64_t rank = type.getRank();
   SmallVector<AffineExpr> inputDims;
@@ -560,9 +530,34 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
   if (softwareAtomicKinds.contains(op.getAtomicRmwOp()))
     linalgOp->setAttr("Software", rewriter.getUnitAttr());
 
-  // if the result hasn't been replace by load
-  // we need to erase it here
-  if (op.getResult().use_empty()) {
+
+  // tt.atomicRMW op has two part of feature
+  // 1. load the old data at the ptr
+  // 2. atomically store the data on ub to the ptr
+  //    at the same time it perform the action it has been assigned
+  // So we lower this op to load + atomically store
+  //
+  // The first part is not necessary when the returned value of atomic op
+  // is not used, it will be deleted cause it's meaningless
+  // Here, we preemptively determine whether it will be used
+  // and decide whether it is necessary to create the load process based on
+  // this assessment.
+  //
+  // logic of handling is copied
+  // TODO: decoupling the logic of load, put it in the Utils
+  if (!op.getResult().use_empty()) {
+    auto tensorType =
+        RankedTensorType::get(type.getShape(), type.getElementType());
+    auto alloc = rewriter.create<memref::AllocOp>(
+        loc, MemRefType::get(type.getShape(), type.getElementType()));
+
+    // For the return value, don't need to care about mask for now
+    // this op don't support other, so we best not fill it
+    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
+    Value tensor = rewriter.create<bufferization::ToTensorOp>(
+        loc, tensorType, alloc, true /* restrict */, true /* writable */);
+    rewriter.replaceOp(op, tensor);
+  } else {
     rewriter.eraseOp(op);
   }
   return success();
@@ -607,35 +602,6 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
 
   Value cmpMemref =
       rewriter.create<bufferization::ToMemrefOp>(loc, dstType, cmp);
-
-  // 3. If needed, handle the return value of atomic op
-  //
-  // tt.atomicRMW op has two part of feature
-  // 1. load the old data at the ptr
-  // 2. atomically store the data on ub to the ptr
-  //    at the same time it perform the action it has been assigned
-  // So we lower this op to load + atomically store
-  //
-  // The first part is not necessary when the returned value of atomic op
-  // is not used, it will be deleted cause it's meaningless
-  // Here, we preemptively determine whether it will be used
-  // and decide whether it is necessary to create the load process based on
-  // this assessment.
-  //
-  // logic of handling is copied
-  if (!op.getResult().use_empty()) {
-    auto tensorType =
-        RankedTensorType::get(type.getShape(), type.getElementType());
-    auto alloc = rewriter.create<memref::AllocOp>(
-        loc, MemRefType::get(type.getShape(), type.getElementType()));
-
-    // For the return value, don't need to care about mask for now
-    // this op don't support other, so we best not fill it
-    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
-    Value tensor = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, alloc, true /* restrict */, true /* writable */);
-    rewriter.replaceOp(op, tensor);
-  }
 
   // create element-wise map
   int64_t rank = type.getRank();
@@ -702,9 +668,32 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
 
   linalgOp->setAttr("Software", rewriter.getUnitAttr());
 
-  // if the result hasn't been replace by load
-  // we need to erase it here
-  if (op.getResult().use_empty()) {
+  // tt.atomicRMW op has two part of feature
+  // 1. load the old data at the ptr
+  // 2. atomically store the data on ub to the ptr
+  //    at the same time it perform the action it has been assigned
+  // So we lower this op to load + atomically store
+  //
+  // The first part is not necessary when the returned value of atomic op
+  // is not used, it will be deleted cause it's meaningless
+  // Here, we preemptively determine whether it will be used
+  // and decide whether it is necessary to create the load process based on
+  // this assessment.
+  //
+  // logic of handling is copied
+  if (!op.getResult().use_empty()) {
+    auto tensorType =
+        RankedTensorType::get(type.getShape(), type.getElementType());
+    auto alloc = rewriter.create<memref::AllocOp>(
+        loc, MemRefType::get(type.getShape(), type.getElementType()));
+
+    // For the return value, don't need to care about mask for now
+    // this op don't support other, so we best not fill it
+    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
+    Value tensor = rewriter.create<bufferization::ToTensorOp>(
+        loc, tensorType, alloc, true /* restrict */, true /* writable */);
+    rewriter.replaceOp(op, tensor);
+  } else {
     rewriter.eraseOp(op);
   }
   return success();
@@ -762,7 +751,9 @@ ScalarAtomicRMWCanonicalizer::matchAndRewrite(triton::AtomicRMWOp op,
   auto newAtomicOp = rewriter.create<triton::AtomicRMWOp>(
       op.getLoc(), valTy, op.getAtomicRmwOp(), ptrSplat, valSplat, maskSplat,
       op.getSem(), op.getScope());
-  rewriter.replaceOp(op, newAtomicOp);
+  auto idxZero =
+      rewriter.create<arith::ConstantOp>(op.getLoc(), rewriter.getIndexAttr(0));
+  rewriter.replaceOpWithNewOp<tensor::ExtractOp>(op, newAtomicOp, ValueRange({idxZero}));
   return success();
 }
 
@@ -788,7 +779,9 @@ ScalarAtomicCASCanonicalizer::matchAndRewrite(triton::AtomicCASOp op,
   auto newAtomicOp = rewriter.create<triton::AtomicCASOp>(
       op.getLoc(), valTy, ptrSplat, cmpSplat, valSplat, op.getSem(),
       op.getScope());
-  rewriter.replaceOp(op, newAtomicOp);
+  auto idxZero =
+      rewriter.create<arith::ConstantOp>(op.getLoc(), rewriter.getIndexAttr(0));
+  rewriter.replaceOpWithNewOp<tensor::ExtractOp>(op, newAtomicOp, ValueRange({idxZero}));
   return success();
 }
 
