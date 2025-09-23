@@ -487,7 +487,7 @@ MakeRangeConverter::matchAndRewrite(triton::MakeRangeOp op, OpAdaptor adaptor,
   auto startInit = rewriter.create<tensor::EmptyOp>(loc, shape, elementType);
   Value startTensor = rewriter.create<linalg::FillOp>(
       loc, ValueRange{startScaler}, ValueRange{startInit}).getResult(0);
-  auto addOp = rewriter.create<arith::AddIOp>(loc, linalgOp->getResults(),
+  auto addOp = rewriter.create<arith::AddIOp>(loc, linalgOp->getResult(0),
                                               startTensor);
   rewriter.replaceOp(op, addOp);
   return success();
