@@ -1500,7 +1500,7 @@ void BlockDataParser::rewriteLoopOp(
         newInitArgs.push_back(mappedV);
         iterArgIdxMap.push_back(argCnt++);
       } else if (auto defOp = op.getYieldedValues()[i].getDefiningOp();
-                !defOp || defOp->hasAttr("MetaUse")) {
+                (defOp && defOp->hasAttr("MetaUse"))) {
         // When argument is MetaUse in the loop,
         // It is removed in iter_args
         newInitArgs.push_back(nullptr);
