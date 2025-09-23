@@ -931,20 +931,19 @@ StoreConverter::matchAndRewrite(triton::StoreOp op, OpAdaptor adaptor,
   auto val = adaptor.getValue();
 
   // 1. boundary size check
-  // auto boundaryCheck = op.getBoundaryCheck();
-  // if (!boundaryCheck.empty()) {
-  //     SmallVector<OpFoldResult> sizes = getBoundarySizes(
-  //         boundaryCheck, op.getPtr(), ptr, loc, rewriter);
-
-  //     auto srcSlice = getExtractSlice(val, sizes, loc, rewriter);
-  //     auto dstSubview = getSubview(ptr, sizes, loc, rewriter);
-  //     auto storeOp =
-  //     rewriter.create<bufferization::MaterializeInDestinationOp>(
-  //         loc, srcSlice, dstSubview);
-  //     storeOp.setWritable(true);
-  //     rewriter.eraseOp(op);
-  //     return success();
-  // }
+  auto boundaryCheck = op.getBoundaryCheck();
+  if (!boundaryCheck.empty()) {
+      auto boundarySizes = mlir::ConverterUtils::getBoundarySizes(
+        boundaryCheck, /*remapped*/ ptr, loc, rewriter);
+      auto srcSlice = mlir::ConverterUtils::makeExtractSliceOp(val, boundarySizes, loc, rewriter);
+      auto dstSubview = mlir::ConverterUtils::makeSubViewOp(ptr, boundarySizes, loc, rewriter);
+      auto storeOp =
+      rewriter.create<bufferization::MaterializeInDestinationOp>(
+          loc, srcSlice, dstSubview);
+      storeOp.setWritable(true);
+      rewriter.eraseOp(op);
+      return success();
+  }
 
   // 2. Simple load with no mask
   if (!mask) {

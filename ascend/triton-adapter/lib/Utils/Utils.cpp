@@ -5,7 +5,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "../../include/Utils/Utils.h"
+#include "Utils/Utils.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Linalg/IR/Linalg.h"
@@ -197,7 +197,7 @@ memref::SubViewOp makeSubViewOp(Value src,
                                 const llvm::SmallVector<OpFoldResult> &sizes,
                                 const Location &loc,
                                 ConversionPatternRewriter &rewriter) {
-  auto srcType = dyn_cast<MemRefType>(src.getType());
+  auto srcType = cast<MemRefType>(src.getType());
   SmallVector<OpFoldResult> offsets(srcType.getRank(),
                                     rewriter.getIndexAttr(0));
   SmallVector<OpFoldResult> strides(srcType.getRank(),
@@ -206,6 +206,21 @@ memref::SubViewOp makeSubViewOp(Value src,
       memref::SubViewOp::inferResultType(srcType, offsets, sizes, strides);
   return rewriter.create<memref::SubViewOp>(loc, dyn_cast<MemRefType>(dstType),
                                             src, offsets, sizes, strides);
+}
+
+tensor::ExtractSliceOp makeExtractSliceOp(Value src,
+                                          const llvm::SmallVector<OpFoldResult> &sizes,
+                                          const Location &loc,
+                                          ConversionPatternRewriter &rewriter) {
+  auto srcType = cast<RankedTensorType>(src.getType());
+  SmallVector<OpFoldResult> offsets(srcType.getRank(),
+                                    rewriter.getIndexAttr(0));
+  SmallVector<OpFoldResult> strides(srcType.getRank(),
+                                    rewriter.getIndexAttr(1));
+  auto dstType =
+      tensor::ExtractSliceOp::inferResultType(srcType, offsets, sizes, strides);
+  return rewriter.create<tensor::ExtractSliceOp>(loc, dstType, src, offsets,
+                                                 sizes, strides);
 }
 
 std::optional<Operation *> getFullShapeOp(Value val,
