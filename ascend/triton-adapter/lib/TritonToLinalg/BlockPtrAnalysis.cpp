@@ -758,16 +758,6 @@ void BlockDataParser::parseReinterpretCast(
     data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
   }
 
-  // Block data cannot accept patterns of size 1 and non-zero const stride from
-  // memref type. Set stride back to zero if this scenario is detected.
-  loopLimit = data.getStridesRef().size();
-  for (size_t i = 0; i < loopLimit; i++) {
-    auto strideConst = getConstantIntValue(data.getStridesRef()[i]);
-    auto sizeConst = getConstantIntValue(data.getSizesRef()[i]);
-    assert(sizeConst.has_value());
-    if (sizeConst == 1 && strideConst)
-      data.getStridesRef()[i] = rewriter.getIndexAttr(0);
-  }
 }
 
 void BlockDataParser::parseReduce(
