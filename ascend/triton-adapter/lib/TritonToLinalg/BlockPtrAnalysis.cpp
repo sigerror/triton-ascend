@@ -757,7 +757,6 @@ void BlockDataParser::parseReinterpretCast(
   for (size_t i = 1; i < loopLimit; i++) {
     data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
   }
-
 }
 
 void BlockDataParser::parseReduce(
