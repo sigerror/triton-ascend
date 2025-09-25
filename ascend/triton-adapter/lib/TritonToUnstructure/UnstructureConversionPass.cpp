@@ -344,7 +344,8 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
       parse(res, loc, rewriter, offsetMapForLoopArgs);
 
       BlockArgument regionIterArg;
-      if (!offsetMapForLoopArgs.at(res).isStructured() &&
+      auto resOffsetInfo = offsetMapForLoopArgs.at(res);
+      if (!resOffsetInfo.isStructured() &&
           isa<triton::PointerType>(tensorType.getElementType())) {
         LLVM_DEBUG({
           auto &os = llvm::dbgs();
@@ -373,11 +374,11 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
       }
 
       regionIterArg = op.getTiedLoopRegionIterArg(res);
-      offsetMap[regionIterArg] = PtrOffsetInfo();
+      offsetMap[regionIterArg] = PtrOffsetInfo(resOffsetInfo.getPtr());
       SmallVector<bool> &regionIterArgOffset =
           offsetMap[regionIterArg].getStructuredRef();
       SmallVector<bool> &resOffset =
-          offsetMapForLoopArgs[res].getStructuredRef();
+          resOffsetInfo.getStructuredRef();
       regionIterArgOffset.resize(resOffset.size());
       for (size_t i = 0; i < resOffset.size(); i++)
         regionIterArgOffset[i] = resOffset[i];
