@@ -43,6 +43,7 @@ def mv(inp, vec):
     assert inp.shape[1] == vec.shape[0], "incompatible dimensions"
     N, M = inp.shape
     out = torch.empty((N,), device=inp.device, dtype=inp.dtype)
+    
     def grid(META): 
         return (triton.cdiv(N, META["BLOCK_N"]),)
     mv_kernel[grid](
