@@ -445,9 +445,6 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
       rewriter.create<bufferization::ToMemrefOp>(loc, dstType, val);
 
   // 2. handle the mask for the atomic op
-  MaskState mstate;
-  auto mask = op.getMask();
-
   // When the dsl do not pass the mask to this op like
   // `tl.atomic_add(out_ptr0 + xindex, tmp2)`, it will create a constant mask
   // for this op by default, which is not supported by maskAnalysis, so we
@@ -468,20 +465,23 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
   //
   // return ptr, val, mask
   //
-  auto constantMask = mask.getDefiningOp<arith::ConstantOp>();
-  if (!constantMask) {
-    auto isContMask = mstate.parse(mask, loc, rewriter);
+  if (auto mask = op.getMask()) {
+    MaskState mstate;
+    auto constantMask = mask.getDefiningOp<arith::ConstantOp>();
+    if (!constantMask) {
+      auto isContMask = mstate.parse(mask, loc, rewriter);
 
-    if (isContMask.failed()) {
-      return rewriter.notifyMatchFailure(
-          op, "Cannot lower continuous masked loads");
-    }
-    dstMemref = mstate.getSubview(ptr, loc, rewriter);
-    inputMemref = mstate.getSubview(inputMemref, loc, rewriter);
-  } else {
-    if (!isConstantMaskTrue(mask)) {
-      rewriter.eraseOp(op);
-      return success();
+      if (isContMask.failed()) {
+        return rewriter.notifyMatchFailure(
+            op, "Cannot lower continuous masked loads");
+      }
+      dstMemref = mstate.getSubview(ptr, loc, rewriter);
+      inputMemref = mstate.getSubview(inputMemref, loc, rewriter);
+    } else {
+      if (!isConstantMaskTrue(mask)) {
+        rewriter.eraseOp(op);
+        return success();
+      }
     }
   }
 

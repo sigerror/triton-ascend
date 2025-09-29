@@ -102,17 +102,60 @@ LogicalResult matchAndRewrite(triton::LoadOp op,
 }
 };
 
+struct DiscreteMaskAtomicAddConversion : OpRewritePattern<triton::AtomicRMWOp> {
+using OpRewritePattern<triton::AtomicRMWOp>::OpRewritePattern;
+LogicalResult matchAndRewrite(triton::AtomicRMWOp op, PatternRewriter &rewriter) const final {
+  if (op.getAtomicRmwOp() != triton::RMWOp::FADD && op.getAtomicRmwOp() != triton::RMWOp::ADD) {
+    return failure();
+  }
+  auto loc = op.getLoc();
+  auto ptr = op.getPtr();
+  auto value = op.getVal();
+  auto mask = op.getMask();
+
+  if (!mask)
+    return failure();
+
+  MaskState mstate;
+  auto isContMask = mstate.parse(mask, loc, rewriter);
+  if (!isContMask.failed()) {
+    mstate.eraseInsertedOps(op, rewriter);
+    return failure();
+  }
+
+  mlir::Value zeros;
+  auto valueType = value.getType();
+  if (auto tensorType = mlir::dyn_cast<mlir::RankedTensorType>(valueType)) {
+    auto elemType = tensorType.getElementType();
+    auto zeroAttr = rewriter.getZeroAttr(elemType);
+    auto denseAttr = mlir::DenseElementsAttr::get(tensorType, zeroAttr);
+    zeros = rewriter.create<mlir::arith::ConstantOp>(loc, denseAttr);
+  } else if (mlir::isa<mlir::FloatType>(valueType) || mlir::isa<mlir::IntegerType>(valueType)) {
+    auto zeroAttr = rewriter.getZeroAttr(valueType);
+    zeros = rewriter.create<mlir::arith::ConstantOp>(loc, zeroAttr);
+  } else {
+    op.emitError() << "Unsupported value type for select: " << valueType << "\n";
+    return failure();
+  }
+  auto maskedValue = rewriter.create<arith::SelectOp>(loc, mask, value, zeros);
+  auto newAtomicAddOp = rewriter.create<triton::AtomicRMWOp>(
+      loc, value.getType(), op.getAtomicRmwOp(), ptr, maskedValue, mlir::Value(), op.getSem(), op.getScope());
+  rewriter.replaceOp(op, newAtomicAddOp);
+  return success();
+}
+};
+
 void DiscreteMaskAccessConversionPass::runOnOperation() {
   auto moduleOp = getOperation();
 
   RewritePatternSet patterns(&getContext());
   patterns.add<DiscreteMaskLoadConversion>(patterns.getContext());
   patterns.add<DiscreteMaskStoreConversion>(patterns.getContext());
+  patterns.add<DiscreteMaskAtomicAddConversion>(patterns.getContext());
   if (failed(applyPatternsAndFoldGreedily(moduleOp, std::move(patterns)))) {
     moduleOp->emitError("failed to apply discrete mask access patterns");
     signalPassFailure();
   }
-
 }
 
 std::unique_ptr<OperationPass<ModuleOp>> mlir::triton::createDiscreteMaskAccessConversionPass() {
