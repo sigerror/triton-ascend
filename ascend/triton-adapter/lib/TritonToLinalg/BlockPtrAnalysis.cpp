@@ -1380,8 +1380,8 @@ bool isUsedforMask(Value v, int depth = 0) {
     return false;
   for (auto &use: v.getUses()) {
     auto *user = use.getOwner();
-    if (isa<triton::LoadOp, triton::StoreOp>(user) &&
-        use.getOperandNumber() == 2)
+    if ((isa<triton::LoadOp>(user) && use.getOperandNumber() == 1) ||
+        (isa<triton::StoreOp>(user) && use.getOperandNumber() == 2))
       return true;
     if (auto loopOp = dyn_cast<LoopLikeOpInterface>(user);
         loopOp && !loopOp->hasAttr("ExtractedLoadOrStore")) {
