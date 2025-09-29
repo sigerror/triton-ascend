@@ -52,6 +52,7 @@ def triton_func(x0, x1, XS, print_data_ptr, assert_data_ptr):
     return out
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['int8'])
 @test_common.capture_output("-128")
 def test_static_print_int8(capsys, sigtype):
@@ -65,6 +66,7 @@ def test_static_print_int8(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['int16'])
 @test_common.capture_output("-32768")
 def test_static_print_int16(capsys, sigtype):
@@ -78,6 +80,7 @@ def test_static_print_int16(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['int32'])
 @test_common.capture_output("-2147483648")
 def test_static_print_int32(capsys, sigtype):
@@ -91,6 +94,7 @@ def test_static_print_int32(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['int64'])
 @test_common.capture_output("9223372036854775807")
 def test_static_print_int64(capsys, sigtype):
@@ -104,6 +108,7 @@ def test_static_print_int64(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['float16'])
 @test_common.capture_output("1.1921000009e-07")
 def test_static_print_float16(capsys, sigtype):
@@ -117,6 +122,7 @@ def test_static_print_float16(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['float32'])
 @test_common.capture_output("0.0078125")
 def test_static_print_float32(capsys, sigtype):
@@ -130,6 +136,7 @@ def test_static_print_float32(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['bfloat16'])
 @test_common.capture_output("0.00097655999707")
 def test_static_print_bfloat16(capsys, sigtype):
@@ -143,6 +150,7 @@ def test_static_print_bfloat16(capsys, sigtype):
     test_common.validate_cmp(sigtype, triton_cal, torch_ref)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 @pytest.mark.parametrize('sigtype', ['int8'])
 @test_common.capture_output("True")
 def test_static_print_bool(capsys, sigtype):
