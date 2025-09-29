@@ -38,8 +38,7 @@ class Autotuner(KernelInterface):
         """
         if not configs:
             self.configs = [
-                Config({}, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
-                       reg_dec_producer=0, reg_inc_consumer=0)
+                Config({})
             ]
         else:
             self.configs = configs
@@ -303,8 +302,8 @@ class Config:
     :ivar bishengir_options: dict of options that pass to bishengir.
     """
 
-    def __init__(self, kwargs, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
-                 reg_dec_producer=0, reg_inc_consumer=0, maxnreg=None, pre_hook=None, **bishengir_options):
+    def __init__(self, kwargs, num_warps=None, num_stages=None, num_ctas=None, num_buffers_warp_spec=None, num_consumer_groups=None,
+                 reg_dec_producer=None, reg_inc_consumer=None, maxnreg=None, pre_hook=None, **bishengir_options):
         self.kwargs = kwargs
         self.num_warps = num_warps
         self.num_ctas = num_ctas
