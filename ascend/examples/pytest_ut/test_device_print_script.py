@@ -27,6 +27,7 @@ def assert_close(expected_output, logfile):
     assert expected_output in cleaned, f"Expected '{expected_output}' not found in log file."
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 def test_device_print_int8():
     expected_output = "0,-128,127,0,-1,0,-1,0"
     test_name = "test_device_print.py::test_device_print_int8[int8]"
@@ -36,6 +37,7 @@ def test_device_print_int8():
     assert_close(expected_output, logfile)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 def test_device_print_int16():
     expected_output = "0,-128,127,-32768,32767,0,-1,0"
     test_name = "test_device_print.py::test_device_print_int16[int16]"
@@ -45,6 +47,7 @@ def test_device_print_int16():
     assert_close(expected_output, logfile)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 def test_device_print_int32():
     expected_output = "0,-128,127,-32768,32767,-2147483648,2147483647,-2147483648"
     test_name = "test_device_print.py::test_device_print_int32[int32]"
@@ -64,6 +67,7 @@ def test_device_print_int64():
     assert_close(expected_output, logfile)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 def test_device_print_fp16():
     expected_output = "0.000000,0.000000,0.000977,0.007812,inf,65504.000000,inf,1.000000"
     test_name = "test_device_print.py::test_device_print_fp16[float16]"
@@ -73,6 +77,7 @@ def test_device_print_fp16():
     assert_close(expected_output, logfile)
 
 
+@pytest.mark.skip(reason="waiting for TA to support")
 def test_device_print_fp32():
     expected_output = "0.000000,0.000000,0.000977,0.007812,340282346638528859811704183484516925440.000000,65504.000000,338953138925153547590470800371487866880.000000,1.000000"
     test_name = "test_device_print.py::test_device_print_fp32[float32]"
