@@ -1,10 +1,14 @@
-import triton
-import triton.language as tl
-import torch
+import sys
 import pytest
-import os
+import triton
+import torch
+import triton.language as tl
+
+sys.path.append("..")
 import test_common
 
+
+# source: \python\sglang\srt\managers\schedule_batch.py
 @triton.jit
 def write_req_to_token_pool_triton(
     req_to_token_ptr,  # [max_batch, max_context_len]
@@ -14,16 +18,16 @@ def write_req_to_token_pool_triton(
     extend_lens,
     out_cache_loc,
     req_to_token_ptr_stride: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
 ):
+    BLOCK_SIZE: tl.constexpr = 512
     pid = tl.program_id(0)
 
     req_pool_index = tl.load(req_pool_indices + pid)
     pre_len = tl.load(pre_lens + pid)
     seq_len = tl.load(seq_lens + pid)
 
-    # TODO: optimize this?
-    cumsum_start = 0
+    # NOTE: This can be slow for large bs
+    cumsum_start = tl.cast(0, tl.int64)
     for i in range(pid):
         cumsum_start += tl.load(extend_lens + i)
 
@@ -40,6 +44,7 @@ def write_req_to_token_pool_triton(
             value,
             mask=mask,
         )
+
 
 def test_write_req_to_token_pool_triton(ptfile_path):
     try:
