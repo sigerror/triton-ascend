@@ -3,11 +3,12 @@ import pytest
 import triton
 import torch
 import triton.language as tl
-import test_common
+
 sys.path.append("..")
+import test_common
 
 
-# source: python/sglang/srt/layers/attention/triton_backend.py
+# source: python\sglang\srt\layers\attention\triton_backend.py
 @triton.jit
 def get_num_kv_splits_triton(
     num_kv_splits_ptr,
@@ -20,7 +21,6 @@ def get_num_kv_splits_triton(
     device_core_count,
     MAX_NUM_SEQ: tl.constexpr,
 ):
-    # TODO: this method is tunable, we need more online serving data to tune it
     offs_seq = tl.arange(0, MAX_NUM_SEQ)
     mask_seq = offs_seq < num_seq
 
