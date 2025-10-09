@@ -9,9 +9,9 @@ import test_common
 
 
 # source: 
-#   sgl-kernel\tests\test_moe_align.py
-#   sgl-kernel\benchmark\bench_moe_align_block_size.py
-#   python\sglang\srt\layers\moe\fused_moe_triton\fused_moe.py
+#   sgl-kernel/tests/test_moe_align.py
+#   sgl-kernel/benchmark/bench_moe_align_block_size.py
+#   python/sglang/srt/layers/moe/fused_moe_triton/fused_moe.py
 @triton.jit
 def moe_align_block_size_stage3(
     total_tokens_post_pad_ptr,
