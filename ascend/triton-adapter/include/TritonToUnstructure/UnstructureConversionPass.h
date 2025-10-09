@@ -78,6 +78,9 @@ private:
                             ArrayRef<Value> iterIdx,
                             PatternRewriter &rewriter) const;
 
+  void AddAssertForAddPtr(MemAccOpTy op, const Value &opoffset,
+                          PatternRewriter &rewriter) const;
+
   const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap;
 };
 
