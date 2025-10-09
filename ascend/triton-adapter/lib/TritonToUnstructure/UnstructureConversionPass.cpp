@@ -133,6 +133,30 @@ void UnstructuredMemAccessConverter<triton::LoadOp>::splatAndLoadScenario<
 }
 
 template <typename MemAccOpTy>
+void UnstructuredMemAccessConverter<MemAccOpTy>::AddAssertForAddPtr(
+  MemAccOpTy op, const Value &opoffset, PatternRewriter &rewriter) const {
+  auto loc = op.getLoc();
+  auto opoffsetType = opoffset.getType();
+  Value constantZero;
+
+  op->setAttr("Negative", UnitAttr::get(rewriter.getContext()));
+  if (auto tensorType = dyn_cast<RankedTensorType>(opoffsetType)) {
+    constantZero = rewriter.create<arith::ConstantOp>(
+        loc, rewriter.getZeroAttr(tensorType));
+  } else {
+    constantZero = rewriter.create<arith::ConstantIntOp>(
+        loc, 0, opoffset.getType());
+  }
+  Value cmpResult = rewriter.create<arith::CmpIOp>(
+      loc, arith::CmpIPredicate::sge, opoffset, constantZero);
+
+  mlir::StringAttr assertMsg = rewriter.getStringAttr(
+      "AddPtr offset (from subi) must be >= 0");
+
+  rewriter.create<triton::AssertOp>(loc, cmpResult, assertMsg);
+}
+
+template <typename MemAccOpTy>
 UnstructuredMemAccessConverter<MemAccOpTy>::UnstructuredMemAccessConverter(
     MLIRContext *context, const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap)
     : OpRewritePattern<MemAccOpTy>(context), offsetMap(offsetMap) {}
@@ -145,28 +169,44 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   auto ptr = op.getPtr();
   auto ptrType = dyn_cast<RankedTensorType>(ptr.getType());
 
-  if (!ptrType || op->hasAttr(ConverterUtils::discreteAttrName)) {
+  if (!ptrType || op->hasAttr(ConverterUtils::discreteAttrName)
+      || op->hasAttr("Negative")) {
     return failure();
   }
   if (!offsetMap.contains(ptr))
     return op.emitError() << "PtrOffsetInfo should be computed\n" << ptr;
 
   auto ptrOffsetInfo = offsetMap.at(ptr);
+  bool flag = false;
+  if (ptrOffsetInfo.isNegativeFlag()) {
+    flag = true;
+  }
 
   if (ptrOffsetInfo.isStructured() &&
       (!ptrOffsetInfo.isScalarLike() ||
-       llvm::all_of(ptrType.getShape(), [](int64_t dim) { return dim == 1; })))
-    return failure();
+       llvm::all_of(ptrType.getShape(), [](int64_t dim) { return dim == 1; }))) {
+    if (flag) {
+      AddAssertForAddPtr(op, ptrOffsetInfo.getOffset(), rewriter);
+      return success();
+    } else {
+      return failure();
+    }
+  }
 
   LLVM_DEBUG({
     auto &os = llvm::dbgs();
     os << "Converting " << op->getName() << "\n";
     os << op << "\n";
-    os << ptrOffsetInfo.isStructured() << "\n";
+    os << "isStructured = " << ptrOffsetInfo.isStructured() \
+      << ",isScalarLike = " << ptrOffsetInfo.isScalarLike() \
+      << ", isNegativeFlag = " << ptrOffsetInfo.isNegativeFlag() << "\n";
   });
 
   if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>)
     if (ptrOffsetInfo.isScalarLike()) {
+     if (flag) {
+        AddAssertForAddPtr(op, ptrOffsetInfo.getOffset(), rewriter);
+      }
       splatAndLoadScenario(op, ptrOffsetInfo.getRank(), rewriter);
       return success();
     }
@@ -251,6 +291,9 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
       RankedTensorType::get(scalarLikeShape, resultElementType);
 
   auto extractedOffset = createExtractOp(loc, offset, iterIdx, rewriter);
+  if (flag) {
+    AddAssertForAddPtr(op, extractedOffset, rewriter);
+  }
   if (isa<RankedTensorType>(srcPtr.getType())) {
     srcPtr = createExtractOp(loc, srcPtr, iterIdx, rewriter);
   }
