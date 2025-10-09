@@ -34,7 +34,10 @@ Triton Ascend还在频繁更新。为能使用最新功能特性，建议您拉�
 ```shell
 pip install -i https://test.pypi.org/simple/ "triton-ascend<3.2.0rc" --pre --no-cache-dir
 ```
-同时用户也能在[历史列表](https://test.pypi.org/project/triton-ascend/#history)中找到所有的nightly包。
+同时用户也能在 [历史列表](https://test.pypi.org/project/triton-ascend/#history) 中找到所有的nightly包。
+
+- #### Triton Ascend 容器化部署
+我们为开发者提供了成熟的容器使用，省去了从Dockerfile构建的繁琐步骤。详细使用步骤请参考 [镜像指南](./docker/README.md) 。
 
 - #### Triton Python API支持情况与约束
 目前Triton Ascend已经使能了85%以上Triton社区官方提供的Python API，详细的功能支持情况（包括数据类型支持度、使用约束等）请参考 [API 支持情况总览](./docs/sources/python-api/outline.md) 。
