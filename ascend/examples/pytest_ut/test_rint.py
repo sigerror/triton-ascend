@@ -10,23 +10,15 @@ import torch
 import torch_npu
 import test_common
 
-
-def torch_rint(x0):
-    res = torch.round(x0)
-    return res
-
-
 @triton.jit
-def triton_rint(in_ptr0, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexpr):
+def triton_rint(in_ptr0, out_ptr0, xnumel, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexpr):
     offset = tl.program_id(0) * XBLOCK
-    base1 = tl.arange(0, XBLOCK_SUB)
-    loops1: tl.constexpr = XBLOCK // XBLOCK_SUB
-    for loop1 in range(loops1):
-        x0 = offset + (loop1 * XBLOCK_SUB) + base1
-        tmp0 = tl.load(in_ptr0 + (x0), None)
+    for loop1 in range(0, XBLOCK, XBLOCK_SUB):
+        x0 = offset + loop1 + tl.arange(0,XBLOCK_SUB)
+        xmask = x0 < xnumel
+        tmp0 = tl.load(in_ptr0 + x0, mask=xmask)
         tmp1 = tl.math.rint(tmp0)
-        tl.store(out_ptr0 + (x0), tmp1, None)
-
+        tl.store(out_ptr0 + x0, tmp1, mask=xmask)
 
 @pytest.mark.parametrize('param_list',
                          [
@@ -34,12 +26,16 @@ def triton_rint(in_ptr0, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.constexp
                          ])
 def test_rint(param_list):
     dtype, shape, ncore, xblock, xblock_sub = param_list
-    x0 = test_common.generate_tensor(shape, dtype)
-    y_ref = torch_rint(x0)
-    tyname = test_common.get_triton_sig_typename(dtype)
-    
-    y_cal = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
-    x0 = x0.npu()
-    triton_rint[ncore, 1, 1](x0, y_cal, xblock, xblock_sub, debug=True)
-    y_ref = y_ref.npu()
+    x = test_common.generate_tensor(shape, dtype).npu()
+    y_ref = torch.round(x)
+    y_cal = test_common.generate_tensor(x.shape, dtype).npu()
+    triton_rint[ncore, 1, 1](x, y_cal, x.numel(), xblock, xblock_sub, debug=True)
+    test_common.validate_cmp_with_expection(dtype, y_cal, y_ref, True)
+
+@pytest.mark.parametrize('dtype',['float32',])
+def test_rint_half(dtype):
+    x0 = torch.tensor([-2.5, -1.5, -0.5, 0, 0.5, 1.5, 2.5], dtype=eval('torch.' + dtype)).npu()
+    y_ref = torch.round(x0)
+    y_cal = test_common.generate_tensor(x0.shape, dtype).npu()
+    triton_rint[32, 1, 1](x0, y_cal, x0.numel(), 2048, 64, debug=True)
     test_common.validate_cmp_with_expection(dtype, y_cal, y_ref, True)
