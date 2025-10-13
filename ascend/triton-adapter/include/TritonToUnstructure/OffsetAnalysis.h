@@ -66,7 +66,6 @@ public:
   Value getPtr() const;
   Value getOffset() const;
   bool isScalarLike() const;
-  bool isNegativeFlag() const;
   SmallVector<bool> &getStructuredRef();
   const SmallVector<bool> &getStructured() const;
   int getRank() const;
@@ -80,7 +79,7 @@ public:
   void setStructured(ArrayRef<bool> structured);
   void setStructured(const PtrOffsetInfo &other);
   void setScalarLike(bool scalarLike);
-  void setNegativeFlag(bool negativeFlag);
+
   bool isStructured(int dim) const;
   bool isStructured() const;
   bool isUnstructured() const;
@@ -91,7 +90,7 @@ private:
   Value offset;
 
   bool scalarLike = false;
-  bool negativeFlag = false;
+
   SmallVector<bool> structured;
 };
 
