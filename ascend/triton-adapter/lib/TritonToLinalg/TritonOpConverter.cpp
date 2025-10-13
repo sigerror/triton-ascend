@@ -943,7 +943,169 @@ LogicalResult ScanConverter::convertToTargetOp(
 LogicalResult ScanConverter::convertToTargetOpExtended(
     triton::ScanOp op, typename triton::ScanOp::Adaptor adaptor,
     ConversionPatternRewriter &rewriter) const {
-  return op->emitError("tt.scan with multiple ops inside the body unsupported!");
+  auto loc = op.getLoc();
+  bool reverse = op.getReverse();
+  if (reverse) {
+    return op.emitError("reverse=True is not yet supported for extended scan op");
+  }
+
+  // 1. Extract all input tensors (supports multiple inputs)
+  auto operands = op->getOperands();
+  if (operands.empty()) {
+    return rewriter.notifyMatchFailure(op, "No input operands for extended scan");
+  }
+
+  // 2. Validate all inputs are of RankedTensorType
+  llvm::SmallVector<RankedTensorType> inputTensTypes;
+  for (auto operand : operands) {
+    auto tensorTy = dyn_cast<RankedTensorType>(operand.getType());
+    if (!tensorTy) {
+      return rewriter.notifyMatchFailure(op, "All inputs must be RankedTensorType");
+    }
+    inputTensTypes.push_back(tensorTy);
+  }
+
+  // 3. Validate all input tensors have the same shape (scan operation requires matching input dimensions)
+  auto baseShape = inputTensTypes[0].getShape();
+  int rank = baseShape.size();
+  int axis = op.getAxis();
+  if (axis < 0 || axis >= rank) {
+    return rewriter.notifyMatchFailure(op, "Invalid scan axis: " + std::to_string(axis));
+  }
+  for (size_t i = 1; i < inputTensTypes.size(); ++i) {
+    if (inputTensTypes[i].getShape() != baseShape) {
+      return rewriter.notifyMatchFailure(op, "All inputs must have the same shape");
+    }
+  }
+
+  // 4. Prepare MemRefs for multiple inputs/outputs
+  llvm::SmallVector<Value> inputMemRefs;
+  llvm::SmallVector<Value> outputMemRefs;
+  llvm::SmallVector<MemRefType> memRefTypes;
+  for (size_t i = 0; i < inputTensTypes.size(); ++i) {
+    auto &tensorTy = inputTensTypes[i];
+    auto memRefTy = MemRefType::get(tensorTy.getShape(), tensorTy.getElementType());
+    memRefTypes.push_back(memRefTy);
+    // Convert input tensors to MemRefs
+    inputMemRefs.push_back(rewriter.create<bufferization::ToMemrefOp>(loc, memRefTy, operands[i]));
+    // Allocate MemRefs for outputs
+    outputMemRefs.push_back(rewriter.create<memref::AllocOp>(loc, memRefTy));
+  }
+
+  // 5. Define scanning logic for multiple inputs/outputs
+  LogicalResult loopResult = success();
+  auto processDimension = [&](ArrayRef<Value> baseIdxsArray) {
+    llvm::SmallVector<Value> baseIdxs(baseIdxsArray.begin(), baseIdxsArray.end());
+    llvm::SmallVector<Value> firstIdx = baseIdxs;
+    // Insert start index (0) for the scan axis
+    if (axis <= firstIdx.size()) {
+      firstIdx.insert(firstIdx.begin() + axis, rewriter.create<arith::ConstantIndexOp>(loc, 0));
+    } else {
+      firstIdx.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 0));
+    }
+
+    // 5.1 Process the first element: directly copy multiple inputs to multiple outputs (initialize cumulative results)
+    for (size_t i = 0; i < inputMemRefs.size(); ++i) {
+      Value firstVal = rewriter.create<memref::LoadOp>(loc, inputMemRefs[i], firstIdx);
+      rewriter.create<memref::StoreOp>(loc, firstVal, outputMemRefs[i], firstIdx);
+    }
+
+    // 5.2 Calculate the size of the scan axis; create a loop only if the axis size > 1
+    Value axisSize = rewriter.create<memref::DimOp>(loc, inputMemRefs[0], axis).getResult();
+    Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+    Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sgt, axisSize, one);
+    auto ifOp = rewriter.create<scf::IfOp>(loc, cmp, false);
+
+    rewriter.setInsertionPointToStart(ifOp.thenBlock());
+    // Loop variable k: ranges from 1 to axisSize-1
+    auto forOp = rewriter.create<scf::ForOp>(loc, one, axisSize, one);
+    rewriter.setInsertionPointToStart(forOp.getBody());
+    Value k = forOp.getInductionVar();
+
+    // 5.3 Calculate current index (k) and previous index (k-1)
+    llvm::SmallVector<Value> currIdx = baseIdxs;
+    if (axis <= currIdx.size()) {
+      currIdx.insert(currIdx.begin() + axis, k);
+    } else {
+      currIdx.push_back(k);
+    }
+    Value km1 = rewriter.create<arith::SubIOp>(loc, k, one);
+    llvm::SmallVector<Value> prevIdx = baseIdxs;
+    if (axis <= prevIdx.size()) {
+      prevIdx.insert(prevIdx.begin() + axis, km1);
+    } else {
+      prevIdx.push_back(km1);
+    }
+
+    // 5.4 Load current elements and previous cumulative results
+    llvm::SmallVector<Value> currentVals;
+    llvm::SmallVector<Value> prevResults;
+    for (size_t i = 0; i < inputMemRefs.size(); ++i) {
+      currentVals.push_back(rewriter.create<memref::LoadOp>(loc, inputMemRefs[i], currIdx));
+      prevResults.push_back(rewriter.create<memref::LoadOp>(loc, outputMemRefs[i], prevIdx));
+    }
+
+    // 5.5 Bind parameters for custom reduction logic
+    Region &combineRegion = op->getRegion(0);
+    if (combineRegion.empty()) {
+      op->emitError("Missing combine region in extended scan");
+      loopResult = failure();
+      return;
+    }
+    Block &combineBlock = combineRegion.front();
+    // Validate that the number of reduction region arguments matches (number of previous results + number of current elements)
+    if (combineBlock.getNumArguments() != 2 * inputMemRefs.size()) {
+      op->emitError("Combine region arguments mismatch with input count");
+      loopResult = failure();
+      return;
+    }
+    IRMapping mapping;
+    for (size_t i = 0; i < inputMemRefs.size(); ++i) {
+      // Bind previous results (previous value of the i-th output) to the i-th argument of the reduction region
+      mapping.map(combineBlock.getArgument(i), prevResults[i]);
+      // Bind current elements (current value of the i-th input) to the i+N-th argument of the reduction region (N is the number of inputs)
+      mapping.map(combineBlock.getArgument(i + inputMemRefs.size()), currentVals[i]);
+    }
+
+    // 5.6 Clone all operations within the reduction region
+    for (Operation &innerOp : combineBlock.without_terminator()) {
+      rewriter.clone(innerOp, mapping);
+    }
+
+    // 5.7 Extract reduction results and store them in outputMemRef
+    Operation *yieldOp = combineBlock.getTerminator();
+    if (yieldOp->getNumOperands() != outputMemRefs.size()) {
+      op->emitError("Combine region returns mismatch with output count");
+      loopResult = failure();
+      return;
+    }
+    for (size_t i = 0; i < outputMemRefs.size(); ++i) {
+      Value resultVal = mapping.lookup(yieldOp->getOperand(i));
+      rewriter.create<memref::StoreOp>(loc, resultVal, outputMemRefs[i], currIdx);
+    }
+
+    rewriter.setInsertionPointAfter(ifOp);
+  };
+
+  // 6. Generate nested loops for non-scan dimensions
+  llvm::SmallVector<int> nonScanDims;
+  for (int i = 0; i < rank; ++i) {
+    if (i != axis) nonScanDims.push_back(i);
+  }
+  createSimpleNestedLoops(rewriter, loc, outputMemRefs[0], nonScanDims, processDimension);
+
+  if (failed(loopResult)) {
+    return failure();
+  }
+
+  // 7. Convert multiple output MemRefs back to tensors and replace the original tt.scan operation
+  llvm::SmallVector<Value> outputTensors;
+  for (auto outputMemRef : outputMemRefs) {
+    outputTensors.push_back(rewriter.create<bufferization::ToTensorOp>(loc, outputMemRef, true));
+  }
+  rewriter.replaceOp(op, outputTensors);
+
+  return success();
 }
 
 LogicalResult ExternElementwiseClOpConverter::matchAndRewrite(
