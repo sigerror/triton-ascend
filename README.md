@@ -82,3 +82,6 @@ Triton Ascend支持Triton原生的环境变量，此外面向昇腾平台上的�
 
 ## 安全声明
 我们重视开发者在使用Triton Ascend时的信息安全，安全防护建议与相关信息请见 [安全声明](./SECURITYNOTE.md) 。
+
+## 许可证
+本项目代码与文档均采用 [MIT许可证](./LICENSE) 。
