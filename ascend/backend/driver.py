@@ -532,7 +532,9 @@ extern "C" {
 #include <Python.h>
 {'#include <torch_npu/csrc/framework/OpCommand.h>' if enable_taskqueue else ''}
 #include "experiment/runtime/runtime/rt.h"
-#include <torch_npu/csrc/core/npu/NPUCachingAllocator.h>
+#include <ATen/ATen.h>
+#include <acl/acl.h>
+#include <torch_npu/csrc/core/npu/NPUWorkspaceAllocator.h>
 {extract_device_print_code_from_cann() if enable_device_print else ''}
 
 #define TENSOR_KIND_INPUT 0
@@ -559,19 +561,19 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     if (ret != RT_ERROR_NONE) {{
       return {'ret' if enable_taskqueue else ''};
     }}
-    c10::DataPtr syncBlockLock_ptr;
-    c10::DataPtr workspace_addr_ptr;
+    void *syncBlockLock_ptr;
+    void *workspace_addr_ptr;
     uint16_t ModuleId = 0;
-    auto* npu_allocator = c10_npu::NPUCachingAllocator::get();
     {f'''
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
-    syncBlockLock_ptr = npu_allocator->allocate(syncBlockLockSize);
+    at::Tensor syncBlockLock_tensor = at_npu::native::allocate_workspace(syncBlockLockSize, stream);
+    syncBlockLock_ptr = const_cast<void *>(syncBlockLock_tensor.storage().data());
     if (!syncBlockLock_ptr) {{
       {alloc_success_code if enable_taskqueue else sync_lock_fail_code}
     }}
     std::vector<int64_t> lockInitData({lock_num}, {lock_ini_val});
     ret = rtMemcpy(
-        syncBlockLock_ptr.get(), syncBlockLockSize,
+        syncBlockLock_ptr, syncBlockLockSize,
         reinterpret_cast<void *>(lockInitData.data()), syncBlockLockSize,
         RT_MEMCPY_HOST_TO_DEVICE
     );
@@ -581,7 +583,8 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     ''' if lock_num > 0 else ''}
     {f'''
     uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
-    workspace_addr_ptr = npu_allocator->allocate(totalWorkSpaceSize);
+    at::Tensor workspace_tensor = at_npu::native::allocate_workspace(totalWorkSpaceSize, stream);
+    workspace_addr_ptr = const_cast<void *>(workspace_tensor.storage().data());
     if (!workspace_addr_ptr) {{
       {alloc_success_code if enable_taskqueue else workspace_fail_code}
     }}
@@ -595,8 +598,8 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       {'void* DTData __attribute__((aligned(8)));' if enable_device_print else ''}
     }} args = {{
       static_cast<void*>(ffts_addr),
-      {f'syncBlockLock_ptr.get()' if lock_num > 0 else 'nullptr'},
-      {f'workspace_addr_ptr.get()' if workspace_size > 0 else 'nullptr'},
+      {f'syncBlockLock_ptr' if lock_num > 0 else 'nullptr'},
+      {f'workspace_addr_ptr' if workspace_size > 0 else 'nullptr'},
       {(', '.join(f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants) + ',') if len(signature) > 0 else ''}
       {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(grid{mark})' for mark, ty in grid_info.items())}
       {', static_cast<void*>(DTData)' if enable_device_print else ''}
