@@ -1391,9 +1391,6 @@ bool isUsedByMemAccOp(Value v, int depth = 0) {
 // Assuming unstructure case is handled in previous pass,
 // given value is 1D tensor and stride is one
 bool isUsedforMask(Value v, int depth = 0) {
-  if (auto tensorType = dyn_cast<RankedTensorType>(v.getType());
-      !(tensorType && tensorType.getRank() == 1))
-    return false;
   for (auto &use: v.getUses()) {
     auto *user = use.getOwner();
     if ((isa<triton::LoadOp>(user) && use.getOperandNumber() == 1) ||
