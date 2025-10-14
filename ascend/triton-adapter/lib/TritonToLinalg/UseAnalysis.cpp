@@ -190,7 +190,8 @@ void postProcessLoopOp(LoopLikeOpInterface loopOp, const DataFlowSolver &solver)
       }
       return std::nullopt;
     };
-    if (solver.lookupState<UseInfo>(res)->type == UseType::DataUse ||
+    auto *use = solver.lookupState<UseInfo>(res);
+    if ((use && use->type == UseType::DataUse) ||
         isIterArgMixUse(yield, regionArg).value_or(false))
       setMixUseRecursively(defOp);
   }
