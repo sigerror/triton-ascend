@@ -20,6 +20,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+# Modifications:
+# - 2025-06-03:
+#   - init version: e9c7aa71832eb2f897a49ce787e42d5377404a72
+#   - adapt torch_device_fn to ascend
+#
 
 import inspect
 import sqlite3
