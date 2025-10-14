@@ -372,8 +372,9 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
   });
   // Post-process
   funcOp.walk([&](Operation *op) {
-    // Handle indirect load case.
-    // For example, load(1st) -> computeOp -> load(2nd).
+    // Handle indirect load and store case.
+    // For example, load(1st) -> computeOp -> load(2nd),
+    // or load -> computeOp -> store
     // The first load is IndirectLoadInterfaceOp.
     // Do not inplace replace MetaUse by MixUse. Because the condition checking
     // depends on that the op has the attr of MetaUse.
@@ -393,14 +394,17 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
           [op](Operation *curOp) { return isMetaUse(curOp) && curOp != op; },
           /*stopFn*/
           [&](Operation *curOp) {
-            // triton::LoadOp without MetaUse means it is an indirect load
+            // triton::LoadOp or triton::StoreOp without MetaUse means
+            // it is an indirect load or store
             // instead of the load providing the offset.
             // The pattern is as follows,
             // load -> ops -> load
+            // load -> ops -> store
             // We need to ensure the intermediate ops are marked MixUse
             // so that they will be replaced instead of be erased without
             // conversion.
-            return isa<triton::LoadOp>(curOp) && !isMetaUse(curOp);
+            return (isa<triton::LoadOp>(curOp) || isa<triton::StoreOp>(curOp)) && 
+                   !isMetaUse(curOp);
           },
           /*actionFn*/
           [](OpBuilder &b, Operation *op) {
