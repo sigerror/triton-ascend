@@ -750,5 +750,5 @@ setup(
     zip_safe=False,
     # for PyPI
     keywords=["Compiler", "Deep Learning"],
-    url="https://gitee.com/ascend/triton-ascend/",
+    url="https://gitcode.com/Ascend/triton-ascend/",
 )

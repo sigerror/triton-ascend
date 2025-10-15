@@ -33,7 +33,7 @@ fi
 
 cd ${TEST_inductor}
 git init
-git remote add origin http://gitee.com/ascend/pytorch.git
+git remote add origin https://gitcode.com/Ascend/pytorch.git
 git config core.sparsecheckout true
 echo "test/_inductor" >> .git/info/sparse-checkout
 git pull origin v2.6.0:master

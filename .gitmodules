@@ -3,4 +3,4 @@
 	url = https://github.com/triton-lang/triton.git
 [submodule "third_party/ascendnpu-ir"]
 	path = third_party/ascendnpu-ir
-	url = https://gitee.com/ascend/ascendnpu-ir.git
+	url = https://gitcode.com/Ascend/AscendNPU-IR.git

@@ -125,7 +125,7 @@ def add_kernel(
 
 说明：
 1. Triton-Ascend默认采取benchmark的方式取片上计算时间，当设置环境变量`export TRITON_BENCH_METHOD="npu"`后，会通过`torch_npu.profiler.profile`的方式取每个kernel配置下的片上计算时间，对于一些triton kernel计算非常快的情况，例如小shape算子，相较于默认方式能够获取更准确的计算时间，但是会显著增加整体autotune的时间，请谨慎开启
-2. 目前该进阶用法主要针对的是 Vector 类算子，对于 Cube 类算子自动生成的配置或许性能不佳，待后续优化。更多进阶使用示例可以参考[autotune进阶使用示例](https://gitee.com/ascend/triton-ascend/tree/master/ascend/examples/autotune_cases)
+2. 目前该进阶用法主要针对的是 Vector 类算子，对于 Cube 类算子自动生成的配置或许性能不佳，待后续优化。更多进阶使用示例可以参考[autotune进阶使用示例](https://gitcode.com/Ascend/triton-ascend/tree/master/ascend/examples/autotune_cases)
 
 ## 更多功能
 ### 自动生成最优配置的 Profiling 结果

@@ -1,7 +1,7 @@
 Welcome to Triton-Ascend Documentation!
 =======================================
 
-`Triton <https://gitee.com/ascend/triton-ascend>`_ is a language and compiler for parallel programming.
+`Triton <https://gitcode.com/Ascend/triton-ascend>`_ is a language and compiler for parallel programming.
 
 .. toctree::
    :maxdepth: 2
