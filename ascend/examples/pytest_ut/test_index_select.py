@@ -75,7 +75,7 @@ def test_index_select(src_shape, dim, indice_shape, dtype):
                 for i in range(0, g_block_sub):
                     gather_offset = tl.get_element(indices, (i,)) * g_stride
                     val = tl.load(in_ptr + gather_offset + other_idx, other_mask)
-                    tmp_buf = tl.insert_slice(tmp_buf, val[None,:], offsets=(i, 0), sizes=(1, other_block), strides=(g_stride, 1))
+                    tmp_buf = tl.insert_slice(tmp_buf, val[None,:], offsets=(i, 0), sizes=(1, other_block), strides=(1, 1))
                 tl.store(out_ptr + g_idx[:,None] * g_stride + other_idx[None,:], tmp_buf, g_mask[:,None] & other_mask[None,:])
 
     def triton_func(x0, dim, indices):
