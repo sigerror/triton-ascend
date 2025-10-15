@@ -103,6 +103,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             "--triton-to-annotation",
             "--triton-to-unstructure",
             "--triton-to-hivm",
+            "--triton-to-llvm",
             "--bubble-up-operation",
             f"--triton-to-linalg=global-kernel=false named-ops={named_ops} "\
             f"enable-nd2nz-on-vector={enable_nd2nz_on_vector}",

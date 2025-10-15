@@ -24,6 +24,7 @@
 #include "TritonToHIVM/Passes.h"
 #include "DiscreteMaskAccessConversion/Passes.h"
 #include "TritonToLinalg/Passes.h"
+#include "TritonToLLVM/Passes.h"
 #include "TritonToUnstructure/Passes.h"
 #include "bishengir/InitAllDialects.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
@@ -51,6 +52,7 @@ int main(int argc, char **argv) {
 
   // Register all passes.
   mlir::triton::registerTritonToLinalgPass();
+  mlir::triton::registerTritonToLLVMPass();
   mlir::triton::registerTritonToAnnotationPass();
   mlir::triton::registerTritonToHIVMPass();
   mlir::triton::registerDiscreteMaskAccessConversionPass();
