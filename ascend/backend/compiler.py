@@ -403,7 +403,7 @@ class NPUOptions:
     max_num_imprecise_acc_default: bool = None
     extern_libs: dict = None
 
-    multibuffer: bool = None
+    multibuffer: bool = True
     enable_hivm_auto_cv_balance: bool = None
     unit_flag: bool = None
     inject_barrier_all: bool = None
