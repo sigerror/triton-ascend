@@ -217,6 +217,45 @@ void BlockData::addBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   // rBlock.getMemAccType()));
 }
 
+void BlockData::subBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
+                         ConversionPatternRewriter &rewriter) {
+  assert(this->isEmpty() && lBlock.getRank() == rBlock.getRank());
+  // When both left block and right block have source, it is indirect load.
+  assert(!(lBlock.hasSource() && rBlock.hasSource()) &&
+         "Don't support each BlockData has own base source pointer");
+  assert(
+      rBlock.isScalar() &&
+      "Currently only support rhs scalar in function subBlock()");
+  this->source =
+      lBlock.hasSource() ? lBlock.getSourceRef() : rBlock.getSourceRef();
+
+  assert(!(lBlock.hasResElemTy() && rBlock.hasResElemTy()));
+  if (lBlock.hasResElemTy()) {
+    assert(lBlock.hasSource());
+    this->resElemTy = lBlock.getResElemTyRef();
+  } else if (rBlock.hasResElemTy()) {
+    assert(rBlock.hasSource());
+    this->resElemTy = rBlock.getResElemTyRef();
+  }
+
+  OpFoldResult rScalar = rBlock.getScalarRef();
+  for (const auto &lOffset : lBlock.getOffsetsRef()) {
+    this->offsets.push_back(subOpFoldResult(lOffset, rScalar, loc, rewriter));
+  }
+
+  for (const auto &lStride : lBlock.getStridesRef()) {
+    this->strides.push_back(subOpFoldResult(lStride, rScalar, loc, rewriter));
+  }
+
+  // Both sizes are same implicitly under `add`
+  this->sizes = lBlock.getSizesRef();
+
+  this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
+  this->getMemAccTypeRef().merge(rBlock.getMemAccTypeRef());
+  // this->setMemAccTy(selectMaxMemAccTy(lBlock.getMemAccType(),
+  // rBlock.getMemAccType()));
+}
+
 void BlockData::mulBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
                          ConversionPatternRewriter &rewriter) {
   assert(this->isEmpty() && lBlock.getRank() == rBlock.getRank());
@@ -382,6 +421,8 @@ void BlockDataParser::parse(
   // not a scalar pointer
   if (auto addOp = operand.getDefiningOp<arith::AddIOp>()) {
     parseAdd(addOp, data, loc, rewriter, known);
+  } else if (auto subOp = operand.getDefiningOp<arith::SubIOp>()) {
+    parseSub(subOp, data, loc, rewriter, known);
   } else if (auto mulOp = operand.getDefiningOp<arith::MulIOp>()) {
     parseMul(mulOp, data, loc, rewriter, known);
   } else if (auto addPtrOp = operand.getDefiningOp<triton::AddPtrOp>()) {
@@ -433,6 +474,16 @@ void BlockDataParser::parseAdd(
   parse(op.getLhs(), lBlock, loc, rewriter, known);
   parse(op.getRhs(), rBlock, loc, rewriter, known);
   data.addBlock(lBlock, rBlock, loc, rewriter);
+}
+
+void BlockDataParser::parseSub(
+    arith::SubIOp op, BlockData &data, const Location &loc,
+    ConversionPatternRewriter &rewriter,
+    const llvm::SmallDenseMap<Value, BlockData> &known) {
+  BlockData lBlock, rBlock;
+  parse(op.getLhs(), lBlock, loc, rewriter, known);
+  parse(op.getRhs(), rBlock, loc, rewriter, known);
+  data.subBlock(lBlock, rBlock, loc, rewriter);
 }
 
 void BlockDataParser::parseMul(

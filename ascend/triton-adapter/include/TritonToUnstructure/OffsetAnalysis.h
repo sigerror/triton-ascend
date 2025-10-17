@@ -151,6 +151,9 @@ void parseBinaryOp(BinOpTy op, const Location &loc, RewriterBase &rewriter,
 
 void parseAddI(arith::AddIOp op, const Location &loc, RewriterBase &rewriter,
                llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
+            
+void parseSubI(arith::SubIOp op, const Location &loc, RewriterBase &rewriter,
+               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
 
 void parseIndexCast(arith::IndexCastOp op, const Location &loc,
                     RewriterBase &rewriter,

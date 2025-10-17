@@ -106,6 +106,8 @@ public:
 
   void addBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
                 ConversionPatternRewriter &rewriter);
+  void subBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
+                ConversionPatternRewriter &rewriter);
   void mulBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
                 ConversionPatternRewriter &rewriter);
   void divBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
@@ -152,6 +154,10 @@ public:
                     const llvm::SmallDenseMap<Value, BlockData> &known);
 
   static void parseAdd(arith::AddIOp op, BlockData &data, const Location &loc,
+                       ConversionPatternRewriter &rewriter,
+                       const llvm::SmallDenseMap<Value, BlockData> &known);
+
+  static void parseSub(arith::SubIOp op, BlockData &data, const Location &loc,
                        ConversionPatternRewriter &rewriter,
                        const llvm::SmallDenseMap<Value, BlockData> &known);
 

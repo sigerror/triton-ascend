@@ -258,7 +258,7 @@ void parseArithOp(Operation *arithOp, const Location &loc,
   if (auto addIOp = dyn_cast<arith::AddIOp>(arithOp)) {
     parseAddI(addIOp, loc, rewriter, offsetMap);
   } else if (auto subIOp = dyn_cast<arith::SubIOp>(arithOp)) {
-    parseBinaryOp(subIOp, loc, rewriter, offsetMap);
+    parseSubI(subIOp, loc, rewriter, offsetMap);
   } else if (auto indexCastOp = dyn_cast<arith::IndexCastOp>(arithOp)) {
     parseIndexCast(indexCastOp, loc, rewriter, offsetMap);
   } else if (auto constantFloatOp = dyn_cast<arith::ConstantFloatOp>(arithOp)) {
@@ -476,6 +476,24 @@ void parseAddI(arith::AddIOp op, const Location &loc, RewriterBase &rewriter,
   // Set addi offset map
   auto dst = op.getResult();
   offsetMap[dst] = combineInfo(lhsOffsetInfo, rhsOffsetInfo);
+}
+
+void parseSubI(arith::SubIOp op, const Location &loc, RewriterBase &rewriter,
+               llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap) {
+  // Get addi lhs
+  auto lhs = op.getLhs();
+  parse(lhs, op.getLoc(), rewriter, offsetMap);
+  PtrOffsetInfo lhsOffsetInfo = offsetMap.at(lhs);
+  // Get addi rhs
+  auto rhs = op.getRhs();
+  parse(rhs, op.getLoc(), rewriter, offsetMap);
+  PtrOffsetInfo rhsOffsetInfo = offsetMap.at(rhs);
+  // Set addi offset map
+  auto dst = op.getResult();
+  offsetMap[dst] = combineInfo(lhsOffsetInfo, rhsOffsetInfo);
+  if (!(lhsOffsetInfo.isStructured() && rhsOffsetInfo.isScalarLike())) {
+    offsetMap[dst].setUnstructured(offsetMap[dst].getRank());
+  }
 }
 
 void parseIndexCast(arith::IndexCastOp op, const Location &loc,
