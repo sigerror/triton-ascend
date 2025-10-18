@@ -63,10 +63,6 @@ all: ## Incremental builds
 
 $(TRITON_WHL): $(DEPS_STAMP) install-dev-reqs
 	@echo "Building Triton wheel..."
-	@if [ -n "$$HEAD_COMMIT" ]; then \
-		echo "Checking out to HEAD_COMMIT: $$HEAD_COMMIT"; \
-		git checkout $$HEAD_COMMIT || exit 1; \
-	fi && \
 	TRITON_PLUGIN_DIRS=./ascend \
 	TRITON_BUILD_WITH_CLANG_LLD=true \
 	TRITON_BUILD_PROTON=OFF \
