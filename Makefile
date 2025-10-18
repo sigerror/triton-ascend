@@ -4,7 +4,7 @@
 # Configurable variables
 PYTHON                      ?= python3
 PYTEST                      := $(PYTHON) -m pytest
-NUM_PROCS                   ?= $(shell nproc)
+NUM_PROCS                   ?= $(shell expr $(shell nproc) / 3)
 OS_ID                       := $(shell . /etc/os-release && echo $$ID)
 ARCH                        := $(shell uname -i)
 ARCH_NAME                   := $(subst x86_64,x64,$(subst aarch64,arm64,$(ARCH)))
