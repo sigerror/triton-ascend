@@ -26,6 +26,9 @@
 |    Memory/Pointer Ops    | load                   | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | store                  | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | make_block_ptr         | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
+|                          | make_tensor_descriptor | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
+|                          | load_tensor_descriptor | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
+|                          | store_tensor_descriptor| ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
 |                          | advance                | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ×    |
 |       Indexing Ops       | flip                   | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | where                  | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ✓*   |
@@ -143,6 +146,8 @@
 - mod: int64仅支持处理 -2^24 ~ 2^24 范围内的数值
 
 - rand类op: 所支持的数据类型仅针对算子的输出。
+
+- tensor_descriptor类op: 当前仅支持绑定使用，即 make/load/store_tensor_descriptor 需配套使用
 
 - ALL: int8类型由于特殊处理，会占用更大的片上空间，编译时容易造成ub overflow报错，通常调整tilling即可解决
 - ALL: triton kernel中同时存在所有tensor总和不能超过96KB，若关闭double buffer，则不能超过192KB
