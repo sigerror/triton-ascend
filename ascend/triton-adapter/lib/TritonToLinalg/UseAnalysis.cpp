@@ -180,24 +180,13 @@ void postProcessLoopOp(LoopLikeOpInterface loopOp, const DataFlowSolver &solver)
         [&](Value v, Value target) -> std::optional<bool> {
       auto defOp = v.getDefiningOp();
       auto *use = solver.lookupState<UseInfo>(v);
-      if (use && use->type == UseType::DataUse)
+      if ((use && use->type == UseType::DataUse) ||
+          isa_and_nonnull<LoopLikeOpInterface, scf::IfOp>(defOp))
           return true;
       if (v == target)
         return false;
       if (!defOp)
         return std::nullopt;
-      if (auto loopOp = dyn_cast<LoopLikeOpInterface>(defOp)) {
-        auto resNum = cast<OpResult>(v).getResultNumber();
-        auto res = isIterArgMixUse(loopOp.getInits()[resNum], target);
-        if (res.has_value()) {
-          bool isMixUse = res.value();
-          Value yieldedValue = loopOp.getYieldedValues()[resNum];
-          if (auto yieldDefOp = yieldedValue.getDefiningOp())
-            isMixUse = isMixUse || !isMetaUse(yieldDefOp);
-          return isMixUse;
-        }
-        return std::nullopt;
-      }
       for (auto oper : defOp->getOperands()) {
         auto res = isIterArgMixUse(oper, target);
         if (res.has_value())
@@ -348,6 +337,9 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
       LLVM_DEBUG({ op->setAttr("MixUse", UnitAttr::get(context)); });
       return;
     }
+
+    if (isa<LoopLikeOpInterface, scf::IfOp>(op))
+      return;
 
     // Clone the operation; switch all meta users to use the clone
     OpBuilder builder(op);

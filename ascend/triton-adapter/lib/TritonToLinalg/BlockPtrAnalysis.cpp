@@ -323,8 +323,18 @@ memref::ReinterpretCastOp BlockData::createCastOp(ArrayRef<int64_t> resultShape,
                                 : ShapedType::kDynamic,
       resultShape);
 
+  SmallVector<OpFoldResult> strides(this->strides);
+  for (size_t i = 0; i < strides.size(); i++) {
+    if (resultShape[i] == 1) {
+      if (auto strideValue = dyn_cast<Value>(strides[i])) {
+        auto oneIdx = builder.create<arith::ConstantOp>(loc, builder.getIndexAttr(1));
+        strides[i] = builder.create<arith::MaxSIOp>(loc, strideValue, oneIdx).getResult();
+      }
+    }
+  }
+
   return builder.create<memref::ReinterpretCastOp>(
-      loc, resultType, this->source, resOffset, this->sizes, this->strides);
+      loc, resultType, this->source, resOffset, this->sizes, strides);
 }
 
 void BlockData::dump() const {
@@ -1552,12 +1562,6 @@ void BlockDataParser::rewriteLoopOp(
         reintCastOp = reinterpretCastOp;
         newInitArgs.push_back(mappedV);
         iterArgIdxMap.push_back(argCnt++);
-      } else if (auto defOp = op.getYieldedValues()[i].getDefiningOp();
-                (defOp && defOp->hasAttr("MetaUse"))) {
-        // When argument is MetaUse in the loop,
-        // It is removed in iter_args
-        newInitArgs.push_back(nullptr);
-        iterArgIdxMap.push_back(-1);
       } else {
         newInitArgs.push_back(mappedV);
         iterArgIdxMap.push_back(argCnt++);
@@ -1586,6 +1590,12 @@ void BlockDataParser::rewriteLoopOp(
     }
 
     maskIterArgs[i] = indexTensor && isUsedforMask(op.getRegionIterArgs()[i]);
+
+    if (indexTensor) {
+      newInitArgs.back() = nullptr;
+      iterArgIdxMap.back() = -1;
+      argCnt--;
+    }
 
     // Record the BlockData for later processing
     initArgIndexIfBlockData.push_back(std::make_pair(i, data));
@@ -1720,7 +1730,7 @@ void BlockDataParser::rewriteLoopOp(
       auto regionArg = regionArgs[i];
       auto key = mapping.lookupOrNull(regionArg);
       if (!key) {
-        // Create MetaUse regionArg from computed offset and stride data
+        // Create IndexTensor regionArg from computed offset and stride data
         key = createFromData(cast<RankedTensorType>(regionArg.getType()), data, op.getLoc(), rewriter, maskIterArgs[i]);
         mapping.map(regionArg, key);
       }

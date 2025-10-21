@@ -344,7 +344,9 @@ void exchangeValueWithOffset(Value value, Value ptr, const Location &loc,
       RankedTensorType::get(valueType.getShape(), rewriter.getIntegerType(64));
   rewriter.replaceAllUsesWith(value, tempVar);
   value.setType(offsetType);
-  auto splatedPtr = rewriter.create<triton::SplatOp>(loc, valueType, ptr);
+  Value splatedPtr = ptr;
+  if (isa<triton::PointerType>(ptr.getType()))
+    splatedPtr = rewriter.create<triton::SplatOp>(loc, valueType, ptr);
   auto newPtr =
       rewriter.create<triton::AddPtrOp>(loc, valueType, splatedPtr, value);
   parseAddPtr(newPtr, loc, rewriter, offsetMap);
@@ -367,8 +369,7 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
 
       BlockArgument regionIterArg;
       auto resOffsetInfo = offsetMapForLoopArgs.at(res);
-      if (!resOffsetInfo.isStructured() &&
-          isa<triton::PointerType>(tensorType.getElementType())) {
+      if (isa<triton::PointerType>(tensorType.getElementType())) {
         LLVM_DEBUG({
           auto &os = llvm::dbgs();
           os << "Handling special case\n" << op << '\n';
