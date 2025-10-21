@@ -225,12 +225,8 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     auto resTy = op.getResult().getType();
     auto idxZero =
         rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0));
-    auto allocOp = rewriter.create<memref::AllocOp>(loc, MemRefType::get({1}, resTy));
-    auto srcSubView = mlir::ConverterUtils::makeSubViewOp(ptr, {rewriter.getIndexAttr(1)}, loc, rewriter);
-    rewriter.create<memref::CopyOp>(loc, srcSubView, allocOp);
-    auto loadedTensor =  rewriter.create<bufferization::ToTensorOp>(
-           loc, RankedTensorType::get({1}, resTy), allocOp, true /* restrict */, true /* writable */);
-    auto loadedValue = rewriter.create<tensor::ExtractOp>(loc, resTy, loadedTensor, ValueRange({idxZero})).getResult();
+    auto loadedValue = rewriter.create<memref::LoadOp>(loc, resTy, scalarMemref,	
+                                                  idxZero.getResult()).getResult();
     if (mask && other) {
       mask = rewriter.create<triton::SplatOp>(loc, RankedTensorType::get({1}, mask.getType()), mask);
       loadedValue = rewriter.create<triton::SplatOp>(loc, RankedTensorType::get({1}, loadedValue.getType()), loadedValue);
