@@ -45,6 +45,8 @@ def generate_tensor(shape, dtype):
         return torch.randint(low=0, high=127, size=shape, dtype=eval('torch.' + dtype))
     elif dtype == 'bool':
         return torch.randint(low=0, high=2, size=shape).bool()
+    elif dtype == 'uint8':
+        return torch.randint(low=0, high=255, size=shape, dtype=torch.uint8)
     else:
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 

@@ -300,6 +300,8 @@ def convert_sigtype_to_int(sigty: str):
         "i32": 3,  # INT32
         "i64": 9,  # INT64
         # Unsigned integer types
+        "u8": 4,  # UINT8
+        "u16": 7,  # UINT16
         "u32": 8,  # UINT32
         "u64": 10,  # UINT64
         # Floating point types

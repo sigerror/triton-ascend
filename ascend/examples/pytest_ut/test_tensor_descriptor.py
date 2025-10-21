@@ -105,7 +105,7 @@ def test_tensor_descriptor_load_store3d(dtype):
 
 
 # Exercise the functional load/store builtins once to ensure they map through.
-@pytest.mark.parametrize("dtype", ["float32"])
+@pytest.mark.parametrize("dtype", ["float32", "uint8"])
 def test_tensor_descriptor_functional_interface(dtype):
     """Copies an entire tensor blockwise using the descriptor builtins."""
 
