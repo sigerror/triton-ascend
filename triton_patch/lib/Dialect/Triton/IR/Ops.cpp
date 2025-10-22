@@ -1199,5 +1199,48 @@ LogicalResult GatherOp::inferReturnTypes(
   return success();
 }
 
+//-- GatherLoadOp --
+LogicalResult GatherLoadOp::inferReturnTypes(
+    MLIRContext *context, std::optional<Location> location, ValueRange operands,
+    DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
+    SmallVectorImpl<Type> &inferredReturnTypes) {
+  
+  // Get operands using adaptor
+  GatherLoadOpAdaptor adaptor(operands, attributes, properties, regions);
+  
+  // Get element type from src pointer
+  Type elemType;
+  if (auto ptrType = dyn_cast<triton::PointerType>(adaptor.getSrc().getType())) {
+    elemType = ptrType.getPointeeType();
+  } else {
+    return failure();
+  }
+  
+  // Get gather_indices shape to determine the size of gather_dim
+  auto indicesType = dyn_cast<RankedTensorType>(adaptor.getGatherIndices().getType());
+  if (!indicesType)
+    return failure();
+  int64_t numIndices = indicesType.getShape()[0];
+  
+  // Use adaptor to get attributes - this is the compatible way
+  int32_t gatherDim = adaptor.getGatherDim();
+  auto readShapeAttr = adaptor.getReadShape();
+  
+  // Build result shape: read_shape but with gather_dim replaced by numIndices
+  SmallVector<int64_t> resultShape;
+  for (size_t i = 0; i < readShapeAttr.size(); ++i) {
+    if (i == static_cast<size_t>(gatherDim)) {
+      resultShape.push_back(numIndices);
+    } else {
+      resultShape.push_back(readShapeAttr[i]);
+    }
+  }
+  
+  // Create result tensor type
+  inferredReturnTypes.push_back(RankedTensorType::get(resultShape, elemType));
+  
+  return success();
+}
+
 } // namespace triton
 } // namespace mlir

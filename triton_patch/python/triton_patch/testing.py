@@ -644,6 +644,7 @@ from .triton_patch.language.core import (
     gather,
     get_element,
     insert_slice,
+    gather_load,
     extract_slice,
     trans,
     __add__,
@@ -715,6 +716,7 @@ language.flip = flip
 language.sigmoid = sigmoid
 language.softmax = softmax
 language.gather = gather
+language.gather_load = gather_load
 language.insert_slice = insert_slice
 language.extract_slice = extract_slice
 language.get_element = get_element

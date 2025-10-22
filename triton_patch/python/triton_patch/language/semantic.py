@@ -841,3 +841,54 @@ def make_tensor_descriptor(
     handle = builder.create_make_tensor_descriptor(base_handle, [s.handle for s in shape],
                                                     [s.handle for s in strides], block_shape, is_signed_int)
     return tensor_descriptor(handle, shape, strides, desc_block_type)
+
+
+def gather_load(
+    src: tl.tensor,
+    gather_dim: int,
+    gather_indices: tl.tensor,
+    src_shape: List[tl.tensor],  # Can be int or tl.tensor
+    src_offset: List[tl.tensor],  # Can be int or tl.tensor
+    read_shape: List[int],  # Can be int or tl.tensor
+    builder: ir.builder
+) -> tl.tensor:
+    """
+    Gather load operation that loads data from multiple indices along a dimension.
+    Args:
+        src: Source tensor pointer (in GM)
+        gather_dim: Dimension along which to gather
+        gather_indices: 1D tensor of indices to gather (in UB)
+        src_shape: Complete shape of source tensor (can be int or tensor)
+        src_offset: Starting offset for reading (can be int or tensor)
+        read_shape: Size to read (tile shape, can be int or tensor)
+        builder: IR builder
+
+    Returns:
+        Result tensor in UB
+
+    Constraints:
+        - read_shape[gather_dim] must be -1
+        - src_offset[gather_dim] can be -1 (ignored)
+    """
+    # Validate inputs
+    ndim = len(src_shape)
+    assert len(src_offset) == ndim, \
+        f"src_offset length {len(src_offset)} must match src_shape length {ndim}"
+    assert len(read_shape) == ndim, \
+        f"read_shape length {len(read_shape)} must match src_shape length {ndim}"
+    assert 0 <= gather_dim < ndim, \
+        f"gather_dim={gather_dim} must be in range [0, {ndim})"
+    assert len(gather_indices.shape) == 1, \
+        f"gather_indices must be 1D tensor, got {len(gather_indices.shape)}D"
+    
+    newsrc_shape = [o.handle for o in src_shape]
+    newsrc_offset = [o.handle for o in src_offset]
+    # Create output type
+    return_shape = [
+        gather_indices.shape[0] if i == gather_dim else read_shape[i] 
+        for i in range(ndim)
+    ]
+    element_ty = src.type.element_ty
+    output_ty = tl.block_type(element_ty, return_shape)
+    out = builder.create_gather_load(src.handle, gather_indices.handle, gather_dim, newsrc_shape, newsrc_offset, read_shape, return_shape)
+    return tl.tensor(out, output_ty)

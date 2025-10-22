@@ -1726,6 +1726,66 @@ void init_triton_ir(py::module &&m) {
               std::vector<int32_t> &tensorShape, bool isSignedInteger) -> Value {
                 return self.create<MakeTensorDescOp>(base, shape, strides, tensorShape, isSignedInteger);
            })
+      // Gather load operation
+      .def("create_gather_load",
+           [](TritonOpBuilder &self, Value &src, Value &gatherIndices, int32_t gatherDim,
+              std::vector<Value> &srcShape, std::vector<Value> &srcOffset,
+              std::vector<int32_t> &readShape, std::vector<int32_t> &returnShape) -> Value {
+                auto &builder = self.getBuilder();
+                auto loc = self.getLastLoc();
+
+                // Get element type from source pointer
+                Type elemType;
+                if (auto ptrTy = dyn_cast<triton::PointerType>(src.getType())) {
+                  elemType = ptrTy.getPointeeType();
+                } else {
+                  llvm::report_fatal_error("gather_load: src must be pointer type");
+                }
+
+                // Create return tensor type
+                llvm::SmallVector<int64_t> retShape;
+                for (const auto &s : returnShape) {
+                  retShape.push_back(s);
+                }
+                auto retTensorType = RankedTensorType::get(retShape, elemType);
+
+                // Convert srcShape and srcOffset values to index type if needed
+                llvm::SmallVector<Value> srcShapeIndex;
+                for (auto val : srcShape) {
+                  if (!val.getType().isIndex()) {
+                    val = self.create<arith::IndexCastOp>(builder.getIndexType(), val);
+                  }
+                  srcShapeIndex.push_back(val);
+                }
+                
+                llvm::SmallVector<Value> srcOffsetIndex;
+                for (auto val : srcOffset) {
+                  if (!val.getType().isIndex()) {
+                    val = self.create<arith::IndexCastOp>(builder.getIndexType(), val);
+                  }
+                  srcOffsetIndex.push_back(val);
+                }
+
+                // Create attributes
+                auto gatherDimAttr = builder.getI32IntegerAttr(gatherDim);
+                auto readShapeAttr = builder.getDenseI32ArrayAttr(readShape);
+
+                // Create the GatherLoadOp
+                // Parameter order must match TritonOps.td definition:
+                // src, gather_indices, gather_dim, src_shape, src_offset, read_shape
+                auto gatherLoadOp = builder.create<triton::GatherLoadOp>(
+                    loc,
+                    retTensorType,        // result type
+                    src,                  // src pointer
+                    gatherIndices,        // gather_indices tensor
+                    gatherDimAttr,        // gather_dim attribute
+                    srcShapeIndex,        // src_shape (variadic, index type)
+                    srcOffsetIndex,       // src_offset (variadic, index type)
+                    readShapeAttr         // read_shape attribute
+                );
+
+                return gatherLoadOp.getResult();
+           })
       // Add an annotation
       .def("create_annotation",
            [](TritonOpBuilder &self, Value &ptr, const std::string &attrKey,
