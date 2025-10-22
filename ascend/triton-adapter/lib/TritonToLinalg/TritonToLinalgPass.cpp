@@ -522,6 +522,7 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
         >(patterns.getContext());
     patterns.add<TTOpConverters::MakeTensorPtrCanonicalizer>(patterns.getContext());
     patterns.add<TTOpConverters::ReduceSingleCanonicalizer>(patterns.getContext());
+    patterns.add<TTOpConverters::SelectCanonicalizer>(patterns.getContext());
 }
 
 void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(

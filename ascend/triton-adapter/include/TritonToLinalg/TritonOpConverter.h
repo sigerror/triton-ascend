@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -63,6 +64,13 @@ public:
   LogicalResult
   matchAndRewrite(triton::PreciseDivFOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter &rewriter) const override;
+};
+
+class SelectCanonicalizer : public OpRewritePattern<arith::SelectOp> {
+public:
+  using OpRewritePattern<arith::SelectOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(arith::SelectOp op,
+                                PatternRewriter &rewriter) const override;
 };
 
 /*

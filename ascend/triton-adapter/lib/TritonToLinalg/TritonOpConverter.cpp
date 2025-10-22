@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -125,6 +126,91 @@ LogicalResult PreciseDivConverter::matchAndRewrite(
   auto divOp = rewriter.create<arith::DivFOp>(loc, resType, opa, opb);
 
   rewriter.replaceOp(op, divOp);
+  return success();
+}
+
+LogicalResult SelectCanonicalizer::matchAndRewrite(
+    arith::SelectOp op, PatternRewriter &rewriter) const {
+  auto loc = op.getLoc();
+
+  // 0. Shortcut for scalars
+  auto type = dyn_cast<TensorType>(op.getResult().getType());
+  if (!type) {
+    // do nothing non-tensor select
+    return failure();
+  }
+  auto mask = op.getCondition();
+  if (!isa<ShapedType>(mask.getType())) {
+    // do nothing for scalar mask
+    return failure();
+  }
+
+  // 1. Check for continuous masked loads.
+  // Analyze the mask operand to determine at runtime the size of the data we
+  // are moving.
+  MaskState mstate;
+  auto isContMask = mstate.parse(mask, loc, rewriter);
+
+  if (isContMask.failed()) {
+    mstate.eraseInsertedOps(op, rewriter);
+    return rewriter.notifyMatchFailure(
+        op, "Cannot lower continuous masked selects");
+  }
+
+  // 2. Slice out the masked part of true tensor
+  auto trueTensor = op.getTrueValue();
+  auto extractSliceOp = mstate.getExtractSlice(trueTensor, loc, rewriter);
+
+  // 3. Insert out the sliced true tensor into false tensor
+  auto falseTensor = op.getFalseValue();
+  auto insertSliceOp =
+      mstate.getInsertSlice(extractSliceOp, falseTensor, loc, rewriter);
+
+  // 4. Fix if the offset is negative at runtime
+  rewriter.setInsertionPointAfter(insertSliceOp);
+  Value zeroIndex = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+  auto offsets = mstate.offsets;
+  SmallVector<Value> isNegVals;
+  for (auto &o : offsets) {
+    if (o.is<Value>()) {
+      auto oVal = o.get<Value>();
+      Value isNegative = rewriter.create<arith::CmpIOp>(
+          loc, arith::CmpIPredicate::slt, oVal, zeroIndex);
+      isNegVals.push_back(isNegative);
+    }
+  }
+
+  if (isNegVals.empty()) {
+    rewriter.replaceOp(op, insertSliceOp);
+    return success();
+  }
+  // At least one value
+  Value negVal = isNegVals[0];
+  if (isNegVals.size() > 1) {
+    for (int i = 1; i < isNegVals.size(); ++i) {
+      auto tmpOrOp = rewriter.create<arith::OrIOp>(loc, isNegVals[i], negVal);
+      negVal = tmpOrOp.getResult();
+    }
+  }
+  // else: what if the number of negative value checks is > 1?
+  auto ifOp = rewriter.create<scf::IfOp>(loc, TypeRange{falseTensor.getType()},
+                                         negVal, true /* addThenBlock */,
+                                         true /* addElseBlock */);
+  // thenBuilder
+  rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+  rewriter.create<scf::YieldOp>(loc, ValueRange{falseTensor});
+  // elseBuilder
+  Block *elseBlock = &ifOp.getElseRegion().front();
+  extractSliceOp->moveBefore(elseBlock, elseBlock->begin());
+  insertSliceOp->moveBefore(elseBlock, elseBlock->end());
+  rewriter.setInsertionPointToStart(elseBlock);
+  {
+    rewriter.setInsertionPointAfter(insertSliceOp);
+    rewriter.create<scf::YieldOp>(loc, ValueRange{insertSliceOp.getResult()});
+  }
+
+  rewriter.replaceOp(op, ifOp);
+
   return success();
 }
 
