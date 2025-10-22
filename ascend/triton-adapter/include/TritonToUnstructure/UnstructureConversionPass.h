@@ -29,13 +29,17 @@
 
 #include "mlir/IR/PatternMatch.h"
 
+#define GEN_PASS_DECL_TRITONTOUNSTRUCTURE
+#include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
+
 #define GEN_PASS_DEF_TRITONTOUNSTRUCTURE
 #include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
 
 namespace mlir {
 namespace triton {
 
-std::unique_ptr<OperationPass<ModuleOp>> createTritonToUnstructurePass();
+std::unique_ptr<OperationPass<ModuleOp>>
+createTritonToUnstructurePass(const TritonToUnstructureOptions &options = {});
 
 } // namespace triton
 } // namespace mlir
@@ -83,29 +87,36 @@ public:
   using OpRewritePattern<MemAccOpTy>::OpRewritePattern;
 
   explicit UnstructuredMemAccessConverter(
-      MLIRContext *context,
+      MLIRContext *context, bool forceScalarizeMode,
       const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
   LogicalResult matchAndRewrite(MemAccOpTy op,
                                 PatternRewriter &rewriter) const override;
 
 private:
-  Value createExtractOp(Location loc, Value value, ArrayRef<Value> iterIdx,
-                        PatternRewriter &rewriter) const;
+  Value createExtractOp(Location loc, Value value, PatternRewriter &rewriter,
+                        ArrayRef<OpFoldResult> iterIdx) const;
+  Value createExtractOp(Location loc, Value value, PatternRewriter &rewriter,
+                        ArrayRef<OpFoldResult> offsets,
+                        ArrayRef<OpFoldResult> sizes,
+                        ArrayRef<OpFoldResult> strides) const;
   template <typename U = MemAccOpTy>
   typename std::enable_if<std::is_same_v<U, triton::LoadOp>, void>::type
   splatAndLoadScenario(MemAccOpTy op, int rank,
                        PatternRewriter &rewriter) const;
 
+  template <typename... Args>
   MemAccOpTy createMemAccOp(MemAccOpTy op, Value ptrToAccess, Location loc,
-                            ArrayRef<Value> iterIdx,
-                            PatternRewriter &rewriter) const;
+                            PatternRewriter &rewriter,
+                            Args &&...args) const = delete;
 
   const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap;
+  bool forceScalarizeMode;
 };
 
 class TritonToUnstructurePass
     : public ::impl::TritonToUnstructureBase<TritonToUnstructurePass> {
 public:
+  explicit TritonToUnstructurePass(const TritonToUnstructureOptions &options);
   void getDependentDialects(DialectRegistry &registry) const override;
 
   void runOnOperation() override;

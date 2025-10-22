@@ -29,111 +29,157 @@
 
 #define DEBUG_TYPE "triton-bubble-up-operation"
 
-BubbleUpExtract::BubbleUpExtract(MLIRContext *context,
-                                 bool enableAggressiveMode)
-    : OpRewritePattern<tensor::ExtractOp>(context),
+template <typename ExtractOpTy>
+BubbleUpExtract<ExtractOpTy>::BubbleUpExtract(MLIRContext *context,
+                                              bool enableAggressiveMode)
+    : OpRewritePattern<ExtractOpTy>(context),
       enableAggressiveMode(enableAggressiveMode) {}
 
+template <typename ExtractOpTy>
 LogicalResult
-BubbleUpExtract::matchAndRewrite(tensor::ExtractOp op,
-                                 PatternRewriter &rewriter) const {
-  auto tensorValue = op.getTensor();
+BubbleUpExtract<ExtractOpTy>::matchAndRewrite(ExtractOpTy op,
+                                              PatternRewriter &rewriter) const {
+  Value tensorValue;
+  if constexpr (std::is_same_v<ExtractOpTy, tensor::ExtractOp>) {
+    tensorValue = op.getTensor();
+  } else if constexpr (std::is_same_v<ExtractOpTy, tensor::ExtractSliceOp>) {
+    tensorValue = op.getSource();
+    if (tensorValue.getType() == op.getResult().getType()) {
+      rewriter.replaceAllUsesWith(op.getResult(), tensorValue);
+      rewriter.eraseOp(op);
+      return success();
+    }
+  } else {
+    llvm_unreachable("Unhandled case");
+  }
+  auto funcOp = op->template getParentOfType<triton::FuncOp>();
   auto parentOp = tensorValue.getDefiningOp();
-  auto indices =
-      SmallVector<Value>(op.getIndices().begin(), op.getIndices().end());
   auto loc = op.getLoc();
 
-  if (!parentOp ||
-      (!enableAggressiveMode && !parentOp->hasOneUse())) {
+  if (!parentOp || (!enableAggressiveMode && !parentOp->hasOneUse())) {
     return failure();
   }
 
+  LLVM_DEBUG({
+    auto &os = llvm::dbgs();
+    os << "Before bubble up\n" << op << '\n' << funcOp << "\n";
+  });
+
   if (auto extsiOp = dyn_cast<arith::ExtSIOp>(parentOp)) {
-    bubbleUpOperation(op, extsiOp, indices, loc, rewriter);
+    bubbleUpOperation(op, extsiOp, loc, rewriter);
   } else if (auto addIOp = dyn_cast<arith::AddIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, addIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, addIOp, loc, rewriter);
   } else if (auto subIOp = dyn_cast<arith::SubIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, subIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, subIOp, loc, rewriter);
   } else if (auto mulIOp = dyn_cast<arith::MulIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, mulIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, mulIOp, loc, rewriter);
   } else if (auto divSIOp = dyn_cast<arith::DivSIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, divSIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, divSIOp, loc, rewriter);
   } else if (auto remSIOp = dyn_cast<arith::RemSIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, remSIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, remSIOp, loc, rewriter);
   } else if (auto maxSIOp = dyn_cast<arith::MaxSIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, maxSIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, maxSIOp, loc, rewriter);
   } else if (auto minSIOp = dyn_cast<arith::MinSIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, minSIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, minSIOp, loc, rewriter);
   } else if (auto andIOp = dyn_cast<arith::AndIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, andIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, andIOp, loc, rewriter);
   } else if (auto orIOp = dyn_cast<arith::OrIOp>(parentOp)) {
-    bubbleUpIntBinaryOp(op, orIOp, indices, loc, rewriter);
+    bubbleUpIntBinaryOp(op, orIOp, loc, rewriter);
   } else if (auto cmpIOp = dyn_cast<arith::CmpIOp>(parentOp)) {
-    bubbleUpOperation(op, cmpIOp, indices, loc, rewriter);
+    bubbleUpOperation(op, cmpIOp, loc, rewriter);
   } else if (auto truncFOp = dyn_cast<arith::TruncFOp>(parentOp)) {
-    bubbleUpOperation<arith::TruncFOp>(op, truncFOp, indices, loc, rewriter);
+    bubbleUpOperation(op, truncFOp, loc, rewriter);
   } else if (auto extFOp = dyn_cast<arith::ExtFOp>(parentOp)) {
-    bubbleUpOperation<arith::ExtFOp>(op, extFOp, indices, loc, rewriter);
+    bubbleUpOperation(op, extFOp, loc, rewriter);
   } else if (auto fpTosiOp = dyn_cast<arith::FPToSIOp>(parentOp)) {
-    bubbleUpOperation<arith::FPToSIOp>(op, fpTosiOp, indices, loc, rewriter);
+    bubbleUpOperation(op, fpTosiOp, loc, rewriter);
   } else if (auto siTofpOp = dyn_cast<arith::SIToFPOp>(parentOp)) {
-    bubbleUpOperation<arith::SIToFPOp>(op, siTofpOp, indices, loc, rewriter);
+    bubbleUpOperation(op, siTofpOp, loc, rewriter);
   } else if (auto clampFOp = dyn_cast<triton::ClampFOp>(parentOp)) {
-    bubbleUpOperation<triton::ClampFOp>(op, clampFOp, indices, loc, rewriter);
+    bubbleUpOperation(op, clampFOp, loc, rewriter);
   } else if (auto addFOp = dyn_cast<arith::AddFOp>(parentOp)) {
-    bubbleUpFloatBinaryOp<arith::AddFOp>(op, addFOp, indices, loc, rewriter);
+    bubbleUpFloatBinaryOp<arith::AddFOp>(op, addFOp, loc, rewriter);
   } else if (auto subFOp = dyn_cast<arith::SubFOp>(parentOp)) {
-    bubbleUpFloatBinaryOp<arith::SubFOp>(op, subFOp, indices, loc, rewriter);
+    bubbleUpFloatBinaryOp<arith::SubFOp>(op, subFOp, loc, rewriter);
   } else if (auto mulFOp = dyn_cast<arith::MulFOp>(parentOp)) {
-    bubbleUpFloatBinaryOp<arith::MulFOp>(op, mulFOp, indices, loc, rewriter);
+    bubbleUpFloatBinaryOp<arith::MulFOp>(op, mulFOp, loc, rewriter);
   } else if (auto divFOp = dyn_cast<arith::DivFOp>(parentOp)) {
-    bubbleUpFloatBinaryOp(op, divFOp, indices, loc, rewriter);
+    bubbleUpFloatBinaryOp(op, divFOp, loc, rewriter);
   } else if (auto minNumFOp = dyn_cast<arith::MinNumFOp>(parentOp)) {
-    bubbleUpFloatBinaryOp<arith::MinNumFOp>(op, minNumFOp, indices, loc,
-                                            rewriter);
+    bubbleUpFloatBinaryOp<arith::MinNumFOp>(op, minNumFOp, loc, rewriter);
   } else if (auto maxNumFOp = dyn_cast<arith::MaxNumFOp>(parentOp)) {
-    bubbleUpFloatBinaryOp<arith::MaxNumFOp>(op, maxNumFOp, indices, loc,
-                                            rewriter);
+    bubbleUpFloatBinaryOp<arith::MaxNumFOp>(op, maxNumFOp, loc, rewriter);
   } else if (auto cmpFOp = dyn_cast<arith::CmpFOp>(parentOp)) {
-    bubbleUpOperation(op, cmpFOp, indices, loc, rewriter);
+    bubbleUpOperation(op, cmpFOp, loc, rewriter);
   } else if (auto broadCastOp = dyn_cast<triton::BroadcastOp>(parentOp)) {
-    bubbleUpOperation(op, broadCastOp, indices, loc, rewriter);
+    bubbleUpOperation(op, broadCastOp, loc, rewriter);
   } else if (auto expandDimsOp = dyn_cast<triton::ExpandDimsOp>(parentOp)) {
-    bubbleUpOperation<triton::ExpandDimsOp>(op, expandDimsOp, indices, loc,
-                                            rewriter);
+    bubbleUpOperation(op, expandDimsOp, loc, rewriter);
   } else if (auto splatOp = dyn_cast<triton::SplatOp>(parentOp)) {
-    bubbleUpOperation<triton::SplatOp>(op, splatOp, indices, loc, rewriter);
+    bubbleUpOperation(op, splatOp, loc, rewriter);
   } else if (auto makeRangeOp = dyn_cast<triton::MakeRangeOp>(parentOp)) {
-    bubbleUpOperation<triton::MakeRangeOp>(op, makeRangeOp, indices, loc,
-                                           rewriter);
+    bubbleUpOperation(op, makeRangeOp, loc, rewriter);
   } else if (auto floorOp = dyn_cast<math::FloorOp>(parentOp)) {
-    bubbleUpOperation<math::FloorOp>(op, floorOp, indices, loc, rewriter);
+    bubbleUpOperation(op, floorOp, loc, rewriter);
   } else if (auto ceilOp = dyn_cast<math::CeilOp>(parentOp)) {
-    bubbleUpOperation<math::CeilOp>(op, ceilOp, indices, loc, rewriter);
+    bubbleUpOperation(op, ceilOp, loc, rewriter);
+  } else if (auto extractSliceOp = dyn_cast<tensor::ExtractSliceOp>(parentOp)) {
+    if constexpr (std::is_same_v<ExtractOpTy, tensor::ExtractOp>) {
+      bubbleUpOperation(op, extractSliceOp, loc, rewriter);
+    } else {
+      return failure();
+    }
   } else {
     return failure();
   }
   if (parentOp->use_empty())
     rewriter.eraseOp(parentOp);
 
+  LLVM_DEBUG({
+    auto &os = llvm::dbgs();
+    os << "After bubble up\n" << funcOp << '\n';
+  });
+
   return success();
 }
 
-Value BubbleUpExtract::createExtractOp(Value value, ArrayRef<Value> indices,
-                                       Location loc,
-                                       PatternRewriter &rewriter) const {
-  auto extractedOp = rewriter.create<tensor::ExtractOp>(loc, value, indices);
+template <typename ExtractOpTy>
+Value BubbleUpExtract<ExtractOpTy>::createExtractOp(
+    ExtractOpTy op, Value value, Location loc,
+    PatternRewriter &rewriter) const {
+  llvm_unreachable("Unhandled extract operation");
+}
+
+template <>
+Value BubbleUpExtract<tensor::ExtractOp>::createExtractOp(
+    tensor::ExtractOp op, Value value, Location loc,
+    PatternRewriter &rewriter) const {
+  auto extractedOp =
+      rewriter.create<tensor::ExtractOp>(loc, value, op.getIndices());
   extractedOp->setAttr(ConverterUtils::discreteAttrName,
                        UnitAttr::get(rewriter.getContext()));
   return extractedOp;
 }
 
+template <>
+Value BubbleUpExtract<tensor::ExtractSliceOp>::createExtractOp(
+    tensor::ExtractSliceOp op, Value value, Location loc,
+    PatternRewriter &rewriter) const {
+  auto extractedOp = rewriter.create<tensor::ExtractSliceOp>(
+      loc, value, op.getMixedOffsets(), op.getMixedSizes(),
+      op.getMixedStrides());
+  extractedOp->setAttr(ConverterUtils::discreteAttrName,
+                       UnitAttr::get(rewriter.getContext()));
+  return extractedOp;
+}
+
+template <typename ExtractOpTy>
 template <typename BinOpTy>
-void BubbleUpExtract::bubbleUpIntBinaryOp(Operation *op, BinOpTy binOp,
-                                          ArrayRef<Value> indices, Location loc,
-                                          PatternRewriter &rewriter) const {
-  auto lhs = createExtractOp(binOp.getLhs(), indices, loc, rewriter);
-  auto rhs = createExtractOp(binOp.getRhs(), indices, loc, rewriter);
+void BubbleUpExtract<ExtractOpTy>::bubbleUpIntBinaryOp(
+    ExtractOpTy op, BinOpTy binOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto lhs = createExtractOp(op, binOp.getLhs(), loc, rewriter);
+  auto rhs = createExtractOp(op, binOp.getRhs(), loc, rewriter);
   LLVM_DEBUG({
     auto &os = llvm::dbgs();
     os << "Binary\n" << *op << '\n' << binOp << '\n';
@@ -141,44 +187,43 @@ void BubbleUpExtract::bubbleUpIntBinaryOp(Operation *op, BinOpTy binOp,
   rewriter.replaceOpWithNewOp<BinOpTy>(op, lhs, rhs);
 }
 
+template <typename ExtractOpTy>
 template <typename BinOpTy>
-void BubbleUpExtract::bubbleUpFloatBinaryOp(Operation *op, BinOpTy binOp,
-                                            ArrayRef<Value> indices,
-                                            Location loc,
-                                            PatternRewriter &rewriter) const {
-  auto lhs = createExtractOp(binOp.getLhs(), indices, loc, rewriter);
-  auto rhs = createExtractOp(binOp.getRhs(), indices, loc, rewriter);
+void BubbleUpExtract<ExtractOpTy>::bubbleUpFloatBinaryOp(
+    ExtractOpTy op, BinOpTy binOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto lhs = createExtractOp(op, binOp.getLhs(), loc, rewriter);
+  auto rhs = createExtractOp(op, binOp.getRhs(), loc, rewriter);
   rewriter.replaceOpWithNewOp<BinOpTy>(op, lhs, rhs);
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<arith::ExtSIOp>(
-    Operation *op, arith::ExtSIOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto in = createExtractOp(parentOp.getIn(), indices, loc, rewriter);
-  auto resultType = cast<RankedTensorType>(parentOp.getOut().getType());
-  rewriter.replaceOpWithNewOp<arith::ExtSIOp>(op, resultType.getElementType(),
-                                              in);
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, arith::ExtSIOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto in = createExtractOp(op, parentOp.getIn(), loc, rewriter);
+  rewriter.replaceOpWithNewOp<arith::ExtSIOp>(op, op.getResult().getType(), in);
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<arith::CmpIOp>(
-    Operation *op, arith::CmpIOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto lhs = createExtractOp(parentOp.getLhs(), indices, loc, rewriter);
-  auto rhs = createExtractOp(parentOp.getRhs(), indices, loc, rewriter);
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, arith::CmpIOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto lhs = createExtractOp(op, parentOp.getLhs(), loc, rewriter);
+  auto rhs = createExtractOp(op, parentOp.getRhs(), loc, rewriter);
   rewriter.replaceOpWithNewOp<arith::CmpIOp>(op, parentOp.getPredicateAttr(),
                                              lhs, rhs);
 }
 
 template <>
-void BubbleUpExtract::bubbleUpOperation<triton::BroadcastOp>(
-    Operation *op, triton::BroadcastOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
+void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
+    tensor::ExtractOp op, triton::BroadcastOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
   auto src = parentOp.getSrc();
   auto srcShape = cast<RankedTensorType>(src.getType()).getShape();
   SmallVector<Value> newIndices;
-  for (const auto [index, shape] : llvm::zip_equal(indices, srcShape)) {
+  for (const auto &[index, shape] :
+       llvm::zip_equal(op.getIndices(), srcShape)) {
     if (shape == 1) {
       newIndices.push_back(
           rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0)));
@@ -186,119 +231,232 @@ void BubbleUpExtract::bubbleUpOperation<triton::BroadcastOp>(
       newIndices.push_back(index);
     }
   }
-  auto extractedOp = createExtractOp(src, newIndices, loc, rewriter);
+  auto extractedOp = rewriter.create<tensor::ExtractOp>(loc, src, newIndices);
+  extractedOp->setAttr(ConverterUtils::discreteAttrName,
+                       UnitAttr::get(rewriter.getContext()));
   rewriter.replaceOp(op, extractedOp);
 }
 
 template <>
-void BubbleUpExtract::bubbleUpOperation<triton::ExpandDimsOp>(
-    Operation *op, triton::ExpandDimsOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
+void BubbleUpExtract<tensor::ExtractSliceOp>::bubbleUpOperation(
+    tensor::ExtractSliceOp op, triton::BroadcastOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto src = parentOp.getSrc();
+  auto srcShape = cast<RankedTensorType>(src.getType()).getShape();
+  SmallVector<OpFoldResult> newOffsets;
+  SmallVector<OpFoldResult> newSizes;
+  bool isScalarLikeSrc = true;
+  for (const auto &[offset, size, shape] :
+       llvm::zip_equal(op.getMixedOffsets(), op.getMixedSizes(), srcShape)) {
+    if (shape == 1) {
+      newOffsets.push_back(rewriter.getIndexAttr(0));
+      newSizes.push_back(rewriter.getIndexAttr(1));
+    } else {
+      newOffsets.push_back(offset);
+      newSizes.push_back(size);
+    }
+    if (getConstantIntValue(newSizes.back()).value_or(-1) != 1)
+      isScalarLikeSrc = false;
+  }
+  auto extractedOp = rewriter.create<tensor::ExtractSliceOp>(
+      loc, src, newOffsets, newSizes, op.getMixedStrides());
+  extractedOp->setAttr(ConverterUtils::discreteAttrName,
+                       UnitAttr::get(rewriter.getContext()));
+  if (isScalarLikeSrc) {
+    SmallVector<Value> indices(
+        srcShape.size(),
+        rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0)));
+    auto extractedValue =
+        rewriter.create<tensor::ExtractOp>(loc, extractedOp, indices);
+    rewriter.replaceOpWithNewOp<triton::SplatOp>(op, op.getResult().getType(),
+                                                 extractedValue);
+  } else {
+    rewriter.replaceOpWithNewOp<triton::BroadcastOp>(
+        op, op.getResult().getType(), extractedOp);
+  }
+}
+
+template <>
+void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
+    tensor::ExtractOp op, triton::ExpandDimsOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
   auto src = parentOp.getSrc();
   SmallVector<Value> newIndices;
-  for (const auto index : llvm::enumerate(indices)) {
-    if (index.index() != parentOp.getAxis()) {
+  for (const auto index : llvm::enumerate(op.getIndices())) {
+    if (index.index() != parentOp.getAxis())
       newIndices.push_back(index.value());
-    }
   }
-  auto extractedOp = createExtractOp(src, newIndices, loc, rewriter);
+  auto extractedOp = rewriter.create<tensor::ExtractOp>(loc, src, newIndices);
+  extractedOp->setAttr(ConverterUtils::discreteAttrName,
+                       UnitAttr::get(rewriter.getContext()));
   rewriter.replaceOp(op, extractedOp);
 }
 
 template <>
-void BubbleUpExtract::bubbleUpOperation<triton::SplatOp>(
-    Operation *op, triton::SplatOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
+void BubbleUpExtract<tensor::ExtractSliceOp>::bubbleUpOperation(
+    tensor::ExtractSliceOp op, triton::ExpandDimsOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto src = parentOp.getSrc();
+  auto srcShape = cast<RankedTensorType>(src.getType()).getShape();
+  SmallVector<OpFoldResult> newOffsets;
+  SmallVector<OpFoldResult> newSizes;
+  SmallVector<OpFoldResult> newStrides;
+  for (size_t i = 0; i <= srcShape.size(); i++) {
+    if (i != parentOp.getAxis()) {
+      newOffsets.push_back(op.getMixedOffsets()[i]);
+      newSizes.push_back(op.getMixedSizes()[i]);
+      newStrides.push_back(op.getMixedStrides()[i]);
+    }
+  }
+  auto extractedOp = rewriter.create<tensor::ExtractSliceOp>(
+      loc, src, newOffsets, newSizes, newStrides);
+  extractedOp->setAttr(ConverterUtils::discreteAttrName,
+                       UnitAttr::get(rewriter.getContext()));
+  rewriter.replaceOpWithNewOp<triton::ExpandDimsOp>(op, extractedOp,
+                                                    parentOp.getAxisAttr());
+}
+
+template <>
+void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
+    tensor::ExtractOp op, triton::SplatOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
   auto src = parentOp.getSrc();
   rewriter.replaceOp(op, src);
 }
 
 template <>
-void BubbleUpExtract::bubbleUpOperation<triton::MakeRangeOp>(
-    Operation *op, triton::MakeRangeOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
+void BubbleUpExtract<tensor::ExtractSliceOp>::bubbleUpOperation(
+    tensor::ExtractSliceOp op, triton::SplatOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto src = parentOp.getSrc();
+  rewriter.replaceOpWithNewOp<triton::SplatOp>(
+      op, cast<RankedTensorType>(op.getResult().getType()), src);
+}
+
+template <>
+void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
+    tensor::ExtractOp op, triton::MakeRangeOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
   auto resultType = cast<RankedTensorType>(parentOp.getResult().getType());
   rewriter.replaceOpWithNewOp<arith::IndexCastOp>(
-      op, resultType.getElementType(), indices[0]);
+      op, resultType.getElementType(), op.getIndices()[0]);
 }
 
 template <>
-void BubbleUpExtract::bubbleUpOperation<arith::TruncFOp>(
-    Operation *op, arith::TruncFOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto in = createExtractOp(parentOp.getIn(), indices, loc, rewriter);
-  auto resultType = cast<RankedTensorType>(parentOp.getOut().getType());
-  rewriter.replaceOpWithNewOp<arith::TruncFOp>(op, resultType.getElementType(),
+void BubbleUpExtract<tensor::ExtractSliceOp>::bubbleUpOperation(
+    tensor::ExtractSliceOp op, triton::MakeRangeOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto resultType = cast<RankedTensorType>(parentOp.getResult().getType());
+  Value idx;
+  if (auto offsetVal = dyn_cast<Value>(op.getMixedOffsets()[0])) {
+    idx = offsetVal;
+  } else {
+    idx = rewriter.create<arith::ConstantOp>(
+        op.getLoc(), rewriter.getIndexAttr(
+                         getConstantIntValue(op.getMixedOffsets()[0]).value()));
+  }
+  idx = rewriter.create<arith::IndexCastOp>(op.getLoc(),
+                                            resultType.getElementType(), idx);
+  rewriter.replaceOpWithNewOp<triton::SplatOp>(op, op.getResult().getType(),
+                                               idx);
+}
+
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, arith::TruncFOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto in = createExtractOp(op, parentOp.getIn(), loc, rewriter);
+  rewriter.replaceOpWithNewOp<arith::TruncFOp>(op, op.getResult().getType(),
                                                in);
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<arith::ExtFOp>(
-    Operation *op, arith::ExtFOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto in = createExtractOp(parentOp.getIn(), indices, loc, rewriter);
-  auto resultType = cast<RankedTensorType>(parentOp.getOut().getType());
-  rewriter.replaceOpWithNewOp<arith::ExtFOp>(op, resultType.getElementType(),
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, arith::ExtFOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto in = createExtractOp(op, parentOp.getIn(), loc, rewriter);
+  rewriter.replaceOpWithNewOp<arith::ExtFOp>(op, op.getResult().getType(), in);
+}
+
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, arith::FPToSIOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto in = createExtractOp(op, parentOp.getIn(), loc, rewriter);
+  rewriter.replaceOpWithNewOp<arith::FPToSIOp>(op, op.getResult().getType(),
                                                in);
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<arith::FPToSIOp>(
-    Operation *op, arith::FPToSIOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto in = createExtractOp(parentOp.getIn(), indices, loc, rewriter);
-  auto resultType = cast<RankedTensorType>(parentOp.getOut().getType());
-  rewriter.replaceOpWithNewOp<arith::FPToSIOp>(op, resultType.getElementType(),
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, arith::SIToFPOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto in = createExtractOp(op, parentOp.getIn(), loc, rewriter);
+  rewriter.replaceOpWithNewOp<arith::SIToFPOp>(op, op.getResult().getType(),
                                                in);
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<arith::SIToFPOp>(
-    Operation *op, arith::SIToFPOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto in = createExtractOp(parentOp.getIn(), indices, loc, rewriter);
-  auto outType =
-      cast<RankedTensorType>(parentOp.getOut().getType()).getElementType();
-  rewriter.replaceOpWithNewOp<arith::SIToFPOp>(op, outType, in);
-}
-
-template <>
-void BubbleUpExtract::bubbleUpOperation<triton::ClampFOp>(
-    Operation *op, triton::ClampFOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto x = createExtractOp(parentOp.getX(), indices, loc, rewriter);
-  auto min = createExtractOp(parentOp.getMin(), indices, loc, rewriter);
-  auto max = createExtractOp(parentOp.getMax(), indices, loc, rewriter);
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, triton::ClampFOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto x = createExtractOp(op, parentOp.getX(), loc, rewriter);
+  auto min = createExtractOp(op, parentOp.getMin(), loc, rewriter);
+  auto max = createExtractOp(op, parentOp.getMax(), loc, rewriter);
   rewriter.replaceOpWithNewOp<triton::ClampFOp>(op, x, min, max,
                                                 parentOp.getPropagateNan());
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<arith::CmpFOp>(
-    Operation *op, arith::CmpFOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto lhs = createExtractOp(parentOp.getLhs(), indices, loc, rewriter);
-  auto rhs = createExtractOp(parentOp.getRhs(), indices, loc, rewriter);
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, arith::CmpFOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto lhs = createExtractOp(op, parentOp.getLhs(), loc, rewriter);
+  auto rhs = createExtractOp(op, parentOp.getRhs(), loc, rewriter);
   rewriter.replaceOpWithNewOp<arith::CmpFOp>(op, parentOp.getPredicateAttr(),
                                              lhs, rhs);
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<math::FloorOp>(
-    Operation *op, math::FloorOp parentOp, ArrayRef<Value> indices,
-    Location loc, PatternRewriter &rewriter) const {
-  auto operand = createExtractOp(parentOp.getOperand(), indices, loc, rewriter);
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, math::FloorOp parentOp, Location loc,
+    PatternRewriter &rewriter) const {
+  auto operand = createExtractOp(op, parentOp.getOperand(), loc, rewriter);
   rewriter.replaceOpWithNewOp<math::FloorOp>(op, operand,
                                              parentOp.getFastmath());
 }
 
-template <>
-void BubbleUpExtract::bubbleUpOperation<math::CeilOp>(
-    Operation *op, math::CeilOp parentOp, ArrayRef<Value> indices, Location loc,
+template <typename ExtractOpTy>
+void BubbleUpExtract<ExtractOpTy>::bubbleUpOperation(
+    ExtractOpTy op, math::CeilOp parentOp, Location loc,
     PatternRewriter &rewriter) const {
-  auto operand = createExtractOp(parentOp.getOperand(), indices, loc, rewriter);
+  auto operand = createExtractOp(op, parentOp.getOperand(), loc, rewriter);
   rewriter.replaceOpWithNewOp<math::CeilOp>(op, operand,
                                             parentOp.getFastmath());
+}
+
+template <>
+void BubbleUpExtract<tensor::ExtractOp>::bubbleUpOperation(
+    tensor::ExtractOp op, tensor::ExtractSliceOp parentOp,
+    Location loc, PatternRewriter &rewriter) const {
+  SmallVector<Value> newIndices;
+  for (const auto &[offset, index] :
+       llvm::zip_equal(parentOp.getMixedOffsets(), op.getIndices())) {
+    Value offsetVal;
+    if (isa<Value>(offset)) {
+      offsetVal = offset.template get<Value>();
+    } else {
+      offsetVal = rewriter.create<arith::ConstantOp>(
+          op.getLoc(), rewriter.getIndexAttr(*getConstantIntValue(offset)));
+    }
+    newIndices.push_back(
+        rewriter.create<arith::AddIOp>(op.getLoc(), offsetVal, index));
+  }
+  rewriter
+      .replaceOpWithNewOp<tensor::ExtractOp>(op, parentOp.getSource(),
+                                             newIndices)
+      ->setAttr(ConverterUtils::discreteAttrName,
+                UnitAttr::get(rewriter.getContext()));
 }
 
 BubbleUpOperationPass::BubbleUpOperationPass(
@@ -310,7 +468,9 @@ void BubbleUpOperationPass::runOnOperation() {
   MLIRContext *ctx = &getContext();
 
   RewritePatternSet patterns(ctx);
-  patterns.add<BubbleUpExtract>(ctx, enableAggressiveMode);
+  patterns.add<BubbleUpExtract<tensor::ExtractOp>,
+               BubbleUpExtract<tensor::ExtractSliceOp>>(ctx,
+                                                        enableAggressiveMode);
 
   if (failed(applyPatternsAndFoldGreedily(moduleOp, std::move(patterns)))) {
     moduleOp->emitError("failed to apply Patterns");

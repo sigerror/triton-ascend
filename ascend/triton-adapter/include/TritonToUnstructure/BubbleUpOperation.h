@@ -28,10 +28,10 @@
 #include "mlir/IR/PatternMatch.h"
 
 #define GEN_PASS_DECL_BUBBLEUPOPERATION
-#include "../../include/TritonToUnstructure/Passes.h.inc"
+#include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
 
 #define GEN_PASS_DEF_BUBBLEUPOPERATION
-#include "../../include/TritonToUnstructure/Passes.h.inc"
+#include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
 
 namespace mlir {
 namespace triton {
@@ -45,102 +45,59 @@ createBubbleUpOperationPass(const BubbleUpOperationOptions &options = {});
 using namespace mlir;
 using namespace triton;
 
-class BubbleUpExtract : public OpRewritePattern<tensor::ExtractOp> {
+template <typename ExtractOpTy>
+class BubbleUpExtract : public OpRewritePattern<ExtractOpTy> {
+  static_assert(std::is_same_v<ExtractOpTy, tensor::ExtractOp> ||
+                std::is_same_v<ExtractOpTy, tensor::ExtractSliceOp>);
+
 public:
-  using OpRewritePattern<tensor::ExtractOp>::OpRewritePattern;
+  using OpRewritePattern<ExtractOpTy>::OpRewritePattern;
 
   explicit BubbleUpExtract(MLIRContext *context, bool enableAggressiveMode);
 
-  LogicalResult matchAndRewrite(tensor::ExtractOp op,
+  LogicalResult matchAndRewrite(ExtractOpTy op,
                                 PatternRewriter &rewriter) const override;
 
 private:
-  Value createExtractOp(Value value, ArrayRef<Value> indices, Location loc,
+  Value createExtractOp(ExtractOpTy op, Value value, Location loc,
                         PatternRewriter &rewriter) const;
   template <typename BinOpTy>
-  void bubbleUpIntBinaryOp(Operation *op, BinOpTy binOp,
-                           ArrayRef<Value> indices, Location loc,
+  void bubbleUpIntBinaryOp(ExtractOpTy op, BinOpTy binOp, Location loc,
                            PatternRewriter &rewriter) const;
   template <typename BinOpTy>
-  void bubbleUpFloatBinaryOp(Operation *op, BinOpTy binOp,
-                             ArrayRef<Value> indices, Location loc,
+  void bubbleUpFloatBinaryOp(ExtractOpTy op, BinOpTy binOp, Location loc,
                              PatternRewriter &rewriter) const;
-  template <typename ParentOpTy>
-  void bubbleUpOperation(Operation *op, ParentOpTy parentOp,
-                         ArrayRef<Value> indices, Location loc,
-                         PatternRewriter &rewriter) const = delete;
 
-  template <>
-  void bubbleUpOperation<arith::ExtSIOp>(Operation *op, arith::ExtSIOp parentOp,
-                                         ArrayRef<Value> indices, Location loc,
-                                         PatternRewriter &rewriter) const;
-
-  template <>
-  void bubbleUpOperation<arith::CmpIOp>(Operation *op, arith::CmpIOp parentOp,
-                                        ArrayRef<Value> indices, Location loc,
-                                        PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<arith::TruncFOp>(Operation *op,
-                                          arith::TruncFOp parentOp,
-                                          ArrayRef<Value> indices, Location loc,
-                                          PatternRewriter &rewriter) const;
-
-  template <>
-  void bubbleUpOperation<arith::ExtFOp>(Operation *op,
-                                        arith::ExtFOp parentOp,
-                                        ArrayRef<Value> indices, Location loc,
-                                        PatternRewriter &rewriter) const;
-
-  template <>
-  void bubbleUpOperation<arith::FPToSIOp>(Operation *op,
-                                          arith::FPToSIOp parentOp,
-                                          ArrayRef<Value> indices, Location loc,
-                                          PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<arith::SIToFPOp>(Operation *op,
-                                          arith::SIToFPOp parentOp,
-                                          ArrayRef<Value> indices, Location loc,
-                                          PatternRewriter &rewriter) const;
-  template <>
-  void
-  bubbleUpOperation<triton::ClampFOp>(Operation *op, triton::ClampFOp parentOp,
-                                      ArrayRef<Value> indices, Location loc,
-                                      PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<arith::CmpFOp>(Operation *op, arith::CmpFOp parentOp,
-                                        ArrayRef<Value> indices, Location loc,
-                                        PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<triton::BroadcastOp>(Operation *op,
-                                              triton::BroadcastOp parentOp,
-                                              ArrayRef<Value> indices,
-                                              Location loc,
-                                              PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<triton::ExpandDimsOp>(Operation *op,
-                                               triton::ExpandDimsOp parentOp,
-                                               ArrayRef<Value> indices,
-                                               Location loc,
-                                               PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<triton::SplatOp>(Operation *op,
-                                          triton::SplatOp parentOp,
-                                          ArrayRef<Value> indices, Location loc,
-                                          PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<triton::MakeRangeOp>(Operation *op,
-                                              triton::MakeRangeOp parentOp,
-                                              ArrayRef<Value> indices,
-                                              Location loc,
-                                              PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<math::FloorOp>(Operation *op, math::FloorOp parentOp,
-                                        ArrayRef<Value> indices, Location loc,
-                                        PatternRewriter &rewriter) const;
-  template <>
-  void bubbleUpOperation<math::CeilOp>(Operation *op, math::CeilOp parentOp,
-                                       ArrayRef<Value> indices, Location loc,
-                                       PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, arith::ExtSIOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, arith::CmpIOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, arith::TruncFOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, arith::ExtFOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, arith::FPToSIOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, arith::SIToFPOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, triton::ClampFOp parentOp,
+                         Location loc, PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, arith::CmpFOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, triton::BroadcastOp parentOp,
+                         Location loc, PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, triton::ExpandDimsOp parentOp,
+                         Location loc, PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, triton::SplatOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, triton::MakeRangeOp parentOp,
+                         Location loc, PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, math::FloorOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, math::CeilOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
+  void bubbleUpOperation(ExtractOpTy op, tensor::ExtractSliceOp parentOp, Location loc,
+                         PatternRewriter &rewriter) const;
 
   bool enableAggressiveMode;
 };
