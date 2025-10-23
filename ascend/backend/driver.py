@@ -573,6 +573,9 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   name.append(kernelName);
   {'auto launch_call = [=]() -> rtError_t' if enable_taskqueue else ''} {{
     uint32_t blockNum = gridX * gridY * gridZ;
+      
+    {'if (blockNum > (uint32_t)' + str(num_physical_blocks) + ') { std::cout << "WARNING: Grid " << blockNum << " > physical limit ' + str(num_physical_blocks) + ', performance maybe reduced." << std::endl; }'}
+
     {'blockNum = std::min(blockNum, (uint32_t)' + str(num_physical_blocks) + ');' if enable_auto_map_parallel_blocks else ''}
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
     rtError_t ret;
