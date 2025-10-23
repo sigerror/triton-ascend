@@ -89,6 +89,8 @@ LogicalResult MaskState::parse(Value operand, const Location &loc,
           [&](auto op) { return this->parse(op.getIn(), loc, builder); })
       .Case<arith::DivSIOp>(
           [&](auto op) { return this->parseDiv(op, loc, builder); })
+      .Case<arith::SelectOp>(
+          [&](auto op) { return this->parseSel(op, loc, builder); })
       .Default([&](Operation *op) { return failure(); });
 }
 
@@ -307,24 +309,77 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location &loc,
   return this->minStates(lhsState, rhsState, loc, builder);
 }
 
-LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
+LogicalResult MaskState::parseSel(arith::SelectOp selOp, const Location &loc,
                                   OpBuilder &builder) {
   assert(this->isEmpty());
-  // Only support <, <=, >=, =
-  if (cmpOp.getPredicate() != arith::CmpIPredicate::slt &&
-      cmpOp.getPredicate() != arith::CmpIPredicate::sle &&
-      cmpOp.getPredicate() != arith::CmpIPredicate::sge &&
-      cmpOp.getPredicate() != arith::CmpIPredicate::eq) {
-    LLVM_DEBUG({ llvm::dbgs() << "Unsupported cmpi predicate\n"; });
-    return failure();
-  }
-  MaskState lhsState;
-  if (failed(lhsState.parse(cmpOp.getLhs(), loc, builder))) {
+  auto trueValue = selOp.getTrueValue();
+  auto falseValue = selOp.getFalseValue();
+
+  MaskState condState;
+  auto condition = selOp.getCondition();
+  auto cmpOp = condition.getDefiningOp<arith::CmpIOp>();
+  if (!cmpOp || failed(condState.parse(condition, loc, builder))) {
     return failure();
   }
 
+  MaskState trueState;
+  if (failed(trueState.parse(trueValue, loc, builder)) || !trueState.scalar) {
+    return failure();
+  }
+
+  MaskState falseState;
+  if (failed(falseState.parse(falseValue, loc, builder)) || !falseState.scalar) {
+    return failure();
+  }
+
+  auto trueScalar = dyn_cast<IntegerAttr>(trueState.scalar.get<Attribute>());
+  auto falseScalar = dyn_cast<IntegerAttr>(falseState.scalar.get<Attribute>());
+
+  if (trueScalar && falseScalar) {
+    if(trueScalar.getInt() == 1 && falseScalar.getInt() == 0) {
+      start = condState.start;
+      end = condState.end;
+      dims = condState.dims;
+      offsets = condState.offsets;
+      return success();
+    }
+  }
+
+  return failure();
+}
+
+LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
+                                  OpBuilder &builder) {
+  assert(this->isEmpty());
+  auto predicate = cmpOp.getPredicate();
+  // Only support <, <=, >=, =, !=
+  if (predicate != arith::CmpIPredicate::slt &&
+      predicate != arith::CmpIPredicate::sle &&
+      predicate != arith::CmpIPredicate::sge &&
+      predicate != arith::CmpIPredicate::eq &&
+      predicate != arith::CmpIPredicate::ne) {
+    LLVM_DEBUG({ llvm::dbgs() << "Unsupported cmpi predicate\n"; });
+    return failure();
+  }
+
+  MaskState lhsState;
   MaskState rhsState;
-  if (failed(rhsState.parse(cmpOp.getRhs(), loc, builder))) {
+  auto lhs = cmpOp.getLhs();
+  auto rhs = cmpOp.getRhs();
+
+  if (predicate == arith::CmpIPredicate::ne) {
+    auto selOp = lhs.getDefiningOp<arith::SelectOp>();
+    auto constantOp = rhs.getDefiningOp<arith::ConstantOp>();
+    if (!selOp || !constantOp) {
+      return failure();
+    }
+  }
+
+  if (failed(lhsState.parse(lhs, loc, builder))) {
+    return failure();
+  }
+  
+  if (failed(rhsState.parse(rhs, loc, builder))) {
     return failure();
   }
 
@@ -353,7 +408,7 @@ LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
 
   this->offsets = lhsState.offsets;
   this->dims = lhsState.dims;
-  switch (cmpOp.getPredicate()) {
+  switch (predicate) {
   case arith::CmpIPredicate::slt: {
     auto realBound =
         maxOpFoldResult(lhsState.start, rhsState.scalar, loc, builder);
@@ -391,6 +446,17 @@ LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
 
     this->offsets[cmpDim] = newOffset;
     this->dims[cmpDim] = newDim;
+    break;
+  }
+  case arith::CmpIPredicate::ne: {
+    // only support lhs != 0
+    auto rhsScalar = dyn_cast<IntegerAttr>(rhsState.scalar.get<Attribute>());
+    if (!rhsScalar || rhsScalar.getInt() != 0) {
+      return failure();
+    }
+
+    start = lhsState.start;
+    end = lhsState.end;
     break;
   }
   default:

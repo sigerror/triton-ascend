@@ -117,6 +117,10 @@ private:
   LogicalResult parseCmp(arith::CmpIOp cmpOp, const Location &loc,
                          OpBuilder &builder);
 
+  // Operand is the result of select
+  LogicalResult parseSel(arith::SelectOp selOp, const Location &loc,
+                         OpBuilder &builder);
+
   // Operand is the result of make_range
   LogicalResult parseMakeRange(triton::MakeRangeOp rangeOp, const Location &loc,
                                OpBuilder &builder);
