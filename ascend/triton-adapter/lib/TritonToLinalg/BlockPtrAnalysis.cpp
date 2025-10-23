@@ -220,34 +220,29 @@ void BlockData::addBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
 void BlockData::subBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
                          ConversionPatternRewriter &rewriter) {
   assert(this->isEmpty() && lBlock.getRank() == rBlock.getRank());
-  // When both left block and right block have source, it is indirect load.
-  assert(!(lBlock.hasSource() && rBlock.hasSource()) &&
-         "Don't support each BlockData has own base source pointer");
-  assert(
-      rBlock.isScalar() &&
-      "Currently only support rhs scalar in function subBlock()");
-  this->source =
-      lBlock.hasSource() ? lBlock.getSourceRef() : rBlock.getSourceRef();
 
-  assert(!(lBlock.hasResElemTy() && rBlock.hasResElemTy()));
-  if (lBlock.hasResElemTy()) {
-    assert(lBlock.hasSource());
-    this->resElemTy = lBlock.getResElemTyRef();
-  } else if (rBlock.hasResElemTy()) {
-    assert(rBlock.hasSource());
-    this->resElemTy = rBlock.getResElemTyRef();
+  if (lBlock.isScalar() && rBlock.isScalar()) {
+    auto subScalar = subOpFoldResult(lBlock.getScalarRef(),
+                                     rBlock.getScalarRef(), loc, rewriter);
+    this->scalar = subScalar;
+  } else if (lBlock.getRank() == 0) {
+    // When both lhs and rhs are scalar type with rank 0, just try passing
+    // potential `scalar`
+    this->scalar =
+        lBlock.isScalar() ? lBlock.getScalarRef() : rBlock.getScalarRef();
   }
 
-  OpFoldResult rScalar = rBlock.getScalarRef();
-  for (const auto &lOffset : lBlock.getOffsetsRef()) {
-    this->offsets.push_back(subOpFoldResult(lOffset, rScalar, loc, rewriter));
+  for (const auto &[lOffset, rOffset] :
+       llvm::zip(lBlock.getOffsetsRef(), rBlock.getOffsetsRef())) {
+    this->offsets.push_back(subOpFoldResult(lOffset, rOffset, loc, rewriter));
   }
 
-  for (const auto &lStride : lBlock.getStridesRef()) {
-    this->strides.push_back(subOpFoldResult(lStride, rScalar, loc, rewriter));
+  for (const auto &[lStride, rStride] :
+       llvm::zip(lBlock.getStridesRef(), rBlock.getStridesRef())) {
+    this->strides.push_back(subOpFoldResult(lStride, rStride, loc, rewriter));
   }
 
-  // Both sizes are same implicitly under `add`
+  // Both sizes are same implicitly under `sub`
   this->sizes = lBlock.getSizesRef();
 
   this->getMemAccTypeRef().merge(lBlock.getMemAccTypeRef());
