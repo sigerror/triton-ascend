@@ -22,6 +22,7 @@
 
 #include "TritonToAnnotation/Passes.h"
 #include "TritonToHIVM/Passes.h"
+#include "TritonToHFusion/Passes.h"
 #include "DiscreteMaskAccessConversion/Passes.h"
 #include "TritonToLinalg/Passes.h"
 #include "TritonToLLVM/Passes.h"
@@ -58,6 +59,7 @@ int main(int argc, char **argv) {
   mlir::triton::registerDiscreteMaskAccessConversionPass();
   mlir::triton::registerBubbleUpOperationPass();
   mlir::triton::registerTritonToUnstructurePass();
+  mlir::triton::registerTritonToHFusionPass();
 
   return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "Triton-Adapter test driver\n", registry));

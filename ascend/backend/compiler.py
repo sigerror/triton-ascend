@@ -104,6 +104,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             "--triton-to-annotation",
             "--triton-to-unstructure",
             "--triton-to-hivm",
+            "--triton-to-hfusion",
             "--triton-to-llvm",
             "--bubble-up-operation",
             f"--triton-to-linalg=global-kernel=false named-ops={named_ops} "\
