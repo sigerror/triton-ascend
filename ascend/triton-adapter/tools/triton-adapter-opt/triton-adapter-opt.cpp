@@ -27,6 +27,7 @@
 #include "TritonToLinalg/Passes.h"
 #include "TritonToLLVM/Passes.h"
 #include "TritonToUnstructure/Passes.h"
+#include "TritonLinearize/Passes.h"
 #include "bishengir/InitAllDialects.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -52,6 +53,7 @@ int main(int argc, char **argv) {
   bishengir::registerAllDialects(registry);
 
   // Register all passes.
+  mlir::triton::registerTritonLinearizePass();
   mlir::triton::registerTritonToLinalgPass();
   mlir::triton::registerTritonToLLVMPass();
   mlir::triton::registerTritonToAnnotationPass();

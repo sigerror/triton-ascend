@@ -257,9 +257,17 @@ void BlockData::mulBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
 
   assert(!(lBlock.hasSource() && rBlock.hasSource()));
 
-  assert(
-      (lBlock.isScalar() ^ rBlock.isScalar()) &&
-      "Currently only support one and only one scalar in function mulBlock()");
+  if (lBlock.isScalar() && rBlock.isScalar()) {
+    LLVM_DEBUG({llvm::dbgs() << "lBlock.scalar:" << lBlock.getScalar() 
+                       << " rBlbock.scalar:" << rBlock.getScalar() << "\n"; });   
+    
+    auto scalar = mulOpFoldResult(lBlock.getScalar(), rBlock.getScalar(), loc, rewriter);
+    this->scalar = scalar;
+  }
+
+  // assert(
+  //     (lBlock.isScalar() ^ rBlock.isScalar()) &&
+  //     "Currently only support one and only one scalar in function mulBlock()");
 
   BlockData *lb = &lBlock;
   BlockData *rb = &rBlock;

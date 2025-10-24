@@ -100,6 +100,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         cmd_list = [
             triton_adapter_opt_path,
             src_path,
+            "--triton-linearize",
             "--discrete-mask-access-conversion",
             "--triton-to-annotation",
             "--triton-to-unstructure",
