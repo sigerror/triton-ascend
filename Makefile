@@ -73,8 +73,29 @@ $(TRITON_WHL): $(DEPS_STAMP) install-dev-reqs
 	TRITON_WHEEL_VERSION_SUFFIX=$(TRITON_WHEEL_VERSION_SUFFIX) \
 	$(PYTHON) setup.py bdist_wheel
 
+.PHONY: rename-wheel
+rename-wheel:
+	@set -e; \
+	echo "[rename-wheel] HEAD_COMMIT=$$HEAD_COMMIT"; \
+	WHEEL=$$(ls dist/*.whl 2>/dev/null | head -n1); \
+	if [ -z "$$WHEEL" ]; then echo "No wheel found in dist/"; exit 1; fi; \
+	if [ -n "$$HEAD_COMMIT" ]; then \
+		SHORT_COMMIT=$$(printf "%s" "$$HEAD_COMMIT" | cut -c1-8); \
+	else \
+		SHORT_COMMIT=$$(git rev-parse --short=8 HEAD); \
+	fi; \
+	echo "[rename-wheel] SHORT_COMMIT=$$SHORT_COMMIT"; \
+	BASENAME=$$(basename "$$WHEEL"); \
+	NEWBASENAME=$$(echo "$$BASENAME" | sed -E "s/\\+git[0-9a-fA-F]+/+git$${SHORT_COMMIT}/"); \
+	if [ "$$BASENAME" != "$$NEWBASENAME" ]; then \
+		echo "Renaming $$BASENAME -> $$NEWBASENAME"; \
+		mv "dist/$$BASENAME" "dist/$$NEWBASENAME"; \
+	else \
+		echo "Wheel name unchanged: $$BASENAME"; \
+	fi
+
 .PHONY: package
-package: $(TRITON_WHL) ## Build the Triton wheel package
+package: $(TRITON_WHL) rename-wheel ## Build the Triton wheel package
 
 .PHONY: upload-triton
 upload-triton: install-obsutil package
