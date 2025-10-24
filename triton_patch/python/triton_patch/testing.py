@@ -665,7 +665,8 @@ from .triton_patch.language.core import (
     sync_block_set,
     sync_block_wait,
     dtype_to_ir,
-    sort
+    sort,
+    load
 )
 from .triton_patch.language.standard import flip, sigmoid, softmax, isfinited, finitef, rint, atan2
 from .triton_patch.language.math import (
@@ -732,6 +733,7 @@ language.trans = trans
 language.parallel = parallel
 language.compile_hint = compile_hint
 language.sort = sort
+language.load = load
 language.multibuffer = multibuffer
 language.sync_block_all = sync_block_all
 language.sync_block_set = sync_block_set

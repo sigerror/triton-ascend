@@ -26,7 +26,8 @@ import triton.language as tl
 from triton._C.libtriton import ir
 from triton.language.semantic import wrap_tensor, _str_to_rounding_mode, not_equal, _str_to_dot_input_precision, \
     binary_op_type_checking_impl, integer_promote_impl, broadcast_impl_shape, _str_to_sem, _str_to_scope, bitcast, \
-    bitwise_op_type_checking_impl, shl, ashr, lshr, fdiv, sub, mul, to_tensor
+    bitwise_op_type_checking_impl, shl, ashr, lshr, fdiv, sub, mul, to_tensor, _str_to_load_cache_modifier, _str_to_eviction_policy, \
+    _str_to_padding_option, _load_block_pointer
 import triton.language.math as math
 import triton.language.core as core
 from triton.language._utils import TRITON_MAX_TENSOR_NUMEL
@@ -403,7 +404,7 @@ def not_(input: tl.tensor, builder: ir.builder):
     return invert(input, builder)
 
 
-def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder):
+def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, care_padding, builder):
     # Load by a tensor of pointers or a pointer of scalar: `block_type<pointer_type<>>` or `pointer_type<>`
     if not ptr.type.scalar.is_ptr():
         raise ValueError(f"Unsupported ptr type {ptr.type.__repr__()} in `tl.load`")
@@ -416,7 +417,7 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
                          "pointers or loading a scalar. Because the compiler does not know the boundary; please "
                          "use block pointers (defined by `make_block_ptr`) instead")
 
-    if other is None:
+    if other is None and care_padding == True:
         other = to_tensor(0, builder)
     # For a pointer of scalar, check the type of `mask` and `other`
     if not ptr.type.is_block():
@@ -467,6 +468,22 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
         ret.was_bool_to_int8 = True
 
     return ret
+
+def load(ptr: tl.tensor, mask: Optional[tl.tensor], other: Optional[tl.tensor], boundary_check: Tuple,
+         padding_option: str, cache_modifier: str, eviction_policy: str, is_volatile: bool, care_padding: bool,
+         builder: ir.builder) -> tl.tensor:
+    # Cache, eviction and padding options
+    cache = _str_to_load_cache_modifier(cache_modifier)
+    eviction = _str_to_eviction_policy(eviction_policy)
+    padding = _str_to_padding_option(padding_option)
+
+    if ptr.type.is_ptr() and ptr.type.element_ty.is_block():
+        # Load by a block pointer: `pointer_type<block_type<>>`
+        return _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder)
+    else:
+        # Load by a tensor of pointers or a pointer of scalar: `block_type<pointer_type<>>` or `pointer_type<>`
+        return _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, care_padding, builder)
+
 
 def minimum(x: tl.tensor, y: tl.tensor, propagate_nan: tl.PropagateNan, builder: ir.builder):
     x, y = binary_op_type_checking_impl(x, y, builder)

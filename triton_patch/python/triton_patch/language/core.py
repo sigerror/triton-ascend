@@ -150,6 +150,73 @@ def dot(
     )
 
 
+@builtin
+def load(pointer, mask=None, other=None, boundary_check=(), padding_option="", cache_modifier="", eviction_policy="",
+         volatile=False, care_padding = True, _builder=None):
+    """
+    Return a tensor of data whose values are loaded from memory at location defined by `pointer`:
+
+        (1) If `pointer` is a single element pointer, a scalar is be loaded.  In
+            this case:
+
+            - `mask` and `other` must also be scalars,
+            - `other` is implicitly typecast to `pointer.dtype.element_ty`, and
+            - `boundary_check` and `padding_option` must be empty.
+
+        (2) If `pointer` is an N-dimensional tensor of pointers, an
+            N-dimensional tensor is loaded.  In this case:
+
+            - `mask` and `other` are implicitly broadcast to `pointer.shape`,
+            - `other` is implicitly typecast to `pointer.dtype.element_ty`, and
+            - `boundary_check` and `padding_option` must be empty.
+
+        (3) If `pointer` is a block pointer defined by `make_block_ptr`, a
+            tensor is loaded.  In this case:
+
+            - `mask` and `other` must be `None`, and
+            - `boundary_check` and `padding_option` can be specified to control the behavior of out-of-bound access.
+
+    :param pointer: Pointer to the data to be loaded
+    :type pointer: `triton.PointerType`, or block of `dtype=triton.PointerType`
+    :param mask: if `mask[idx]` is false, do not load the data at address `pointer[idx]`
+        (must be `None` with block pointers)
+    :type mask: Block of `triton.int1`, optional
+    :param other: if `mask[idx]` is false, return `other[idx]`
+    :type other: Block, optional
+    :param boundary_check: tuple of integers, indicating the dimensions which should do the boundary check
+    :type boundary_check: tuple of ints, optional
+    :param padding_option: should be one of {"", "zero", "nan"}, the padding value to use while out of bounds. "" means an undefined value.
+    :param cache_modifier: changes cache option in NVIDIA PTX
+    :type cache_modifier: str, optional, should be one of {"", "ca", "cg"}, where "ca" stands for
+        cache at all levels and "cg" stands for cache at global level (cache in L2 and below, not L1), see
+        `cache operator <https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#cache-operators>`_ for more details.
+    :param eviction_policy: changes eviction policy in NVIDIA PTX
+    :type eviction_policy: str, optional
+    :param volatile: changes volatile option in NVIDIA PTX
+    :type volatile: bool, optional
+    
+    :param care_padding: represents whether user cares about padding value or not, default is True, works as below:
+        1. if 'other' is not None, 'care_padding' takes no effect.
+        2. if 'other' is None and 'care_padding' = True, loaded tensor will fill zeroes on masked places.
+        3. if 'other' is None and 'care_padding' = False, masked places on loaded tensor will be random values, and tl.load may have a better performence.
+    :type care_padding: bool, optional
+    """
+    # `mask` and `other` can be constexpr
+    mask = _constexpr_to_value(mask)
+    other = _constexpr_to_value(other)
+    if mask is not None:
+        mask = real_semantic.to_tensor(mask, _builder)
+    if other is not None:
+        other = real_semantic.to_tensor(other, _builder)
+    padding_option = _constexpr_to_value(padding_option)
+    cache_modifier = _constexpr_to_value(cache_modifier)
+    eviction_policy = _constexpr_to_value(eviction_policy)
+    volatile = _constexpr_to_value(volatile)
+    care_padding = _constexpr_to_value(care_padding)
+    return semantic.load(pointer, mask, other, boundary_check, padding_option, cache_modifier, eviction_policy,
+                         volatile, care_padding, _builder)
+
+
 @_tensor_member_fn
 @builtin
 def gather(src, index, axis, _builder=None):
