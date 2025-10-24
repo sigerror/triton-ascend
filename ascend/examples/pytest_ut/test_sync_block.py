@@ -47,10 +47,11 @@ def triton_matmul_exp(A_ptr, B_ptr, C_ptr,
     b_ptrs = B_ptr + offs_k[:, None] * N + (col + offs_j)
     b_vals = tl.load(b_ptrs)                  # [K, 1]
 
-    
-    tl.sync_block_set("cube", "vector", 5)
+
     # Dot: [1, K] @ [K, 1] -> [1, 1]
     acc_11 = tl.dot(a_vals, b_vals)           # [1, 1]
+
+    tl.sync_block_set("cube", "vector", 5)
     tl.sync_block_wait("cube", "vector", 5)
 
     # Pointer grid for the single output element: shape [1,1]
@@ -61,15 +62,14 @@ def triton_matmul_exp(A_ptr, B_ptr, C_ptr,
 
 
 @pytest.mark.parametrize(
-    'param_list',
+    'dtype, ashape, bshape',
     [
         # dtype, A-shape, B-shape
         ['float32', (4, 4), (4, 4)],
         ['float32', (2, 3), (3, 5)],
     ]
 )
-def test_matmul_exp(param_list):
-    dtype, ashape, bshape = param_list
+def test_matmul_exp(dtype, ashape, bshape):
     M, K = ashape
     K2, N = bshape
     assert K == K2, "Inner dimensions must match"

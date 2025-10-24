@@ -334,7 +334,7 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         if limit_auto_multi_buffer_only_for_local_buffer is not None:
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
-                
+
         set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
@@ -354,6 +354,11 @@ def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
         if auto_multi_buffer is not None:
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-of-local-buffer={auto_multi_buffer}"]
+
+        disable_auto_inject_block_sync = metadata["disable_auto_inject_block_sync"]
+        if disable_auto_inject_block_sync is not None:
+            _compile_option_list += \
+                [f"--disable-auto-inject-block-sync={disable_auto_inject_block_sync}"]
 
         if _is_auto_map_parallel_blocks_enabled():
             _compile_option_list += ["--enable-auto-blockify-loop"]
@@ -414,6 +419,7 @@ class NPUOptions:
     set_workspace_multibuffer: int = None
     tile_mix_vector_loop: int = None
     tile_mix_cube_loop: int = None
+    disable_auto_inject_block_sync: bool = None
 
     stream: int = None
 

@@ -599,6 +599,9 @@ class JITFunction(KernelInterface[T]):
 
         if self.binder is None:
             self.create_binder(backend)
+        
+        if self.bishengir_option:
+            kwargs.update(self.bishengir_option)
 
         bound_args, sig_and_spec, constexpr_vals, non_constexpr_vals, excess_kwargs = self.binder(*args, **kwargs)
 
@@ -695,7 +698,7 @@ class JITFunction(KernelInterface[T]):
         return kernel
 
     def __init__(self, fn, version=None, do_not_specialize=None, do_not_specialize_on_alignment=None, debug=None,
-                 noinline=None, repr=None, launch_metadata=None):
+                 noinline=None, repr=None, launch_metadata=None, bishengir_option=None):
         do_not_specialize = do_not_specialize if do_not_specialize else []
         do_not_specialize_on_alignment = do_not_specialize_on_alignment if do_not_specialize_on_alignment else []
 
@@ -708,6 +711,7 @@ class JITFunction(KernelInterface[T]):
         self.starting_line_number = inspect.getsourcelines(fn)[1]
         self.repr = lambda _: fn.__name__ if repr is None else repr(_)
         self.launch_metadata = launch_metadata
+        self.bishengir_option = bishengir_option
 
         self.binder = None
 
@@ -835,6 +839,7 @@ def jit(
     do_not_specialize_on_alignment: Optional[Iterable[int]] = None,
     debug: Optional[bool] = None,
     noinline: Optional[bool] = None,
+    options: Optional[dict] = None,
 ) -> Callable[[T], JITFunction[T]]:
     ...
 
@@ -849,6 +854,7 @@ def jit(
     do_not_specialize_on_alignment: Optional[Iterable[int]] = None,
     debug: Optional[bool] = None,
     noinline: Optional[bool] = None,
+    options: Optional[dict] = None,
 ) -> Union[JITFunction[T], Callable[[T], JITFunction[T]]]:
     """
     Decorator for JIT-compiling a function using the Triton compiler.
@@ -870,6 +876,7 @@ def jit(
 
     def decorator(fn: T) -> JITFunction[T]:
         assert callable(fn)
+
         if os.getenv("TRITON_INTERPRET", "0") == "1":
             from .interpreter import InterpretedFunction
             return InterpretedFunction(fn, version=version, do_not_specialize=do_not_specialize,
@@ -885,6 +892,7 @@ def jit(
                 noinline=noinline,
                 repr=repr,
                 launch_metadata=launch_metadata,
+                bishengir_option=options,
             )
 
     if fn is not None:
