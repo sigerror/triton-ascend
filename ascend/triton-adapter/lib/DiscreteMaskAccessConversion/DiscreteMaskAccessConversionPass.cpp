@@ -151,12 +151,13 @@ LogicalResult matchAndRewrite(triton::AtomicRMWOp op, PatternRewriter &rewriter)
     auto zeroAttr = rewriter.getZeroAttr(valueType);
     zeros = rewriter.create<mlir::arith::ConstantOp>(loc, zeroAttr);
   } else {
-    op.emitError() << "Unsupported value type for select: " << valueType << "\n";
+    op.emitWarning() << "Unsupported value type for select: " << valueType << "\n";
     return failure();
   }
   auto maskedValue = rewriter.create<arith::SelectOp>(loc, mask, value, zeros);
   auto newAtomicAddOp = rewriter.create<triton::AtomicRMWOp>(
       loc, value.getType(), op.getAtomicRmwOp(), ptr, maskedValue, mlir::Value(), op.getSem(), op.getScope());
+  newAtomicAddOp->setAttr(ConverterUtils::discreteMaskAttrName, UnitAttr::get(rewriter.getContext()));
   rewriter.replaceOp(op, newAtomicAddOp);
   return success();
 }

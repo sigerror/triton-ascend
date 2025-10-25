@@ -119,9 +119,11 @@ UnstructuredMemAccessConverter<triton::AtomicRMWOp>::createMemAccOp(
     extractedValue = rewriter.create<triton::SplatOp>(
         loc, RankedTensorType::get(scalarLikeShape, extractedValue.getType()),
         extractedValue);
-    extractedMask = rewriter.create<triton::SplatOp>(
-        loc, RankedTensorType::get(scalarLikeShape, extractedMask.getType()),
-        extractedMask);
+    if (extractedMask) {
+      extractedMask = rewriter.create<triton::SplatOp>(
+          loc, RankedTensorType::get(scalarLikeShape, extractedMask.getType()),
+          extractedMask);
+    }
   }
   return rewriter.create<triton::AtomicRMWOp>(
       loc, targetType, op.getAtomicRmwOpAttr(), ptrToAccess, extractedValue,
@@ -238,15 +240,23 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
       return success();
     }
 
-  if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
-    if (op->hasAttr(ConverterUtils::discreteMaskAttrName)) {
+  if (op->hasAttr(ConverterUtils::discreteMaskAttrName)) {
+    if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
       auto selectOp = op.getValue().template getDefiningOp<arith::SelectOp>();
       op = rewriter.replaceOpWithNewOp<triton::StoreOp>(
           op, op.getPtr(), selectOp.getTrueValue(), selectOp.getCondition(),
           op.getCache(), op.getEvict());
       rewriter.setInsertionPoint(op);
       ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
+    } else if constexpr (std::is_same_v<MemAccOpTy, triton::AtomicRMWOp>) {
+      auto selectOp = op.getVal().template getDefiningOp<arith::SelectOp>();
+      op = rewriter.replaceOpWithNewOp<triton::AtomicRMWOp>(
+          op, op.getType(), op.getAtomicRmwOp(), op.getPtr(),
+          selectOp.getTrueValue(), selectOp.getCondition(), op.getSem(),
+          op.getScope());
     }
+    rewriter.setInsertionPoint(op);
+    ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
   }
 
   if (forceScalarizeMode || ptrOffsetInfo.isScalarLike() ||
@@ -303,8 +313,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   SmallVector<OpFoldResult> strides;
   SmallVector<int64_t> extractedShape;
 
-  for (const auto &[size, structured] : llvm::zip_equal(
-           resultShape, ptrOffsetInfo.getStructured())) {
+  for (const auto &[size, structured] :
+       llvm::zip_equal(resultShape, ptrOffsetInfo.getStructured())) {
     // handle indirect dimension
     strides.push_back(rewriter.getIndexAttr(1));
     Value sizeVal =
@@ -394,7 +404,6 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
                                                  op.getOther())
             ->setAttr(ConverterUtils::discreteAttrName,
                       UnitAttr::get(rewriter.getContext()));
-        ;
       } else {
         rewriter.replaceOp(op, newOpResult);
       }
@@ -402,6 +411,22 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
       rewriter.replaceOp(op, newOpResult);
     }
   } else {
+    if constexpr (std::is_same_v<MemAccOpTy, triton::AtomicRMWOp>) {
+      if (fullyUnstructured) {
+        auto mask = createExtractOp(loc, accessedOp.getMask(), rewriter,
+                                    {rewriter.getIndexAttr(0)});
+        rewriter.create<scf::IfOp>(loc, mask, [&](OpBuilder &b, Location loc) {
+          b.create<triton::AtomicRMWOp>(
+               loc, accessedOp.getType(), accessedOp.getAtomicRmwOp(),
+               accessedOp.getPtr(), accessedOp.getVal(), nullptr,
+               accessedOp.getSem(), accessedOp.getScope())
+              ->setAttr(ConverterUtils::discreteAttrName,
+                        UnitAttr::get(rewriter.getContext()));
+          b.create<scf::YieldOp>(loc);
+        });
+        rewriter.eraseOp(accessedOp);
+      }
+    }
     rewriter.eraseOp(op);
   }
   LLVM_DEBUG({
@@ -488,8 +513,7 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
       offsetMap[regionIterArg] = PtrOffsetInfo(resOffsetInfo.getPtr());
       SmallVector<bool> &regionIterArgOffset =
           offsetMap[regionIterArg].getStructuredRef();
-      SmallVector<bool> &resOffset =
-          resOffsetInfo.getStructuredRef();
+      SmallVector<bool> &resOffset = resOffsetInfo.getStructuredRef();
       regionIterArgOffset.resize(resOffset.size());
       for (size_t i = 0; i < resOffset.size(); i++)
         regionIterArgOffset[i] = resOffset[i];

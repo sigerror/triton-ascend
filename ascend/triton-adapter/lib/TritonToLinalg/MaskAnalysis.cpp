@@ -153,12 +153,12 @@ LogicalResult MaskState::addStates(const MaskState &lhsState,
                                    const Location &loc, OpBuilder &builder) {
   if (lhsState.scalar && rhsState.scalar) {
     InFlightDiagnostic diag =
-        emitError(loc) << "Unexpected case where both lhs and rhs are scalars";
+        emitWarning(loc) << "Unexpected case where both lhs and rhs are scalars";
     return failure();
   }
   if (!lhsState.scalar && !rhsState.scalar) {
     InFlightDiagnostic diag =
-        emitError(loc)
+        emitWarning(loc)
         << "Unsupported scenario where neither lhs nor rhs is a scalar";
     return failure();
   }
@@ -195,7 +195,7 @@ LogicalResult MaskState::divStates(const MaskState &lhsState,
     return divStateScalar(lhsState, rhsState.scalar, loc, builder);
   }
 
-  InFlightDiagnostic diag = emitError(loc)
+  InFlightDiagnostic diag = emitWarning(loc)
                             << "Supported scenario where only rhs is a scalar";
   return failure();
 }
@@ -384,7 +384,7 @@ LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
   }
 
   if (!(!lhsState.scalar && rhsState.scalar)) {
-    InFlightDiagnostic diag = emitError(loc)
+    InFlightDiagnostic diag = emitWarning(loc)
                                 << "[MaskState] Unsupported cmpi scenario";
     return failure();
   }
@@ -394,7 +394,7 @@ LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location &loc,
     auto constDimLength = getConstantIntValue(lhsState.dims[i]);
     if (!constDimLength || constDimLength.value() != 1) {
       if (cmpDim != -1) {
-        InFlightDiagnostic diag = emitError(loc)
+        InFlightDiagnostic diag = emitWarning(loc)
                                   << "Unsupported cmpi with more than one  "
                                      "dimension with size larger than 1";
         return failure();
@@ -476,7 +476,7 @@ LogicalResult MaskState::parseMakeRange(triton::MakeRangeOp rangeOp,
 
   if (stride != 1) {
     InFlightDiagnostic diag =
-        emitError(loc)
+        emitWarning(loc)
         << "stride must be 1 for make_range whose result is used "
            "as load or store masks";
     return failure();
@@ -527,7 +527,7 @@ LogicalResult MaskState::parseSplat(triton::SplatOp splatOp,
 
   if (!isa<IntegerType>(src.getType())) {
     InFlightDiagnostic diag =
-        emitError(loc)
+        emitWarning(loc)
         << "splat source must be an integer scalar for load/store masks";
     return failure();
   }
