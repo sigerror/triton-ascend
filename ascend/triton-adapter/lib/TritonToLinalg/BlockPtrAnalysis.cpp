@@ -1426,24 +1426,26 @@ void BlockDataParser::rewriteYieldOp(
 }
 
 // This function is util function for rewriteLoopOp that
-// check if given regionIterArg is used by MemAccOp
-bool isUsedByMemAccOp(Value v, int depth = 0) {
+// check if given regionIterArg is used by AddPtrOp
+bool isUsedByAddPtrOp(Value v, int depth = 0) {
   for (auto &use: v.getUses()) {
     auto *user = use.getOwner();
     if (user->hasAttr(ConverterUtils::discreteAttrName))
       continue;
-    if (isa<triton::LoadOp, triton::StoreOp, triton::AtomicRMWOp, triton::AtomicCASOp>(user))
+    if (isa<triton::AddPtrOp>(user) ||
+        (isa<triton::LoadOp>(user) && use.getOperandNumber() == 1) ||
+        (isa<triton::StoreOp>(user) && use.getOperandNumber() == 2))
       return true;
     if (auto loopOp = dyn_cast<LoopLikeOpInterface>(user);
         loopOp && !loopOp->hasAttr("ExtractedLoadOrStore")) {
-      if(isUsedByMemAccOp(loopOp.getTiedLoopRegionIterArg(&use), depth + 1))
+      if(isUsedByAddPtrOp(loopOp.getTiedLoopRegionIterArg(&use), depth + 1))
         return true;
     } else if (auto yieldOp = dyn_cast<scf::YieldOp>(user)) {
-      if (depth && isUsedByMemAccOp(yieldOp->getParentOp()->getResult(use.getOperandNumber()), depth - 1))
+      if (depth && isUsedByAddPtrOp(yieldOp->getParentOp()->getResult(use.getOperandNumber()), depth - 1))
         return true;
     }
     for (auto res: user->getResults()) {
-      if (isUsedByMemAccOp(res, depth))
+      if (isUsedByAddPtrOp(res, depth))
         return true;
     }
   }
@@ -1577,7 +1579,7 @@ void BlockDataParser::rewriteLoopOp(
     auto indexTensor =
         isa<TensorType>(arg.getType()) &&
         isa<IntegerType>(cast<TensorType>(arg.getType()).getElementType()) &&
-        isUsedByMemAccOp(op.getRegionIterArgs()[i]);
+        isUsedByAddPtrOp(op.getRegionIterArgs()[i]);
 
     // Handle memref::ReinterpretCastOp and tensor<Integer> specially
     if (!reintCastOp && !indexTensor)
