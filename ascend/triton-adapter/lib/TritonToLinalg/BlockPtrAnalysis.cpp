@@ -1755,7 +1755,8 @@ void BlockDataParser::rewriteLoopOp(
         commonBodyBuilder(b, loc, args, forOp.getRegion(), op.getRegionIterArgs());
       });
   } else if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
-    auto resultTypes = map_to_vector(newInits, [](auto v) { return v.getType(); });
+    auto resultTypes = whileOp.getResultTypes();
+    // TODO: Handle ptr and tensor<ptr> type
     newOp = rewriter.create<scf::WhileOp>(
       whileOp.getLoc(), resultTypes, newInits,
       [&](OpBuilder &b, Location loc, ValueRange args) {
@@ -1767,24 +1768,29 @@ void BlockDataParser::rewriteLoopOp(
   }
 
   // Replace only the results that correspond to the original scf.for
-  auto newResultIter = newOp->result_begin();
   rewriter.setInsertionPointAfter(newOp);
-  for (const auto &[res, regionArg, newIterArgIdx, mask]: llvm::zip_equal(op->getResults(), op.getRegionIterArgs(), iterArgIdxMap, maskIterArgs)) {
-    if (newIterArgIdx != -1) {
-      rewriter.replaceAllUsesWith(res, *newResultIter);
-      ++newResultIter;
-    } else {
-      auto key = mapping.lookup(regionArg);
-      auto data = known.at(key);
-      for (auto &offset : data.getOffsetsRef())
-        offset = newOp.getTiedLoopResult(cast<BlockArgument>(offset.get<Value>()));
-      for (auto &stride : data.getStridesRef())
-        stride = newOp.getTiedLoopResult(cast<BlockArgument>(stride.get<Value>()));
-      auto newRes = createFromData(cast<RankedTensorType>(regionArg.getType()), data, op.getLoc(), rewriter, mask);
-      rewriter.replaceAllUsesWith(res, newRes);
+  if (auto forOp = dyn_cast<scf::ForOp>(op.getOperation())) {
+    auto newResultIter = newOp->result_begin();
+    for (const auto &[res, regionArg, newIterArgIdx, mask]: llvm::zip_equal(op->getResults(), op.getRegionIterArgs(), iterArgIdxMap, maskIterArgs)) {
+      if (newIterArgIdx != -1) {
+        rewriter.replaceAllUsesWith(res, *newResultIter);
+        ++newResultIter;
+      } else {
+        auto key = mapping.lookup(regionArg);
+        auto data = known.at(key);
+        for (auto &offset : data.getOffsetsRef())
+          offset = newOp.getTiedLoopResult(cast<BlockArgument>(offset.get<Value>()));
+        for (auto &stride : data.getStridesRef())
+          stride = newOp.getTiedLoopResult(cast<BlockArgument>(stride.get<Value>()));
+        auto newRes = createFromData(cast<RankedTensorType>(regionArg.getType()), data, op.getLoc(), rewriter, mask);
+        rewriter.replaceAllUsesWith(res, newRes);
+      }
     }
+    rewriter.eraseOp(op);
+  } else {
+    rewriter.replaceOp(op, newOp);
   }
-  rewriter.eraseOp(op);
+  
 
   // Update the loop body. Manually invoke the rewrite logic on addptr and yield
   // in the loop body, so we can take advantage of the states we built up
@@ -1817,6 +1823,8 @@ void BlockDataParser::rewriteLoopOp(
   LLVM_DEBUG({
     llvm::dbgs() << "new loop\n";
     newOp.getOperation()->print(llvm::dbgs(),
+                                OpPrintingFlags().printGenericOpForm());
+    newOp.getOperation()->getParentOfType<triton::FuncOp>().print(llvm::dbgs(),
                                 OpPrintingFlags().printGenericOpForm());
     llvm::dbgs() << "\n";
   });

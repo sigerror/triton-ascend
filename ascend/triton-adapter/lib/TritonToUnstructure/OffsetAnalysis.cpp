@@ -908,10 +908,16 @@ void parseYield(scf::YieldOp op, const Location &loc, RewriterBase &rewriter,
 
 void parseLoopOp(LoopLikeOpInterface op, const Location &loc, RewriterBase &rewriter,
                  llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap, Value dst) {
+  if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
+    offsetMap[dst] = PtrOffsetInfo();
+    if (auto tensorType = dyn_cast<RankedTensorType>(dst.getType()))
+      offsetMap[dst].setUnstructured(tensorType.getRank());
+    return;
+  }
   auto resNum = cast<OpResult>(dst).getResultNumber();
   Value yieldedValue = op.getYieldedValues()[resNum];
   parse(yieldedValue, op.getLoc(), rewriter, offsetMap);
-  offsetMap[dst] = PtrOffsetInfo() = offsetMap.at(yieldedValue);
+  offsetMap[dst] = offsetMap.at(yieldedValue);
 }
 
 void parseExtractSlice(tensor::ExtractSliceOp op, const Location &loc,
