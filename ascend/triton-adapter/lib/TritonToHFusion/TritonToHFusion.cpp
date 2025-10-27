@@ -6,6 +6,8 @@
 #include "TritonToHFusion/Passes.h"
 
 #include "bishengir/Dialect/HFusion/IR/HFusion.h"
+#include "bishengir/Dialect/Tensor/IR/TensorImpl.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -49,6 +51,73 @@ namespace {
       return success();
     }
   };
+
+  struct TritonFpToFpToHFusionConversion
+    : OpRewritePattern<triton::FpToFpOp> {
+    using OpRewritePattern<triton::FpToFpOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(triton::FpToFpOp op,
+      PatternRewriter &rewriter) const final {
+      auto loc = op.getLoc();
+      Value input = op.getSrc();
+      auto resultType = op.getResult().getType();
+      
+      // Check if rounding mode is specified
+      auto roundingMode = op.getRounding();
+      if (!roundingMode.has_value()) {
+        // No rounding mode specified, don't convert
+        return failure();
+      }
+
+      // Only handle float-to-float conversions with explicit rounding mode
+      auto srcType = cast<TensorType>(input.getType());
+      auto dstType = cast<TensorType>(resultType);
+      if (!srcType.getElementType().isIntOrFloat() || 
+          !dstType.getElementType().isIntOrFloat()) {
+        return failure();
+      }
+
+      // Check if this is a floating point downcast that needs special rounding
+      unsigned srcBitwidth = srcType.getElementType().getIntOrFloatBitWidth();
+      unsigned dstBitwidth = dstType.getElementType().getIntOrFloatBitWidth();
+      
+      if (srcBitwidth <= dstBitwidth) {
+        // Not a downcast, don't need special handling
+        return failure();
+      }
+
+      // Map Triton rounding mode to HFusion rounding mode
+      // Note: The Python frontend (semantic.py) currently only generates FpToFpOp
+      // for non-RTNE rounding modes. RTNE downcast uses create_fp_trunc instead.
+      // However, we keep RTNE handling here for completeness.
+      hfusion::RoundMode hfusionRoundMode;
+      switch (roundingMode.value()) {
+        case triton::RoundingMode::RTNE:
+          hfusionRoundMode = hfusion::RoundMode::RINT;
+          break;
+        case triton::RoundingMode::RTZ:
+          hfusionRoundMode = hfusion::RoundMode::TRUNC;
+          break;
+        default:
+          return op.emitError("Unsupported rounding mode for HFusion conversion");
+      }
+
+      // Get or create destination tensor (destination-style)
+      SmallVector<Value> dsts;
+      if (failed(tensor::getOrCreateDestinations(rewriter, loc, op, dsts)))
+        return failure();
+
+      // Create the HFusion cast operation with round_mode attribute
+      auto roundModeAttr = hfusion::RoundModeAttr::get(
+          rewriter.getContext(), hfusionRoundMode);
+      auto modeAttr = rewriter.getNamedAttr("mode", roundModeAttr);
+
+      rewriter.replaceOpWithNewOp<hfusion::CastOp>(
+        op, ValueRange{input}, ValueRange{dsts}, ArrayRef{modeAttr});
+
+      return success();
+    }
+  };
 }
 
 namespace {
@@ -61,12 +130,16 @@ namespace {
 
 void TritonToHFusionPass::runOnOperation() {
   auto module = getOperation();
-  ConversionTarget target(getContext());
-  target.addLegalDialect<hfusion::HFusionDialect>();
-
+  
+  // Use greedy pattern rewriter for simpler pattern matching
+  // Patterns decide themselves whether to convert (via returning success/failure)
   RewritePatternSet patterns(&getContext());
   patterns.add<TritonHistogramToHFusionConversion>(patterns.getContext());
-  if (failed(applyPartialConversion(module, target, std::move(patterns)))) {
+  patterns.add<TritonFpToFpToHFusionConversion>(patterns.getContext());
+  
+  // Apply patterns with greedy rewriting
+  // This allows patterns to return failure() without causing pass failure
+  if (failed(applyPatternsAndFoldGreedily(module, std::move(patterns)))) {
     signalPassFailure();
   }
 }
