@@ -158,6 +158,8 @@ def generate_tensor(shape, dtype):
         return torch.randint(low=0, high=127, size=shape, dtype=eval('torch.' + dtype))
     elif dtype == 'bool':
         return torch.randint(low=0, high=2, size=shape).bool()
+    elif dtype == 'uint8':
+        return torch.randint(low=0, high=255, size=shape, dtype=torch.uint8)
     else:
         raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
 
@@ -214,7 +216,9 @@ def validate_cal(dtype, y_cal, y_ref):
     elif dtype == 'bfloat16':
         diff = torch.div(torch.abs(y_cal - y_ref), torch.abs(y_cal)) < 0.001
         assert diff.all(), "Relative error is less than 0.001 !"
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16':
+    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8':
+        assert torch.equal(y_cal, y_ref)
+    elif dtype == 'uint8':
         assert torch.equal(y_cal, y_ref)
     elif dtype == 'bool':
         assert torch.equal(y_cal, y_ref)
@@ -235,6 +239,8 @@ def validate_cmp(dtype, y_cal, y_ref):
         torch.testing.assert_close(y_ref, y_cal, rtol=1e-04, atol=1e-04, equal_nan=True)
     elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' or dtype == 'uint32':
         assert torch.equal(y_cal, y_ref)
+    elif dtype == 'uint8':
+        assert torch.equal(y_cal, y_ref)
     elif dtype == 'bool':
         assert torch.equal(y_cal.cpu(), y_ref.cpu())
     else:
@@ -247,7 +253,7 @@ def validate_cmp_with_expection(dtype, y_cal, y_ref, expect):
             assert torch.allclose(y_ref, y_cal, rtol=1e-03, atol=1e-03, equal_nan=True)
         else:
             assert not torch.allclose(y_ref, y_cal, rtol=1e-03, atol=1e-03, equal_nan=True)
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8':
+    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' or dtype == 'uint8':
         if expect:
             assert torch.equal(y_cal, y_ref)
         else:
