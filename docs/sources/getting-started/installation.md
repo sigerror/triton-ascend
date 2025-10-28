@@ -180,7 +180,7 @@ Triton 使用 LLVM20 为 GPU 和 CPU 生成代码。同样，昇腾的毕昇编�
 ### 克隆 Triton-Ascend
 
 ```bash
-git clone https://gitcode.com/Ascend/triton-ascend.git --recurse-submodules --shallow-submodules
+git clone https://gitcode.com/Ascend/triton-ascend.git && cd triton-ascend && git submodule update --init --depth 1
 ```
 
 ### 构建 Triton-Ascend
@@ -191,7 +191,6 @@ git clone https://gitcode.com/Ascend/triton-ascend.git --recurse-submodules --sh
 - 步骤2：请确认已安装clang>=15，lld>=15，ccache
 
    ```bash
-   cd triton-ascend/
    LLVM_SYSPATH=${LLVM_INSTALL_PREFIX} \
    TRITON_PLUGIN_DIRS=./ascend \
    TRITON_BUILD_WITH_CCACHE=true \
