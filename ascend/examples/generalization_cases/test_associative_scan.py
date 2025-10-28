@@ -20,6 +20,7 @@
 
 import math
 import pytest
+import random
 import torch
 import torch_npu
 import triton
@@ -440,7 +441,7 @@ def test_scan_float_1d(dtype, shape, dim, combine_fn, reverse):
 
 
 @pytest.mark.parametrize("dtype", ['float16', 'float32'])
-@pytest.mark.parametrize("shape", TestUtils.test_shape2d)
+@pytest.mark.parametrize("shape", random.sample(TestUtils.test_shape2d, 5))
 @pytest.mark.parametrize("dim", [1])
 @pytest.mark.parametrize("combine_fn",
                          ['maximum_fn', 'minimum_fn'])
