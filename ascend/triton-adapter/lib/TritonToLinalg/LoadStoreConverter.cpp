@@ -1152,9 +1152,26 @@ GatherLoadConverter::matchAndRewrite(triton::GatherLoadOp op, OpAdaptor adaptor,
   
   auto dstSubview = rewriter.create<memref::SubViewOp>(
       loc, outputBuffer, dstSubviewOffsets, dstSubviewSizes, dstSubviewStrides);
-  
-  // Copy from source to destination
-  rewriter.create<memref::CopyOp>(loc, srcSubview, dstSubview);
+
+  // Check if gather is on the trailing axis (last dimension)
+  if (static_cast<size_t>(gatherDim) == fullSrcShape.size() - 1) {
+    // For gather on the trailing axis, mark as discrete memory access
+    // This degrades to scalar read/write handling to avoid alignment issues
+    auto copyOp = rewriter.create<memref::CopyOp>(loc, srcSubview, dstSubview);
+    copyOp->setAttr(ConverterUtils::discreteAttrName,
+                    rewriter.getUnitAttr());
+  } else {
+    // For gather on non-trailing axes, add stride alignment annotation
+    // This tells the backend to handle address alignment for DMA operations
+    auto dstMarkOp = rewriter.create<annotation::MarkOp>(loc, dstSubview);
+    dstMarkOp->setAttr("hfusion.stride_align_dims",
+                       rewriter.getDenseI32ArrayAttr({static_cast<int32_t>(gatherDim)}));
+    dstMarkOp->setAttr("hfusion.stride_align_value_in_byte",
+                       rewriter.getDenseI32ArrayAttr({32}));
+    
+    // Copy from source to destination
+    rewriter.create<memref::CopyOp>(loc, srcSubview, dstSubview);
+  }
   
   // Restore insertion point
   rewriter.restoreInsertionPoint(savedInsertionPoint);
