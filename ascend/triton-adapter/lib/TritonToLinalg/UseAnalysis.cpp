@@ -168,80 +168,58 @@ void setMixUseRecursively(Operation *rootOp, bool applyRoot = true) {
     });
 }
 
-void postProcessLoopOp(LoopLikeOpInterface loopOp, const DataFlowSolver &solver) {
-  for (const auto &[res, yield, regionArg] :
-        llvm::zip_equal(loopOp->getResults(), loopOp.getYieldedValues(),
-                        loopOp.getRegionIterArgs())) {
-    auto *defOp = yield.getDefiningOp();
-    bool isMixUse = false;
-    if (!defOp)
-      continue;
-    std::function<std::optional<bool>(Value, Value)> isIterArgMixUse =
-        [&](Value v, Value target) -> std::optional<bool> {
-      auto defOp = v.getDefiningOp();
-      auto *use = solver.lookupState<UseInfo>(v);
-      if ((use && use->type == UseType::DataUse) ||
-          isa_and_nonnull<LoopLikeOpInterface, scf::IfOp>(defOp))
-          return true;
-      if (v == target)
-        return false;
-      if (!defOp)
-        return std::nullopt;
-      for (auto oper : defOp->getOperands()) {
-        auto res = isIterArgMixUse(oper, target);
-        if (res.has_value())
-          return res.value() || !isMetaUse(defOp);
-      }
-      return std::nullopt;
-    };
-    auto *use = solver.lookupState<UseInfo>(res);
-    if ((use && use->type == UseType::DataUse) ||
-        isIterArgMixUse(yield, regionArg).value_or(false))
-      setMixUseRecursively(defOp);
+std::optional<bool> isIterArgMixUse(Value v, Value target, const DataFlowSolver &solver) {
+  auto defOp = v.getDefiningOp();
+  auto *use = solver.lookupState<UseInfo>(v);
+  if ((use && use->type == UseType::DataUse) ||
+      isa_and_nonnull<LoopLikeOpInterface, scf::IfOp>(defOp))
+      return true;
+  if (v == target)
+    return false;
+  if (!defOp)
+    return std::nullopt;
+  for (auto oper : defOp->getOperands()) {
+    auto res = isIterArgMixUse(oper, target, solver);
+    if (res.has_value())
+      return res.value() || !isMetaUse(defOp);
   }
+  return std::nullopt;
 }
 
-void postProcessWhileOp(scf::WhileOp whileOp, const DataFlowSolver &solver) {
-  // Init whileOp related variables
-  auto results = whileOp->getResults();
-  auto conditionOp = dyn_cast<scf::ConditionOp>(whileOp.getBefore().front().getTerminator());
-  assert(conditionOp);
-  auto conditions = conditionOp.getArgs();
-  auto yields = whileOp.getYieldedValues();
-  auto iterArgs = whileOp.getRegionIterArgs();
-  // Propagate before region from results
-  for (const auto &[res, cons]: llvm::zip_equal(results, conditions)) {
-    auto *defOp = cons.getDefiningOp();
-    if(!defOp)
+void postProcessWhileOp(scf::WhileOp op, const DataFlowSolver &solver) {
+  for (const auto &[res, arg] :
+        llvm::zip_equal(op->getResults(), op.getConditionOp().getArgs())) {
+    auto *defOp = arg.getDefiningOp();
+    if (!defOp)
       continue;
     auto *use = solver.lookupState<UseInfo>(res);
     if (use && use->type == UseType::DataUse)
       setMixUseRecursively(defOp);
   }
-  // Propagate yields
-  for (const auto &[yield, regionArg]: llvm::zip_equal(yields, iterArgs)) {
-    std::function<std::optional<bool>(Value, Value)> isIterArgMixUse =
-        [&](Value v, Value target) -> std::optional<bool> {
-      auto defOp = v.getDefiningOp();
-      auto *use = solver.lookupState<UseInfo>(v);
-      if ((use && use->type == UseType::DataUse) ||
-          isa_and_nonnull<LoopLikeOpInterface, scf::IfOp>(defOp))
-          return true;
-      if (v == target)
-        return false;
-      if (!defOp)
-        return std::nullopt;
-      for (auto oper : defOp->getOperands()) {
-        auto res = isIterArgMixUse(oper, target);
-        if (res.has_value())
-          return res.value() || !isMetaUse(defOp);
-      }
-      return std::nullopt;
-    };
+  for (const auto &[yield, regionArg] :
+        llvm::zip_equal(op.getYieldOp().getOperands(), op.getBeforeArguments())) {
     auto *defOp = yield.getDefiningOp();
     if (!defOp)
       continue;
-    if (isIterArgMixUse(yield, regionArg).value_or(false))
+    if (isIterArgMixUse(yield, regionArg, solver).value_or(false))
+      setMixUseRecursively(defOp);
+  }
+}
+
+void postProcessLoopOp(LoopLikeOpInterface loopOp, const DataFlowSolver &solver) {
+  if (auto whileOp = dyn_cast<scf::WhileOp>(loopOp.getOperation())) {
+    postProcessWhileOp(whileOp, solver);
+    return;
+  }
+  for (const auto &[res, yield, regionArg] :
+        llvm::zip_equal(loopOp->getResults(), loopOp.getYieldedValues(),
+                        loopOp.getRegionIterArgs())) {
+    auto *defOp = yield.getDefiningOp();
+    if (!defOp)
+      continue;
+    auto *use = solver.lookupState<UseInfo>(res);
+    if ((use && use->type == UseType::DataUse) ||
+        isIterArgMixUse(yield, regionArg, solver).value_or(false))
       setMixUseRecursively(defOp);
   }
 }
@@ -469,9 +447,7 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
     }
     if (op->hasAttr(ConverterUtils::discreteAttrName))
       setMixUseRecursively(op);
-    if (isa<scf::WhileOp>(op)) {
-      postProcessWhileOp(cast<scf::WhileOp>(op), solver);
-    } else if (auto loopOp = dyn_cast<LoopLikeOpInterface>(op)) {
+    if (auto loopOp = dyn_cast<LoopLikeOpInterface>(op)) {
       postProcessLoopOp(loopOp, solver);
     } else if (auto ifOp = dyn_cast<scf::IfOp>(op)) {
       SmallVector<Value> yields(ifOp.thenYield().getOperands());

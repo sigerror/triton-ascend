@@ -473,6 +473,8 @@ void BlockDataParser::parse(
   } else if (auto tensorCastOp = operand.getDefiningOp<tensor::CastOp>()) {
     // Used for identity operation.
     parse(tensorCastOp.getSource(), data, loc, rewriter, known);
+  } else if (auto fillOp = operand.getDefiningOp<linalg::FillOp>()) {
+    parseFill(fillOp, data, loc, rewriter, known);
   } else {
     operand.dump();
     llvm_unreachable("encountered AddPtrOp produced by unsupported operation");
@@ -912,6 +914,36 @@ void parseIndirectLoad(OpTy op, BlockData &data, const Location &loc,
   data.setSource(opRes);
 }
 
+void BlockDataParser::parseFill(linalg::FillOp op, BlockData &data,
+                                const Location &loc,
+                                ConversionPatternRewriter &rewriter,
+                                const llvm::SmallDenseMap<Value, BlockData> &known) {
+  auto src = op.getInputs()[0];
+  auto dst = op.getResult(0);
+  auto dstShape = dyn_cast<ShapedType>(dst.getType()).getShape();
+
+  parse(src, data, loc, rewriter, known);
+
+  if (isa<IntegerType>(src.getType())) {
+    if (!data.isEmpty()) {
+      data.getOffsetsRef().clear();
+      data.getSizesRef().clear();
+      data.getStridesRef().clear();
+    }
+    for (auto dstAxis : dstShape) {
+      data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
+      data.getSizesRef().push_back(rewriter.getIndexAttr(dstAxis));
+      data.getStridesRef().push_back(rewriter.getIndexAttr(0));
+    }
+  } else {
+    op->emitError("Block data Analysis: unsupported fillOp pattern");
+    return;
+  }
+  if (data.isScalar()) {
+    data.getOffsetsRef()[0] = data.getScalarRef();
+  }
+}
+
 void BlockDataParser::rewriteAddPtr(
     triton::AddPtrOp op, triton::AddPtrOp::Adaptor &adaptor,
     ConversionPatternRewriter &rewriter,
@@ -1305,21 +1337,30 @@ void BlockDataParser::rewriteAdvanceOp(
   known[newOp.getResult()] = blockData;
 }
 
-void BlockDataParser::rewriteYieldOp(
-    scf::YieldOp op, ConversionPatternRewriter &rewriter,
+template <typename T>
+std::enable_if_t<std::is_same_v<T, scf::YieldOp> ||
+                 std::is_same_v<T, scf::ConditionOp>>
+BlockDataParser::rewriteTerminator(
+    T op, ConversionPatternRewriter &rewriter,
     const llvm::SmallDenseSet<size_t> &blockArgIdxSet, ArrayRef<int64_t> iterArgIdxMap,
     const llvm::SmallDenseMap<Value, BlockData> &known) {
   // Any inserted instruction should be before this yield
   OpBuilder::InsertionGuard insertionGuard{rewriter};
   rewriter.setInsertionPoint(op);
 
-  auto adaptor = scf::YieldOp::Adaptor(op);
+  auto adaptor = typename T::Adaptor(op);
+  ValueRange args;
+  if constexpr (std::is_same_v<T, scf::YieldOp>) {
+    args = adaptor.getOperands();
+  } else {
+    args = adaptor.getArgs();
+  }
 
   SmallVector<BlockData, 5> initArgState;
   SmallVector<Value> operands;
 
   operands.reserve(op->getNumOperands());
-  for (const auto &[oper, newIterArgIdx]: llvm::zip_equal(adaptor.getOperands(), iterArgIdxMap)) {
+  for (const auto &[oper, newIterArgIdx]: llvm::zip_equal(args, iterArgIdxMap)) {
     if (newIterArgIdx != -1)
       operands.push_back(oper);
   }
@@ -1327,7 +1368,7 @@ void BlockDataParser::rewriteYieldOp(
   // For each of the init arg that we added additional Values in for loop, we
   // need to add corresponding Values as yield operands. The loop below gathers
   // BlockData for those values.
-  for (auto [i, v] : llvm::enumerate(adaptor.getOperands())) {
+  for (auto [i, v] : llvm::enumerate(args)) {
     if (auto mappedV = rewriter.getRemappedValue(v)) {
       // If this value is a tensor of pointers produced by AddPtrOp,
       // we should have already converted to a ReinterpretCastOp without
@@ -1414,64 +1455,49 @@ void BlockDataParser::rewriteYieldOp(
 
   // Yield is a terminator op that must be at the end of the function
   rewriter.setInsertionPointAfter(op);
-  auto newOp = rewriter.replaceOpWithNewOp<scf::YieldOp>(op, operands);
+  Operation *newOp;
+  if constexpr (std::is_same_v<T, scf::YieldOp>) {
+    newOp = rewriter.replaceOpWithNewOp<scf::YieldOp>(op, operands);
+  } else {
+    newOp = rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(), operands);
+  }
+  
   assert(op->getNumResults() == 0);
 
   LLVM_DEBUG({
-    llvm::dbgs() << "new yield:";
-    newOp.getOperation()->print(llvm::dbgs(),
-                                OpPrintingFlags().printGenericOpForm());
+    llvm::dbgs() << "new terminator: ";
+    newOp->print(llvm::dbgs(), OpPrintingFlags().printGenericOpForm());
     llvm::dbgs() << "\n";
   });
 }
 
 // This function is util function for rewriteLoopOp that
-// check if given regionIterArg is used by AddPtrOp
-bool isUsedByAddPtrOp(Value v, int depth = 0) {
+// check if given regionIterArg is used with given condition
+bool isUsedWithCondition(Value v, std::function<bool(OpOperand *)> cond, int depth = 0) {
   for (auto &use: v.getUses()) {
     auto *user = use.getOwner();
     if (user->hasAttr(ConverterUtils::discreteAttrName))
       continue;
-    if (isa<triton::AddPtrOp>(user) ||
-        (isa<triton::LoadOp>(user) && use.getOperandNumber() == 1) ||
-        (isa<triton::StoreOp>(user) && use.getOperandNumber() == 2))
+    if (cond(&use))
       return true;
     if (auto loopOp = dyn_cast<LoopLikeOpInterface>(user);
         loopOp && !loopOp->hasAttr("ExtractedLoadOrStore")) {
-      if(isUsedByAddPtrOp(loopOp.getTiedLoopRegionIterArg(&use), depth + 1))
+      if(isUsedWithCondition(loopOp.getTiedLoopRegionIterArg(&use), cond, depth + 1))
         return true;
-    } else if (auto yieldOp = dyn_cast<scf::YieldOp>(user)) {
-      if (depth && isUsedByAddPtrOp(yieldOp->getParentOp()->getResult(use.getOperandNumber()), depth - 1))
+    } else if (auto yieldOp = dyn_cast<scf::YieldOp>(user);
+               yieldOp && !isa<scf::WhileOp>(user->getParentOp())) {
+      if (depth && isUsedWithCondition(yieldOp->getParentOp()->getResult(use.getOperandNumber()), cond, depth - 1))
         return true;
-    }
-    for (auto res: user->getResults()) {
-      if (isUsedByAddPtrOp(res, depth))
+    } else if (auto conditionOp = dyn_cast<scf::ConditionOp>(user);
+               conditionOp && use.getOperandNumber() > 0) {
+      auto whileOp = cast<scf::WhileOp>(conditionOp->getParentOp());
+      if (depth && isUsedWithCondition(whileOp->getResult(use.getOperandNumber() - 1), cond, depth - 1))
         return true;
-    }
-  }
-  return false;
-}
-
-// This function is util function for rewriteLoopOp that
-// check if given regionIterArg is used for mask
-// Assuming unstructure case is handled in previous pass,
-// given value is 1D tensor and stride is one
-bool isUsedforMask(Value v, int depth = 0) {
-  for (auto &use: v.getUses()) {
-    auto *user = use.getOwner();
-    if ((isa<triton::LoadOp>(user) && use.getOperandNumber() == 1) ||
-        (isa<triton::StoreOp>(user) && use.getOperandNumber() == 2))
-      return true;
-    if (auto loopOp = dyn_cast<LoopLikeOpInterface>(user);
-        loopOp && !loopOp->hasAttr("ExtractedLoadOrStore")) {
-      if(isUsedforMask(loopOp.getTiedLoopRegionIterArg(&use), depth + 1))
-          return true;
-    } else if (auto yieldOp = dyn_cast<scf::YieldOp>(user)) {
-      if (depth && isUsedforMask(yieldOp->getParentOp()->getResult(use.getOperandNumber()), depth - 1))
+      if (isUsedWithCondition(whileOp.getAfterArguments()[use.getOperandNumber() - 1], cond, depth))
         return true;
     }
     for (auto res: user->getResults()) {
-      if (isUsedforMask(res, depth))
+      if (isUsedWithCondition(res, cond, depth))
         return true;
     }
   }
@@ -1579,7 +1605,12 @@ void BlockDataParser::rewriteLoopOp(
     auto indexTensor =
         isa<TensorType>(arg.getType()) &&
         isa<IntegerType>(cast<TensorType>(arg.getType()).getElementType()) &&
-        isUsedByAddPtrOp(op.getRegionIterArgs()[i]);
+        isUsedWithCondition(op.getRegionIterArgs()[i], [](OpOperand *use) {
+          auto *user = use->getOwner();
+          return isa<triton::AddPtrOp>(user) ||
+            (isa<triton::LoadOp>(user) && use->getOperandNumber() == 1) ||
+            (isa<triton::StoreOp>(user) && use->getOperandNumber() == 2);
+        });
 
     // Handle memref::ReinterpretCastOp and tensor<Integer> specially
     if (!reintCastOp && !indexTensor)
@@ -1594,7 +1625,11 @@ void BlockDataParser::rewriteLoopOp(
             llvm::SmallDenseMap<Value, BlockData>(0));
     }
 
-    maskIterArgs[i] = indexTensor && isUsedforMask(op.getRegionIterArgs()[i]);
+    maskIterArgs[i] = indexTensor && isUsedWithCondition(op.getRegionIterArgs()[i], [](OpOperand *use) {
+      auto *user = use->getOwner();
+      return (isa<triton::LoadOp>(user) && use->getOperandNumber() == 1) ||
+              (isa<triton::StoreOp>(user) && use->getOperandNumber() == 2);
+    });
 
     if (indexTensor) {
       newInitArgs.back() = nullptr;
@@ -1707,11 +1742,10 @@ void BlockDataParser::rewriteLoopOp(
   // Create a new LoopOp that uses updated init args and same loop body
   LoopLikeOpInterface newOp;
   auto newInits = to_vector(make_filter_range(newInitArgs, [](Value v) { return v != nullptr; }));
-  auto commonBodyBuilder = [&](OpBuilder &b, Location loc, ValueRange newRegionArgs, Region &region, Block::BlockArgListType regionArgs) {
+  auto commonBodyBuilder = [&](OpBuilder &b, Location loc, bool useInit, ValueRange newRegionArgs, Region &region, Block::BlockArgListType regionArgs, ArrayRef<bool> isUsedForRegionArgs, ArrayRef<bool> maskIterArgs) {
     auto newArgIter = newRegionArgs.begin();
-    for (const auto &[initArg, regionArg, newInitArg]: llvm::zip(op.getInits(), regionArgs, newInitArgs)) {
-      if (newInitArg) {
-        mapping.map(initArg, newInitArg);
+    for (const auto &[regionArg, isUsedForRegionArg]: llvm::zip(regionArgs, isUsedForRegionArgs)) {
+      if (isUsedForRegionArg) {
         mapping.map(regionArg, *newArgIter);
         ++newArgIter;
       }
@@ -1721,56 +1755,84 @@ void BlockDataParser::rewriteLoopOp(
     // Key is converted from init arg index to newly created block arg, and
     // Value's BlockData fields are converted from init arg to newly created block
     // arg
-    for (auto [i, data] : knownPtrsTmp) {
-      for (auto &offset: data.getOffsetsRef()) {
-        offset = *newArgIter;
-        ++newArgIter;
-      }
 
-      for (auto &stride: data.getStridesRef()) {
-        stride = *newArgIter;
-        ++newArgIter;
-      }
+    // TODO: remove (useInit = true) logic after supporting make_tensor_ptr
+    if (useInit) {
+      for (auto [i, data] : knownPtrsTmp) {
+        for (auto &offset: data.getOffsetsRef()) {
+          offset = *newArgIter;
+          ++newArgIter;
+        }
 
-      auto regionArg = regionArgs[i];
-      auto key = mapping.lookupOrNull(regionArg);
-      if (!key) {
-        // Create IndexTensor regionArg from computed offset and stride data
-        key = createFromData(cast<RankedTensorType>(regionArg.getType()), data, op.getLoc(), rewriter, maskIterArgs[i]);
-        mapping.map(regionArg, key);
+        for (auto &stride: data.getStridesRef()) {
+          stride = *newArgIter;
+          ++newArgIter;
+        }
+
+        auto regionArg = regionArgs[i];
+        auto key = mapping.lookupOrNull(regionArg);
+        if (!key) {
+          // Create IndexTensor regionArg from computed offset and stride data
+          key = createFromData(cast<RankedTensorType>(regionArg.getType()), data, op.getLoc(), rewriter, maskIterArgs[i]);
+          mapping.map(regionArg, key);
+        }
+        known.insert(std::make_pair(key, data));
       }
-      known.insert(std::make_pair(key, data));
+    } else {
+      for (auto [i, isUsedForRegionArg]: llvm::enumerate(isUsedForRegionArgs)) {
+        if (!isUsedForRegionArg) {
+          BlockData data;
+          auto regionArg = regionArgs[i];
+          auto regionArgType = cast<RankedTensorType>(regionArg.getType()); 
+          data.getOffsetsRef().resize(regionArgType.getRank());
+          data.getStridesRef().resize(regionArgType.getRank());
+          for (auto &offset: data.getOffsetsRef()) {
+            offset = *newArgIter;
+            ++newArgIter;
+          }
+          for (auto &dim: regionArgType.getShape()) {
+            data.getSizesRef().push_back(rewriter.getIndexAttr(dim));
+          }
+          for (auto &stride: data.getStridesRef()) {
+            stride = *newArgIter;
+            ++newArgIter;
+          }
+          
+          auto key = mapping.lookupOrNull(regionArg);
+          if (!key) {
+            // Create IndexTensor regionArg from computed offset and stride data
+            key = createFromData(regionArgType, data, op.getLoc(), rewriter, maskIterArgs[i]);
+            mapping.map(regionArg, key);
+          }
+          known.insert(std::make_pair(key, data));
+        }
+      }
     }
 
     for (auto &bodyOp : region.getOps())
       b.clone(bodyOp, mapping);
   };
-  
+  for (const auto &[initArg, newInitArg]: llvm::zip(op.getInits(), newInitArgs)) {
+    if (newInitArg) {
+      mapping.map(initArg, newInitArg);
+    }
+  }
   if (auto forOp = dyn_cast<scf::ForOp>(op.getOperation())) {
+    SmallVector<bool> usedForRegionArgs;
+    for (auto newInitArg: newInitArgs) {
+      usedForRegionArgs.push_back(newInitArg ? true:false);
+    }
     newOp = rewriter.create<scf::ForOp>(
       forOp.getLoc(), forOp.getLowerBound(), forOp.getUpperBound(),
       forOp.getStep(), newInits,
       [&](OpBuilder &b, Location loc, Value iv, ValueRange args) {
         mapping.map(forOp.getInductionVar(), iv);
-        commonBodyBuilder(b, loc, args, forOp.getRegion(), op.getRegionIterArgs());
+        commonBodyBuilder(b, loc, true, args, forOp.getRegion(), op.getRegionIterArgs(), usedForRegionArgs, maskIterArgs);
       });
-  } else if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
-    auto resultTypes = whileOp.getResultTypes();
-    // TODO: Handle ptr and tensor<ptr> type
-    newOp = rewriter.create<scf::WhileOp>(
-      whileOp.getLoc(), resultTypes, newInits,
-      [&](OpBuilder &b, Location loc, ValueRange args) {
-        commonBodyBuilder(b, loc, args, whileOp.getBefore(), whileOp.getBeforeArguments());
-      },
-      [&](OpBuilder &b, Location loc, ValueRange args) {
-        commonBodyBuilder(b, loc, args, whileOp.getAfter(), whileOp.getAfterArguments());
-      });
-  }
 
-  // Replace only the results that correspond to the original scf.for
-  rewriter.setInsertionPointAfter(newOp);
-  if (auto forOp = dyn_cast<scf::ForOp>(op.getOperation())) {
+    // Replace only the results that correspond to the original scf.for
     auto newResultIter = newOp->result_begin();
+    rewriter.setInsertionPointAfter(newOp);
     for (const auto &[res, regionArg, newIterArgIdx, mask]: llvm::zip_equal(op->getResults(), op.getRegionIterArgs(), iterArgIdxMap, maskIterArgs)) {
       if (newIterArgIdx != -1) {
         rewriter.replaceAllUsesWith(res, *newResultIter);
@@ -1786,11 +1848,80 @@ void BlockDataParser::rewriteLoopOp(
         rewriter.replaceAllUsesWith(res, newRes);
       }
     }
-    rewriter.eraseOp(op);
-  } else {
-    rewriter.replaceOp(op, newOp);
+  } else if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
+    SmallVector<Type> resultTypes;
+    SmallVector<bool> usedForBeforeRegionArgs;
+    SmallVector<bool> usedForAfterRegionArgs;
+    llvm::SmallDenseSet<size_t> blockArgIdxSetForAfter;
+    SmallVector<int64_t> iterArgIdxMapForAfter;
+    SmallVector<bool> maskIterArgsForAfter(whileOp->getNumResults());
+    
+    int64_t indexCnt = 0;
+    int64_t afterArgCnt = 0;
+    
+    for (auto newInitArg: newInitArgs) {
+      usedForBeforeRegionArgs.push_back(newInitArg ? true:false);
+    }
+    for (size_t i = 0; i < whileOp->getNumResults(); i++) {
+      auto resType = whileOp->getResultTypes()[i];
+      auto indexTensor =
+        isa<RankedTensorType>(resType) &&
+        isa<IntegerType>(cast<RankedTensorType>(resType).getElementType()) &&
+        isUsedWithCondition(whileOp.getAfterArguments()[i], [](OpOperand *use) {
+          auto *user = use->getOwner();
+          return isa<triton::AddPtrOp>(user) ||
+            (isa<triton::LoadOp>(user) && use->getOperandNumber() == 1) ||
+            (isa<triton::StoreOp>(user) && use->getOperandNumber() == 2);
+        });
+      if (indexTensor) {
+        indexCnt += 2 * cast<RankedTensorType>(resType).getRank();
+        usedForAfterRegionArgs.push_back(false);
+        iterArgIdxMapForAfter.push_back(-1);
+        maskIterArgsForAfter[i] = isUsedWithCondition(whileOp.getAfterArguments()[i], [](OpOperand *use) {
+          auto *user = use->getOwner();
+          return (isa<triton::LoadOp>(user) && use->getOperandNumber() == 1) ||
+                (isa<triton::StoreOp>(user) && use->getOperandNumber() == 2);
+        });
+        blockArgIdxSetForAfter.insert(i);
+      } else {
+        resultTypes.push_back(resType);
+        usedForAfterRegionArgs.push_back(true);
+        iterArgIdxMapForAfter.push_back(argCnt++);
+      }
+    }
+    resultTypes.append(indexCnt, rewriter.getIndexType());
+    newOp = rewriter.create<scf::WhileOp>(
+      whileOp.getLoc(), resultTypes, newInits,
+      [&](OpBuilder &b, Location loc, ValueRange args) {
+        commonBodyBuilder(b, loc, true, args, whileOp.getBefore(), whileOp.getBeforeArguments(), usedForBeforeRegionArgs, maskIterArgs);
+      },
+      [&](OpBuilder &b, Location loc, ValueRange args) {
+        commonBodyBuilder(b, loc, false, args, whileOp.getAfter(), whileOp.getAfterArguments(), usedForAfterRegionArgs, maskIterArgsForAfter);
+      });
+
+    auto newResultIter = newOp->result_begin();
+    rewriter.setInsertionPointAfter(newOp);
+    for (const auto &[res, regionArg, newIterArgIdx, mask]: llvm::zip_equal(op->getResults(), whileOp.getAfterArguments(), iterArgIdxMapForAfter, maskIterArgsForAfter)) {
+      if (newIterArgIdx != -1) {
+        rewriter.replaceAllUsesWith(res, *newResultIter);
+        ++newResultIter;
+      } else {
+        auto key = mapping.lookup(regionArg);
+        auto data = known.at(key);
+        for (auto &offset : data.getOffsetsRef())
+          offset = newOp->getResult(cast<BlockArgument>(offset.get<Value>()).getArgNumber());
+        for (auto &stride : data.getStridesRef())
+          stride = newOp->getResult(cast<BlockArgument>(stride.get<Value>()).getArgNumber());
+        auto newRes = createFromData(cast<RankedTensorType>(regionArg.getType()), data, op.getLoc(), rewriter, mask);
+        rewriter.replaceAllUsesWith(res, newRes);
+      }
+    }
+
+    auto conditionOp = cast<scf::WhileOp>(newOp.getOperation()).getConditionOp();
+    rewriteTerminator(conditionOp, rewriter, blockArgIdxSetForAfter, iterArgIdxMapForAfter, known);
   }
-  
+
+  rewriter.eraseOp(op);
 
   // Update the loop body. Manually invoke the rewrite logic on addptr and yield
   // in the loop body, so we can take advantage of the states we built up
@@ -1817,14 +1948,12 @@ void BlockDataParser::rewriteLoopOp(
 
   if (!op.getRegionIterArgs().empty()) {
     auto yieldOp = cast<scf::YieldOp>(newOp.getLoopRegions().back()->back().getTerminator());
-    rewriteYieldOp(yieldOp, rewriter, blockArgIdxSet, iterArgIdxMap, known);
+    rewriteTerminator(yieldOp, rewriter, blockArgIdxSet, iterArgIdxMap, known);
   }
 
   LLVM_DEBUG({
     llvm::dbgs() << "new loop\n";
     newOp.getOperation()->print(llvm::dbgs(),
-                                OpPrintingFlags().printGenericOpForm());
-    newOp.getOperation()->getParentOfType<triton::FuncOp>().print(llvm::dbgs(),
                                 OpPrintingFlags().printGenericOpForm());
     llvm::dbgs() << "\n";
   });

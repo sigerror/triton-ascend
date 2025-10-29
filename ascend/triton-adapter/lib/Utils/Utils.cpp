@@ -476,8 +476,14 @@ void traverseBackwardUpdateOperandChainIf(
                                            builder, handledOperation);
     } else {
       auto blockArgument = cast<BlockArgument>(operand);
-      if (auto loopOp =
-          dyn_cast<LoopLikeOpInterface>(blockArgument.getOwner()->getParentOp())) {
+      auto parentOp = blockArgument.getOwner()->getParentOp();
+      if (auto whileOp = dyn_cast<scf::WhileOp>(parentOp);
+        whileOp && whileOp.getAfterBody() == blockArgument.getOwner()) {
+        auto argNum = blockArgument.getArgNumber();
+        auto conditionArg = whileOp.getConditionOp().getArgs()[argNum];
+        handler(conditionArg);
+      } else if (auto loopOp =
+          dyn_cast<LoopLikeOpInterface>(parentOp)) {
         OpOperand *initArgOperand = loopOp.getTiedLoopInit(blockArgument);
         if (!initArgOperand)
           return;

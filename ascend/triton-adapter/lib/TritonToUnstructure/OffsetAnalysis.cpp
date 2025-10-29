@@ -210,7 +210,7 @@ void parse(Value operand, const Location &loc, RewriterBase &rewriter,
     auto parentOp = blockArgument.getOwner()->getParentOp();
     LLVM_DEBUG({
       auto &os = llvm::dbgs();
-      os << "Handling block argument\n" << *parentOp << '\n';
+      os << "Handling block argument\n" << *blockArgument.getOwner() << '\n';
     });
     if (isa<FunctionOpInterface>(parentOp)) {
       offsetMap[operand] = PtrOffsetInfo();
@@ -241,14 +241,20 @@ void parseLoopRegionIterArg(LoopLikeOpInterface loopOp, const Location &loc,
                             RewriterBase &rewriter,
                             llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap,
                             BlockArgument regionIterArg) {
-  auto regionIterArgInfo = PtrOffsetInfo(regionIterArg);
+  if (auto whileOp = dyn_cast<scf::WhileOp>(loopOp.getOperation());
+      whileOp && whileOp.getAfterBody() == regionIterArg.getOwner()) {
+    auto argNum = regionIterArg.getArgNumber();
+    auto conditionArg = whileOp.getConditionOp().getArgs()[argNum];
+    parse(conditionArg, loc, rewriter, offsetMap);
+    offsetMap[regionIterArg] = offsetMap[conditionArg];
+    return;
+  }
   OpOperand *initArgOperand = loopOp.getTiedLoopInit(regionIterArg);
   if (!initArgOperand)
     return;
   Value initArg = initArgOperand->get();
   parse(initArg, loc, rewriter, offsetMap);
-  regionIterArgInfo.setStructured(offsetMap[initArg]);
-  offsetMap[regionIterArg] = regionIterArgInfo;
+  offsetMap[regionIterArg] = offsetMap[initArg];
 }
 
 void parseArithOp(Operation *arithOp, const Location &loc,
@@ -908,14 +914,13 @@ void parseYield(scf::YieldOp op, const Location &loc, RewriterBase &rewriter,
 
 void parseLoopOp(LoopLikeOpInterface op, const Location &loc, RewriterBase &rewriter,
                  llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap, Value dst) {
-  if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
-    offsetMap[dst] = PtrOffsetInfo();
-    if (auto tensorType = dyn_cast<RankedTensorType>(dst.getType()))
-      offsetMap[dst].setUnstructured(tensorType.getRank());
-    return;
-  }
   auto resNum = cast<OpResult>(dst).getResultNumber();
-  Value yieldedValue = op.getYieldedValues()[resNum];
+  Value yieldedValue = nullptr;
+  if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
+    yieldedValue = whileOp.getConditionOp().getArgs()[resNum];
+  } else {
+    yieldedValue = op.getYieldedValues()[resNum];
+  }
   parse(yieldedValue, op.getLoc(), rewriter, offsetMap);
   offsetMap[dst] = offsetMap.at(yieldedValue);
 }

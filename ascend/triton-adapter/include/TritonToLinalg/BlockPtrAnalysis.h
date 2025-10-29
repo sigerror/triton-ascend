@@ -26,6 +26,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Linalg/IR/Linalg.h"
 
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -240,6 +241,11 @@ public:
                           ConversionPatternRewriter &rewriter,
                           const llvm::SmallDenseMap<Value, BlockData> &known);
 
+  static void parseFill(linalg::FillOp op, BlockData &data,
+                        const Location &loc,
+                        ConversionPatternRewriter &rewriter,
+                        const llvm::SmallDenseMap<Value, BlockData> &known);
+
   static void rewriteAddPtr(triton::AddPtrOp op,
                             triton::AddPtrOp::Adaptor &adaptor,
                             ConversionPatternRewriter &rewriter,
@@ -254,10 +260,12 @@ public:
                                ConversionPatternRewriter &rewriter,
                                llvm::SmallDenseMap<Value, BlockData> &known);
 
-  static void
-  rewriteYieldOp(scf::YieldOp op, ConversionPatternRewriter &rewriter,
-                 const llvm::SmallDenseSet<size_t> &blockArgIdxSet, ArrayRef<int64_t> iterArgIdxMap,
-                 const llvm::SmallDenseMap<Value, BlockData> &known);
+  template <typename T>
+  static std::enable_if_t<std::is_same_v<T, scf::YieldOp> ||
+                          std::is_same_v<T, scf::ConditionOp>>
+  rewriteTerminator(T op, ConversionPatternRewriter &rewriter,
+                     const llvm::SmallDenseSet<size_t> &blockArgIdxSet, ArrayRef<int64_t> iterArgIdxMap,
+                     const llvm::SmallDenseMap<Value, BlockData> &known);
 
   /// @param known is mainly designed for `rewriteLoop`, and is just non-const in
   /// `rewriteLoop`, `rewriteAddPtr` and `rewriteAdvance`
