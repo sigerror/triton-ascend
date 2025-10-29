@@ -48,6 +48,7 @@ def triton_func(x0, x1, N):
 
 types = [
     "int32",
+    "bool",
 ]
 
 shapes = [
