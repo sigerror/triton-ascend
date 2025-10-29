@@ -61,7 +61,12 @@ all: ## Incremental builds
 	echo "Using build dir: $$BUILD_DIR"; \
 	ninja -C $$BUILD_DIR
 
-$(TRITON_WHL): $(DEPS_STAMP) install-dev-reqs
+$(TRITON_PACKAGE_INSTALL_DEPS): $(DEPS_STAMP) install-dev-reqs
+
+.PHONY: package_install_deps
+package_install_deps: $(TRITON_PACKAGE_INSTALL_DEPS) ## Build the Triton wheel package
+
+$(TRITON_WHL):
 	@echo "Building Triton wheel..."
 	TRITON_PLUGIN_DIRS=./ascend \
 	TRITON_BUILD_WITH_CLANG_LLD=true \
@@ -219,10 +224,45 @@ test-gen: ## Run generalization tests
 
 
 # ======================
+# Image Build for build wheel package 
+# ======================
+.PHONY: image_build
+image_build: ## Build Docker[Dockerfile_build] if relevant files changed
+	@set -e; \
+	if [ -n "$$HEAD_COMMIT" ]; then \
+		GIT_COMMIT_SHORT=$$(git rev-parse --short $$HEAD_COMMIT); \
+	else \
+		GIT_COMMIT_SHORT=$$(git rev-parse --short HEAD); \
+	fi; \
+	if [ -z "$(BASE_COMMIT)" ]; then \
+		echo "BASE_COMMIT not set. Forcing Docker image build..."; \
+		BUILD_IMAGE=1; \
+	elif [ -n "$$filenames" ] && echo "$$filenames" | grep -Eq '\b(docker/Dockerfile_build|Makefile|requirements(_dev)?\.txt)\b'; then \
+		echo "Relevant files changed. Building Docker image..."; \
+		BUILD_IMAGE=1; \
+	else \
+		echo "No relevant changes since BASE_COMMIT. Skipping Docker image build."; \
+		BUILD_IMAGE=0; \
+	fi; \
+	if [ $$BUILD_IMAGE -eq 1 ]; then \
+		if [ -z "$(QUAY_PASSWD)" ] || [ -z "$(QUAY_USER)" ]; then \
+			echo "Please set QUAY_USER and QUAY_PASSWD before building the image."; \
+			exit 1; \
+		fi; \
+		echo "Logging in to Docker..."; \
+		echo "$(QUAY_PASSWD)" | docker login -u "$(QUAY_USER)" --password-stdin quay.io; \
+		echo "Using commit ID: $$GIT_COMMIT_SHORT"; \
+		docker buildx build --platform linux/$(PLATFORM_NAME) \
+			-f docker/Dockerfile_build --push \
+			-t quay.io/ascend/triton:dev-build-$$GIT_COMMIT_SHORT-$(PLATFORM_NAME) .; \
+	fi
+
+
+# ======================
 # Image Build
 # ======================
 .PHONY: image
-image: ## Build dev Docker image if relevant files changed
+image: ## Build test Docker[Dockerfile] image if relevant files changed
 	@set -e; \
 	if [ -n "$$HEAD_COMMIT" ]; then \
 		GIT_COMMIT_SHORT=$$(git rev-parse --short $$HEAD_COMMIT); \
