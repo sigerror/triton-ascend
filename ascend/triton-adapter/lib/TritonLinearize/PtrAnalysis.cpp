@@ -1,24 +1,9 @@
-/*
- * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
- *
- * Permission is hereby granted, free of charge, to any person obtaining a copy
- * of this software and associated documentation files (the "Software"), to deal
- * in the Software without restriction, including without limitation the rights
- * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
- * copies of the Software, and to permit persons to whom the Software is
- * furnished to do so, subject to the following conditions:
- *
- * The above copyright notice and this permission notice shall be included in
- * all copies or substantial portions of the Software.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
- * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
- * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
- * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
- * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
- * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
- * THE SOFTWARE.
- */
+//===----------------------------------------------------------------------===//
+//
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+//
+//===----------------------------------------------------------------------===//
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
@@ -572,13 +557,6 @@ LogicalResult PtrState::analyzePermute(SmallVector<StateInfo> &infoPerDim,
   // Consider permute only when rank >= 2
   if (infoPerDim.size() < 2) return success();
 
-  // Fix Here: Skip if any dim has div/mod
-  for (auto &si : infoPerDim) {
-    if (si.hasDivision() || si.hasModulo()) {
-      return success();
-    }
-  }
-
   // Require all strides to be static constants and > 0
   SmallVector<int64_t> strides;
   strides.reserve(infoPerDim.size());
@@ -720,11 +698,6 @@ LogicalResult PtrState::addState(const PtrState &lhsState,
                                  OpBuilder &builder) {
   
 
-  if(lhsState.memAccTy.isUnstructured() || rhsState.memAccTy.isUnstructured()){
-    setMemAccVal( MemAccVal::UnstrucMemAcc);
-    return success();
-  }
-
   auto loc = op->getLoc();
 
   if(!lhsState.isLegal() || !rhsState.isLegal()){
@@ -831,11 +804,6 @@ LogicalResult PtrState::addState(const PtrState &lhsState,
 LogicalResult PtrState::mulState(const PtrState &lhsState,
                                  const PtrState &rhsState, Operation *op,
                                  OpBuilder &builder) {
-  
-  if(lhsState.memAccTy.isUnstructured() || rhsState.memAccTy.isUnstructured()){
-    setMemAccVal( MemAccVal::UnstrucMemAcc);
-    return success();
-  }                                
 
   auto loc = op->getLoc();
   // neither lhs nor rhs should have source, since multiplying base pointer
@@ -873,7 +841,7 @@ LogicalResult PtrState::mulState(const PtrState &lhsState,
     OpFoldResult newStride = mulOFRValue(info.stride, rhs->scalar, loc, builder);
 
     StateInfo newStateInfo(newOffset, newStride, info.shape, info.mask, info.dim);
-    newStateInfo.dimOffset = info.offset;
+    newStateInfo.dimOffset = info.dimOffset ? info.dimOffset : info.offset;
     newStateInfo.remIsBeforeDiv = info.remIsBeforeDiv;
 
     stateInfo.push_back(newStateInfo);
@@ -942,10 +910,6 @@ LogicalResult PtrState::subState(const PtrState &lhsState,
                                  const PtrState &rhsState, Operation *op,
                                  OpBuilder &builder) {
   
-  if(lhsState.memAccTy.isUnstructured() || rhsState.memAccTy.isUnstructured()){
-    setMemAccVal( MemAccVal::UnstrucMemAcc);
-    return success();
-  }
   assert(isEmpty() && lhsState.isSameSizeAs(rhsState));
 
   auto loc = op->getLoc();
@@ -1248,6 +1212,12 @@ PtrAnalysis::visitOperandExpandDims(triton::ExpandDimsOp expandDimsOp,
   assert(dstShape[axis] == 1 &&
          "expect changed dimension to be 1 in expand_dims");
 
+  if (axis > state.sizes.size()) {
+    LLVM_DEBUG({
+      llvm::dbgs() << "[Linearize] expand_dims axis is out of bounds for pointer state sizes\n";
+    });
+    return failure();
+  }
 
   for (auto& info : state.stateInfo){
     if(info.dim >= axis)  ++info.dim;
@@ -1353,11 +1323,6 @@ LogicalResult PtrAnalysis::visitOperandAddptr(triton::AddPtrOp addptrOp,
           .failed()) {
     return failure();
   }
-  // Fix me: If ptrState is empty, it means we could not analyze the ptr operand.
-  if (ptrState.stateInfo.empty()) {
-    addptrOp->emitError("ptr field could not be analyzed");
-    return failure();
-  }
 
   PtrState offsetState;
   if (visitOperand(addptrOp.getOffset(), offsetState, addptrOp.getLoc(),
@@ -1365,6 +1330,14 @@ LogicalResult PtrAnalysis::visitOperandAddptr(triton::AddPtrOp addptrOp,
           .failed()) {
     return failure();
   }
+
+  LLVM_DEBUG({
+    llvm::dbgs() << "After visiting addptr operands: \n";
+    llvm::dbgs() << "PtrState: \n";
+    ptrState.dump();
+    llvm::dbgs() << "OffsetState: \n";
+    offsetState.dump();
+  });
 
   if (!ptrState.source) {
       addptrOp->emitError("ptr field should provide source / base pointer");
@@ -1454,7 +1427,7 @@ LogicalResult PtrAnalysis::visitOperandIndirectLoad(OpTy op,
   for (auto &s : resShape) {
      auto offset = builder.getIndexAttr(0);
      auto stride = builder.getIndexAttr(1);
-     auto shape = builder.getIndexAttr(0);
+     auto shape = builder.getIndexAttr(s);
      StateInfo newStateInfo(offset, stride,  builder.getIndexAttr(0), defaultAttr, count++);
      state.stateInfo.push_back(newStateInfo);
      state.sizes.push_back(shape);
@@ -1735,7 +1708,6 @@ LogicalResult PtrAnalysis::rewriteAddptrOp(triton::AddPtrOp op) {
   }
 
   // analyze whether permute is needed 
-  // Fix Here: only when there is no div/mod, stride is all static and >0 will give permute
   if (state.analyzePermute(state.stateInfo, op, builder).failed()) {
     return failure();
   }
@@ -2855,14 +2827,6 @@ LogicalResult PtrAnalysis::rewriteLoadOp(triton::LoadOp op) {
         trans.dump();
       });
     }
-  }
-
-  // Fix Here: when load mask analysis fails, we cannot use select to handle load mask
-  if (!generated_mask && mask) {
-     LLVM_DEBUG({
-       llvm::dbgs() << "When load mask analysis fails, we cannot use select to handle load mask.\n";
-     });
-    return failure();
   }
 
   // When mask analysis fails, we perform a full load 
