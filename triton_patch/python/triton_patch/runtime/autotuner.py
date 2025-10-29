@@ -340,6 +340,7 @@ class Config:
                     
         # BiShengIR Options allowed for autotune
         self.multibuffer = bishengir_options.get("multibuffer", None) # Compiler Default True
+        self.sync_solver = bishengir_options.get("sync_solver", None) # Compiler Default False
         self.unit_flag = bishengir_options.get("unit_flag", None) # Compiler Default False
         self.limit_auto_multi_buffer_only_for_local_buffer = bishengir_options.get("limit_auto_multi_buffer_only_for_local_buffer", None) # Compiler Default False
         self.limit_auto_multi_buffer_of_local_buffer = bishengir_options.get("limit_auto_multi_buffer_of_local_buffer", None) # Compiler Default no-limit
@@ -364,6 +365,7 @@ class Config:
 
                     ("multibuffer", self.multibuffer),
                     ("enable_hivm_auto_cv_balance", self.enable_hivm_auto_cv_balance),
+                    ("sync_solver", self.sync_solver),
                     ("unit_flag", self.unit_flag),
                     ("limit_auto_multi_buffer_only_for_local_buffer", \
                         self.limit_auto_multi_buffer_only_for_local_buffer),
@@ -390,6 +392,7 @@ class Config:
 
         res.append(f"multibuffer: {self.multibuffer}")
         res.append(f"enable_hivm_auto_cv_balance: {self.enable_hivm_auto_cv_balance}")
+        res.append(f"sync_solver: {self.sync_solver}")
         res.append(f"unit_flag: {self.unit_flag}")
         res.append(f"limit_auto_multi_buffer_only_for_local_buffer: \
             {self.limit_auto_multi_buffer_only_for_local_buffer}")
