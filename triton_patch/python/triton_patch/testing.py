@@ -668,7 +668,7 @@ from .triton_patch.language.core import (
     sort,
     load
 )
-from .triton_patch.language.standard import flip, sigmoid, softmax, isfinited, finitef, rint, atan2
+from .triton_patch.language.standard import flip, sigmoid, softmax, isfinited, finitef, rint, atan2, argmax, argmin
 from .triton_patch.language.math import (
     umulhi,
     exp,
@@ -716,6 +716,8 @@ language.dot = dot
 language.flip = flip
 language.sigmoid = sigmoid
 language.softmax = softmax
+language.argmax = argmax
+language.argmin = argmin
 language.gather = gather
 language.gather_load = gather_load
 language.insert_slice = insert_slice
