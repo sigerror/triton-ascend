@@ -71,6 +71,7 @@ private:
   fillTensorWithOtherForMaskScenario(Value other, memref::AllocOp localMem,
                                      ArrayRef<OpFoldResult> maskDim,
                                      ConversionPatternRewriter &rewriter) const;
+
 public:
   explicit LoadConverter(MLIRContext *context);
   using OpConversionPattern<triton::LoadOp>::OpConversionPattern;
@@ -89,12 +90,16 @@ public:
     Value ptrVal = op.getPtr();
     Type ptrTy = ptrVal.getType();
     auto ptrDefOp = ptrVal.getDefiningOp();
-    if (isa<BlockArgument>(ptrVal))
-      return failure();
 
-    if (!isTensorPointerType(ptrTy) &&
-        !isa_and_nonnull<triton::AddPtrOp>(ptrDefOp)) {
-      if (isa<triton::BitcastOp>(ptrDefOp)) {
+    bool shouldAddZeros = false;
+    if (!isa<BlockArgument>(ptrVal))
+      shouldAddZeros = !isTensorPointerType(ptrTy) &&
+                       !isa_and_nonnull<triton::AddPtrOp>(ptrDefOp);
+    else if (auto ptrType = dyn_cast<triton::PointerType>(ptrTy))
+      shouldAddZeros = ptrType.getPointeeType().isIntOrIndexOrFloat();
+
+    if (shouldAddZeros) {
+      if (isa_and_nonnull<triton::BitcastOp>(ptrDefOp)) {
         auto castOp = cast<triton::BitcastOp>(ptrDefOp);
         auto castSrc = castOp.getSrc();
         if (!isa<BlockArgument>(castSrc)) {
@@ -154,8 +159,8 @@ class ScalarAtomicCASCanonicalizer
 
 class AtomicCASConverter : public OpConversionPattern<triton::AtomicCASOp> {
 public:
-  explicit AtomicCASConverter(MLIRContext *context) :
-    OpConversionPattern<triton::AtomicCASOp>(context) {}
+  explicit AtomicCASConverter(MLIRContext *context)
+      : OpConversionPattern<triton::AtomicCASOp>(context) {}
   using OpConversionPattern<triton::AtomicCASOp>::OpConversionPattern;
 
   LogicalResult
