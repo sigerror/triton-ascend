@@ -492,6 +492,7 @@ class BuildInstall(install):
     def run(self):
         self.single_version_externally_managed = True
         super().run()
+        remove_directory(os.path.join(root_dir, "triton"))
 
 
 class BuildWheel(bdist_wheel):
@@ -518,6 +519,7 @@ class BuildWheel(bdist_wheel):
                 subprocess.run(auditwheel_cmd, check=True, stdout=subprocess.PIPE)
             finally:
                 os.remove(file)
+        remove_directory(os.path.join(root_dir, "triton"))
 
 
 class BuildClean(clean):
