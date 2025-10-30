@@ -598,10 +598,16 @@ LogicalResult
 SplatConverter::matchAndRewrite(triton::SplatOp op, OpAdaptor adaptor,
                                 ConversionPatternRewriter &rewriter) const {
   auto loc = op.getLoc();
-  auto init = rewriter.create<tensor::EmptyOp>(loc, op.getType().getShape(),
+  auto shape = op.getType().getShape();
+  auto init = rewriter.create<tensor::EmptyOp>(loc, shape,
                                                op.getType().getElementType());
-  rewriter.replaceOpWithNewOp<linalg::FillOp>(op, ValueRange{adaptor.getSrc()},
-                                              ValueRange{init});
+  if (llvm::all_of(shape, [](int64_t dim) { return dim == 1; })) {
+    SmallVector<Value> idx(shape.size(), rewriter.create<arith::ConstantOp>(loc, rewriter.getIndexAttr(0)));
+    rewriter.replaceOpWithNewOp<tensor::InsertOp>(op, adaptor.getSrc(), init, idx);
+  } else {
+    rewriter.replaceOpWithNewOp<linalg::FillOp>(op, ValueRange{adaptor.getSrc()},
+                                                ValueRange{init});
+  }
   return success();
 }
 

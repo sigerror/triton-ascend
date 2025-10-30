@@ -386,17 +386,34 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   if (isLoadLike) {
     assert(iterArg && "Load case must have iterArg in for loop");
 
-    Value accessedValue = accessedOp->getResult(0);
-    if (!isa<RankedTensorType>(accessedValue.getType())) {
-      accessedValue =
-          rewriter.create<triton::SplatOp>(loc, extractedType, accessedValue);
+    Value value = accessedOp->getResult(0);
+    Value result;
+    if (!isa<RankedTensorType>(value.getType()) &&
+        (std::is_same_v<MemAccOpTy, triton::AtomicRMWOp> ||
+        std::is_same_v<MemAccOpTy, triton::AtomicCASOp>)) {
+      value =	
+          rewriter.create<triton::SplatOp>(loc, extractedType, value);
     }
-    auto result = rewriter.create<tensor::InsertSliceOp>(
-        loc, accessedValue, iterArg, offsets, sizes, strides);
-    rewriter.create<scf::YieldOp>(loc, result->getResult(0))
-        ->setAttr(ConverterUtils::discreteAttrName,
-                  UnitAttr::get(rewriter.getContext()));
-
+    if (!isa<RankedTensorType>(value.getType())) {
+      SmallVector<Value> indices;
+      for (auto idx : offsets) {
+        if (auto val = dyn_cast<Value>(idx)) {
+          indices.push_back(val);
+        } else {
+          auto idxVal = rewriter.create<arith::ConstantOp>(
+              loc, rewriter.getIndexAttr(*getConstantIntValue(idx)));
+          indices.push_back(idxVal);
+        }
+      }
+      result = rewriter.create<tensor::InsertOp>(
+          loc, value, iterArg, indices);
+    } else {
+      result = rewriter.create<tensor::InsertSliceOp>(
+          loc, value, iterArg, offsets, sizes, strides);
+    }
+    rewriter.create<scf::YieldOp>(loc, result)
+          ->setAttr(ConverterUtils::discreteAttrName,
+                    UnitAttr::get(rewriter.getContext()));
     rewriter.restoreInsertionPoint(insertPoint);
     if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
       if (op.getMask() && op.getOther()) {
