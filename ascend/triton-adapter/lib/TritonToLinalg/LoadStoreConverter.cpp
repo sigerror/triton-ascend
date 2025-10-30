@@ -377,7 +377,17 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
   } else {
     memref::SubViewOp srcSubView = mstate.getSubview(ptr, loc, rewriter);
     memref::SubViewOp dstSubView = mstate.getSubview(allocOp, loc, rewriter);
-    rewriter.create<memref::CopyOp>(loc, srcSubView, dstSubView);
+    MemRefType dstSubViewType = mlir::cast<MemRefType>(dstSubView.getType());
+
+    auto [srcStrides, srcOffset] = getStridesAndOffset(dstSubViewType);
+    MemRefType castType = MemRefType::get(
+      dstSubViewType.getShape(),
+      dstSubViewType.getElementType(),
+      makeStridedLinearLayoutMap(srcStrides, srcOffset, rewriter.getContext())
+    );
+    auto castOp = rewriter.create<memref::CastOp>(loc, castType, dstSubView);
+    rewriter.create<memref::CopyOp>(loc, srcSubView, castOp);
+    
     if (mayImplicitTransposeWithLastAxis) {
       auto markOp = rewriter.create<annotation::MarkOp>(loc, dstSubView);
       markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
