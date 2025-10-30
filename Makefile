@@ -32,6 +32,7 @@ OBSUTIL_TAR                 := obsutil.tar.gz
 OBSUTIL_URL                 := https://obs-community.obs.cn-north-1.myhuaweicloud.com/obsutil/current/obsutil_linux_$(PLATFORM_NAME).tar.gz
 OBSUTIL_CONFIG              := ~/.obsutilconfig
 TRITON_WHL                  := dist/triton_ascend-*.whl
+TRITON_WHL_PYPI             := dist/triton_ascend-*.whl
 NINJA_TAR                   := $(shell if [ "`uname -m`" = "aarch64" ]; then echo "ninja-linux-aarch64"; else echo "ninja-linux"; fi)
 NINJA_URL                   := https://github.com/ninja-build/ninja/releases/download/v1.13.1/$(NINJA_TAR).zip
 IS_MANYLINUX                ?= False
@@ -61,10 +62,17 @@ all: ## Incremental builds
 	echo "Using build dir: $$BUILD_DIR"; \
 	ninja -C $$BUILD_DIR
 
-$(TRITON_PACKAGE_INSTALL_DEPS): $(DEPS_STAMP) install-dev-reqs
-
-.PHONY: package_install_deps
-package_install_deps: $(TRITON_PACKAGE_INSTALL_DEPS) ## Build the Triton wheel package
+$(TRITON_WHL_PYPI): $(DEPS_STAMP) install-dev-reqs
+	@echo "Building Triton wheel..."
+	TRITON_PLUGIN_DIRS=./ascend \
+	TRITON_BUILD_WITH_CLANG_LLD=true \
+	TRITON_BUILD_PROTON=OFF \
+	TRITON_WHEEL_NAME="triton-ascend" \
+	TRITON_APPEND_CMAKE_ARGS="-DTRITON_BUILD_UT=OFF" \
+	MAX_JOBS=$(NUM_PROCS) \
+	IS_MANYLINUX=$(IS_MANYLINUX) \
+	TRITON_WHEEL_VERSION_SUFFIX=$(TRITON_WHEEL_VERSION_SUFFIX) \
+	$(PYTHON) setup.py bdist_wheel
 
 $(TRITON_WHL):
 	@echo "Building Triton wheel..."
@@ -102,6 +110,9 @@ rename-wheel:
 .PHONY: package
 package: $(TRITON_WHL) rename-wheel ## Build the Triton wheel package
 
+.PHONY: package-pypi
+package-pypi: $(TRITON_WHL_PYPI) ## Build the Triton wheel package for pypi
+
 .PHONY: upload-triton
 upload-triton: install-obsutil package
 	@WHEEL=$(wildcard dist/*.whl); \
@@ -119,7 +130,7 @@ upload-pypi: $(PYPI_CONFIG) install-deps ## Build and upload Triton wheel to PyP
 	for PY in python3.9 python3.10 python3.11; do \
 		echo "Building wheel for $$PY..."; \
 		rm -rf build dist; \
-		make package PYTHON=$$PY IS_MANYLINUX=True; \
+		make package-pypi PYTHON=$$PY IS_MANYLINUX=True; \
 		WHEEL=$$(ls dist/*.whl); \
 		echo "Uploading $$WHEEL to $(PYPI_URL)..."; \
 		$$PY -m twine upload --repository $(PYPI_URL) $$WHEEL; \
