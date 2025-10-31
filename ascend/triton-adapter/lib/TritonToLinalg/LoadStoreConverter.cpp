@@ -389,7 +389,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     rewriter.create<memref::CopyOp>(loc, srcSubView, castOp);
     
     if (mayImplicitTransposeWithLastAxis) {
-      auto markOp = rewriter.create<annotation::MarkOp>(loc, dstSubView);
+      auto markOp = rewriter.create<annotation::MarkOp>(loc, allocOp);
       markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
     }
   }
