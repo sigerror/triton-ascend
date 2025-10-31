@@ -684,12 +684,12 @@ LogicalResult PtrState::sortStateByStride(SmallVector<StateInfo> &infoPerDim,
     for (size_t idx : g.idxes) reordered.push_back(infoPerDim[idx]);
   }
   infoPerDim.swap(reordered);
+  this->countDims();
 
   LLVM_DEBUG({
     llvm::dbgs() << "After sortStateByStride (group-minStride):\n";
     this->dump();
   });
-  this->countDims();
   return success();
 }
 
@@ -2720,6 +2720,10 @@ LogicalResult PtrAnalysis::rewriteLoadOp(triton::LoadOp op) {
     return failure();
   }
 
+  LLVM_DEBUG({
+    llvm::dbgs() << "rewriteLoadOp hasPermute = " << ptrState.hasPermute() << "\n";
+  });
+
   // auto ptrType = dyn_cast<triton::PointerType>(ptr.getType());
   SmallVector<OpFoldResult> dims;
   SmallVector<int64_t> dimMode;
@@ -2749,8 +2753,10 @@ LogicalResult PtrAnalysis::rewriteLoadOp(triton::LoadOp op) {
   Value generated_mask;
   if(generateMaskSuccess){
     generated_mask = buildMaskValue(ptr, ptrState, maskState, builder, loc ) ;
-    if(!generated_mask)  
-        generated_mask = nullptr ;
+    if(!generated_mask){
+        LLVM_DEBUG({llvm::dbgs() << "buildMaskValue failed!\n";});
+        generated_mask = nullptr;
+    }
   } 
 
   // auto loadArry = cast<ShapedType>(ptr.getType()).getShape();
@@ -2937,7 +2943,11 @@ LogicalResult PtrAnalysis::rewriteStoreOp(triton::StoreOp op) {
     return failure();
   }
 
-  // need to permute val to the normalized shape before store
+  LLVM_DEBUG({
+    llvm::dbgs() << "RewriteStore hasPermute = " << ptrState.hasPermute() << "\n";
+  });
+
+  // need to permute val and mask to the normalized shape before store
   if (ptrState.hasPermute()) {
     // create inverse permutation
     auto inverse = [&](ArrayRef<int32_t> p) {
@@ -2957,6 +2967,21 @@ LogicalResult PtrAnalysis::rewriteStoreOp(triton::StoreOp op) {
         val.dump();
       });
     }
+    if (mask) {
+        if (auto mTy = dyn_cast<RankedTensorType>(mask.getType())) {
+          if ((size_t)mTy.getRank() == inverse.size()) {
+            SmallVector<int64_t> mNewShape(inverse.size());
+            auto mShape = mTy.getShape();
+            for (size_t i=0;i<inverse.size();++i) mNewShape[i] = mShape[inverse[i]];
+            auto mNewTy = RankedTensorType::get(mNewShape, mTy.getElementType());
+            mask = builder.create<triton::TransOp>(loc, mNewTy, mask, inverse);
+            LLVM_DEBUG({
+              llvm::dbgs() << "create triton::trans for mask before store: \n";
+              mask.dump();
+            });
+          }
+        }
+      }
   }
 
   auto ptrType = dyn_cast<triton::PointerType>(ptr.getType());
@@ -3006,20 +3031,10 @@ LogicalResult PtrAnalysis::rewriteStoreOp(triton::StoreOp op) {
   Value generated_mask = nullptr;
   if(generateMaskSuccess){
     generated_mask = buildMaskValue(ptr, ptrState, maskState, builder, loc) ;
-    LLVM_DEBUG({
-      llvm::dbgs() << "generated_mask: ";
-      llvm::dbgs() << generated_mask<< "\n";
-    });
-    if(!generated_mask)  
-      generated_mask = nullptr;
-  }
-
-  // Fix Here: when store mask analysis fails, we cannot use select to handle store mask
-  if (!generated_mask && mask) {
-     LLVM_DEBUG({
-       llvm::dbgs() << "When store mask analysis fails, we cannot use select to handle store mask.\n";
-     });
-    return failure();
+    if(!generated_mask){
+        LLVM_DEBUG({llvm::dbgs() << "buildMaskValue failed!\n";});
+        generated_mask = nullptr;
+    }
   }
 
   auto tensorType = cast<mlir::RankedTensorType>(val.getType());
@@ -3045,15 +3060,18 @@ LogicalResult PtrAnalysis::rewriteStoreOp(triton::StoreOp op) {
 
   // assert(valLen == storeLen && "Unaligned writes are not currently supported");
   if(valLen != storeLen){
-    llvm::dbgs() << "\033[34m" << "valDims.size() = " << valDims.size() << "\033[0m\n";
-    for(auto x :valDims){
-      llvm::dbgs() << "\033[34m" << x << "\t\033[0m";
-    }
-    llvm::dbgs() << "\n\033[34m" << "storeShape.size() = " << storeShape.size() << "\033[0m\n";
-    for(auto x: storeShape){
-      llvm::dbgs() << "\033[34m" << x << "\t\033[0m";
-    }
-    llvm::dbgs() << "\n" << "\t\033[0m";
+    LLVM_DEBUG({
+      llvm::dbgs() << "Unaligned store detected:\n";
+      llvm::dbgs() << "\033[34m" << "valDims.size() = " << valDims.size() << "\033[0m\n";
+      for(auto x :valDims){
+        llvm::dbgs() << "\033[34m" << x << "\t\033[0m";
+      }
+      llvm::dbgs() << "\n\033[34m" << "storeShape.size() = " << storeShape.size() << "\033[0m\n";
+      for(auto x: storeShape){
+        llvm::dbgs() << "\033[34m" << x << "\t\033[0m";
+      }
+      llvm::dbgs() << "\n" << "\t\033[0m";
+    });
     op.emitError("Unaligned writes are not currently supported");
     return failure();
   }
@@ -3075,7 +3093,10 @@ LogicalResult PtrAnalysis::rewriteStoreOp(triton::StoreOp op) {
       RankedTensorType::get({static_cast<int64_t>(storeShape.size())}, builder.getI64Type()), storeShape);
     auto targetShape = builder.create<arith::ConstantOp>(loc, targetShapeAttr);
     auto reshapeOp = builder.create<tensor::ReshapeOp>(loc, targetShapeType, val, targetShape);
-    if (mask && !ptrState.hasPermute()) {
+    if (mask) {
+      LLVM_DEBUG({
+        llvm::dbgs() << "Reshape store mask before store op\n";
+      });
       // do not reshape mask when permute exists, because mask will be permuted later
       auto targetMaskShapeType = RankedTensorType::get(storeShape, cast<ShapedType>(mask.getType()).getElementType());
       mask = builder.create<tensor::ReshapeOp>(loc, targetMaskShapeType, mask, targetShape);
@@ -3089,22 +3110,6 @@ LogicalResult PtrAnalysis::rewriteStoreOp(triton::StoreOp op) {
   // Atomic operation support will be added in future updates.
   // fixme, kaixin
   if (!generated_mask && mask) {
-    if (ptrState.hasPermute()) {
-      // create inverse permutation
-      auto inverse = [&](ArrayRef<int32_t> p) {
-        SmallVector<int32_t> r(p.size());
-        for (int i=0;i<(int)p.size();++i) r[p[i]]=i;
-        return r;
-      }(ArrayRef<int32_t>(ptrState.permute));
-      // premute mask
-      if (auto oldTy = dyn_cast<RankedTensorType>(mask.getType())) {
-        SmallVector<int64_t> newShape(inverse.size());
-        auto oldShape = oldTy.getShape();
-        for (size_t i=0;i<inverse.size();++i) newShape[i] = oldShape[inverse[i]];
-        auto newTy = RankedTensorType::get(newShape, oldTy.getElementType());
-        mask = builder.create<triton::TransOp>(loc, newTy, mask, inverse);
-      }
-    }
     auto resultTensorShape = cast<ShapedType>(val.getType()).getShape();
     assert(cast<ShapedType>(mask.getType()).getShape() == resultTensorShape && 
                             "store mask shape is not same as store result");

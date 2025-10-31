@@ -7,6 +7,7 @@ import test_common
 import torch
 import torch_npu
 
+
 types_all = [
     (torch.float32, 'float32'),
 ]
@@ -17,8 +18,37 @@ shapes_common = [
 ]
 
 
+def foo(a, b, shape):
+    y = a.reshape(shape)
+    y = y.permute(0,2,1) + b
+    return y
+
+
 def ceil_div(a, b):
     return (a + b - 1) // b
+
+
+@triton.jit
+def triton_gpu(
+    in_ptr0, in_ptr1, out_ptr,
+    ynumel, xnumel,
+    YBLOCK: tl.constexpr, XBLOCK: tl.constexpr,
+    SHAPE0: tl.constexpr, SHAPE1: tl.constexpr, SHAPE2: tl.constexpr
+):
+    yoffset = tl.program_id(1) * (tl.program_id(2) + 1) * YBLOCK
+    yindex = yoffset + tl.arange(0, YBLOCK)[None, :] # (1, YBLOCK)
+    ymask = yindex < ynumel
+    xoffset = tl.program_id(0) * XBLOCK
+    xindex = xoffset + tl.arange(0, XBLOCK)[:, None] # (XBLOCK, 1)
+    xmask = xindex < xnumel
+    x2 = xindex # (XBLOCK, 1)
+    y3 = yindex # (1, YBLOCK)
+    y0 = yindex % SHAPE1  # (1, YBLOCK)
+    y1 = (yindex // SHAPE1) # (1, YBLOCK)
+    tmp0 = tl.load(in_ptr0 + (x2 + (SHAPE2*y3)), xmask) # (XBLOCK, YBLOCK)
+    tmp1 = tl.load(in_ptr1 + (y0 + (SHAPE1*x2) + (SHAPE1*SHAPE2*y1)), xmask) # (XBLOCK, YBLOCK)
+    tmp2 = tmp0 + tmp1
+    tl.store(out_ptr + (x2 + (SHAPE2*y3)), tmp2, xmask)
 
 
 @triton.jit
@@ -227,6 +257,40 @@ def k_load_store_moddiv_perm(
 
     # store it back to out_ptr with same offset
     tl.store(out_ptr + offset, val, mask=mask)
+
+
+@pytest.mark.parametrize('dtype, sigtype', types_all)
+@pytest.mark.parametrize('Z, Y, X', shapes_common)
+def test_triton_gpu_kernel(Z, Y, X, dtype, sigtype):
+    shape = (Z, Y, X)
+    
+    a = test_common.generate_tensor(shape=(Z, Y * X), dtype=sigtype).npu()
+    b = test_common.generate_tensor(shape=(Z, X, Y), dtype=sigtype).npu()
+
+    # must set device='npu' for empty_strided, do not use out.npu() later
+    out = torch.empty_strided((Z, X, Y), (X*Y, 1, X), device='npu', dtype=dtype)
+
+    out_ref = foo(a, b, shape)
+
+    ynumel = Z * Y
+    xnumel = X
+    XBLOCK = X
+    YBLOCK = 64
+
+    if ynumel % YBLOCK != 0:
+        pytest.skip(f"ynumel:{ynumel} not divisible by YBLOCK:{YBLOCK}")
+
+    grid = (ceil_div(xnumel, XBLOCK), ceil_div(ynumel, YBLOCK), 1)
+    triton_gpu[grid](
+        a, b, out, 
+        ynumel, xnumel, 
+        YBLOCK=YBLOCK, XBLOCK=XBLOCK,
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
+    )
+
+    print(f"ref:{out_ref}")
+    print(f"triton:{out}")
+    test_common.validate_cmp(sigtype, out_ref, out)
 
 
 @pytest.mark.parametrize('dtype,sigtype', types_all)
