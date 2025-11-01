@@ -1898,6 +1898,9 @@ void BlockDataParser::rewriteLoopOp(
       [&](OpBuilder &b, Location loc, ValueRange args) {
         commonBodyBuilder(b, loc, false, args, whileOp.getAfter(), whileOp.getAfterArguments(), usedForAfterRegionArgs, maskIterArgsForAfter);
       });
+  }
+  // Copy all attributes from op to newOp
+  newOp->setAttrs(op->getAttrs());
 
     auto newResultIter = newOp->result_begin();
     rewriter.setInsertionPointAfter(newOp);
@@ -1941,6 +1944,7 @@ void BlockDataParser::rewriteLoopOp(
                 loopOp && !loopOp->hasAttr("ExtractedLoadOrStore")) {
         ConversionPatternRewriter::InsertionGuard guard(rewriter);
         rewriter.setInsertionPoint(loopOp);
+        loopOp->removeAttr("UnhandledLoopOp");
         rewriteLoopOp(loopOp, rewriter, known);
       }
     }
