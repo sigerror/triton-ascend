@@ -24,6 +24,7 @@ import torch_npu
 import pytest
 import functools
 import re
+import numpy as np
 
 _float_dtypes = [
     'float32', 'float16', 'bfloat16'
@@ -31,10 +32,31 @@ _float_dtypes = [
 _int_dtypes = [
     'int32', 'int64', 'int16', 'int8'
 ]
+_uint_dtypes = [
+    'uint8', 'uint16', 'uint32', 'uint64'
+]
 _all_dtypes_no_bool = _float_dtypes + _int_dtypes
 _all_dtypes = _all_dtypes_no_bool + ['bool']
 _32bit_dtypes = ['float32', 'int32']
 _16bit_dtypes = ['float16', 'bfloat16', 'int16']
+
+
+def generate_numpy(shape, dtype, low=None, high=None):
+    if dtype in _int_dtypes + _uint_dtypes:
+        iinfo = np.iinfo(getattr(np, dtype))
+        low = iinfo.min if low is None else max(low, iinfo.min)
+        high = iinfo.max if high is None else min(high, iinfo.max)
+        dty = getattr(np, dtype)
+        return np.random.randint(low, high, shape, dtype=dty)
+    elif dtype == 'float16' or dtype == 'float32':
+        return np.random.normal(0, 1, shape).astype(dtype)
+    elif dtype == 'bfloat16':
+        return (np.random.normal(0, 1, shape).astype('float32').view('uint32') & np.uint32(0xffff0000)).view('float32')
+    elif dtype == 'bool':
+        return np.random.randint(low=0, high=2, size=shape).astype(bool)
+    else:
+        raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
+
 
 def generate_tensor(shape, dtype):
     if dtype == 'float32' or dtype == 'float16' or dtype == 'bfloat16':

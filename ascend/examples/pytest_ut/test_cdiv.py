@@ -26,8 +26,15 @@ import torch_npu
 import test_common
 
 
-def torch_cdiv(x0, x1):
-    return torch.div(x0, x1, rounding_mode='trunc') + (x0 % x1 > 0).to(torch.int)
+def torch_cdiv(x0, x1, dtype_x):
+    if dtype_x in [torch.int8, torch.int16, torch.int32, torch.int64]:
+        return torch.div(x0, x1, rounding_mode='floor') + (x0 % x1 != 0).to(torch.int)
+    else:
+        if dtype_x in ["float16", "bfloat16"]:
+            x0 = x0.to(torch.float32)
+            x1 = x1.to(torch.float32)
+        return torch.ceil(x0 / x1).to(eval("torch." + dtype_x))
+    
 
 
 @triton.jit
@@ -45,15 +52,26 @@ def triton_cdiv(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl
 
 @pytest.mark.parametrize('param_list',
                          [
-                             ['int32', (4096,), 1, 4096, 4096],
+                            # ['int8', (4096,), 1, 4096, 4096],
+                            # ['int16', (4096,), 1, 4096, 4096],
+                            ['int32', (4096,), 1, 4096, 4096],
+                            # ['int64', (4096,), 1, 4096, 4096],
+                            # ['float16', (4096,), 1, 4096, 4096],
+                            ['float32', (4096,), 1, 4096, 4096],
+                            # ['bfloat16', (4096,), 1, 4096, 4096],
                          ])
 def test_cdiv(param_list):
     # 生成数据
     dtype, shape, ncore, xblock, xblock_sub = param_list
-    x0 = test_common.generate_tensor(shape, dtype).npu()
-    x1 = test_common.generate_tensor(shape, dtype).npu() + 1
+    torch_dtype = eval('torch.' + dtype)
+    np_x0 = test_common.generate_numpy(shape, dtype)
+    np_x1 = test_common.generate_numpy(shape, dtype)
+    x0_ref = torch.from_numpy(np_x0).to(torch_dtype)
+    x1_ref = torch.from_numpy(np_x1).to(torch_dtype)
+    x0 = x0_ref.npu()
+    x1 = x1_ref.npu()
     # torch结果
-    torch_res = torch_cdiv(x0, x1)
+    torch_res = torch_cdiv(x0_ref, x1_ref, dtype)
     # triton结果
     triton_res = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
     triton_cdiv[ncore, 1, 1](x0, x1, triton_res, xblock, xblock_sub)
