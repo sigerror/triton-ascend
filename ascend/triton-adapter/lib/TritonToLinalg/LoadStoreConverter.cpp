@@ -1190,6 +1190,9 @@ GatherLoadConverter::matchAndRewrite(triton::GatherLoadOp op, OpAdaptor adaptor,
   auto resultTensor = rewriter.create<bufferization::ToTensorOp>(
       loc, resultTensorType, outputBuffer, /*restrict=*/true, /*writable=*/true);
   
+  // Mark as gather_load
+  resultTensor->setAttr("gather_load", rewriter.getUnitAttr());
+  
   // Replace the original op
   rewriter.replaceOp(op, resultTensor);
   
