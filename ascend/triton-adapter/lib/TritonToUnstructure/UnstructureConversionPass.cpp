@@ -432,7 +432,7 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     if constexpr (std::is_same_v<MemAccOpTy, triton::AtomicRMWOp>) {
       if (fullyUnstructured) {
         auto mask = createExtractOp(loc, accessedOp.getMask(), rewriter,
-                                    {rewriter.getIndexAttr(0)});
+                                    SmallVector<OpFoldResult>(ptrOffsetInfo.getRank(), rewriter.getIndexAttr(0)));
         rewriter.create<scf::IfOp>(loc, mask, [&](OpBuilder &b, Location loc) {
           b.create<triton::AtomicRMWOp>(
                loc, accessedOp.getType(), accessedOp.getAtomicRmwOp(),
