@@ -14,7 +14,7 @@ msSanitizer工具是基于昇腾AI处理器的一个异常检测工具，包含�
   - 配置静态插桩环境变量
     Triton算子采用Python语言进行开发，并且采用即时编译（JIT）方式来编译算子Kernel。在执行算子脚本前，需要配置以下环境变量支持全量检测。  
     export TRITON_ENABLE_SANITIZER=1  
-使用资料参考：使用资料可参考：[《算子开发工具-异常检测》](https://www.hiascend.com/document/detail/zh/mindstudio/80RC1/ODtools/Operatordevelopmenttools/atlasopdev_16_0039.html)
+使用资料参考：[《算子开发工具-异常检测》](https://www.hiascend.com/document/detail/zh/mindstudio/80RC1/ODtools/Operatordevelopmenttools/atlasopdev_16_0039.html)
 
 
 ## 2.算子异常检测
@@ -22,7 +22,7 @@ msSanitizer工具是基于昇腾AI处理器的一个异常检测工具，包含�
 msSanitizer通过不同子功能提供了不同类型的异常检测功能，功能简介如下：
 | 功能名称 | 适用场景       | 功能说明                      |
 |----------|------------------|----------------------------------|
-| memcheck   | 内存检测   | 工具可以在用户开发算子的过程中，协助定位非法读写、多核踩踏、非对齐访问、内存泄漏以及非法释放等内存问题。同时工具也支持对CANN软件栈的内存检测，帮助用户定界软件栈内存异常发生的模块  |
+| memcheck   | 内存检测   | 工具可以在用户开发算子的过程中，协助定位非法读写、多核踩踏、非对齐访问、内存泄漏以及非法释放等内存问题。同时工具也支持对CANN软件栈的内存检测，帮助用户定位软件栈内存异常发生的模块  |
 | initcheck  | 竞争检测 | 工具可以协助用户定位由于竞争风险可能导致的数据竞争问题，包含核内竞争和核间竞争问题。其中，核内竞争包含流水间竞争和流水内竞争 |
 | racecheck  | 未初始化检测 | 工具可以协助用户定位由于内存未初始化可能导致的脏数据读取问题 |
 
@@ -123,7 +123,7 @@ def test_case(param_list):
 检测工具拉起异常用例：
 参考命令：
 ```
-msssanitizer -t memcheck pytest test_add.py
+mssanitizer -t memcheck pytest test_add.py
 ```
 
 非法读检测结果:

@@ -22,12 +22,12 @@
 |   类型                             |   Linux权限参考最大值   |
 |----------------------------------- |-----------------------|
 |  用户主目录                         |   750（rwxr-x---）     |
-|  程序文件(含脚本文件、库文件等)       |   550（r-xr-x---）     |
+|  程序文件（含脚本文件、库文件等）     |   550（r-xr-x---）     |
 |  程序文件目录                       |   550（r-xr-x---）     |
 |  配置文件                           |   640（rw-r-----）     |
 |  配置文件目录                       |   750（rwxr-x---）     |
-|  日志文件(记录完毕或者已经归档)       |   440（r--r-----）     |
-|  日志文件(正在记录)                  |   640（rw-r-----）    |
+|  日志文件（记录完毕或者已经归档）     |   440（r--r-----）     |
+|  日志文件（正在记录）                |   640（rw-r-----）    |
 |  日志文件目录                       |   750（rwxr-x---）     |
 |  Debug文件                         |   640（rw-r-----）      |
 |  Debug文件目录                      |   750（rwxr-x---）     |
@@ -59,7 +59,6 @@ triton_ascend支持源码编译安装，在编译时会下载依赖第三方库�
 | 开源引入 | https://gitclone.com                                                            | scripts/prepare_build.sh                   | https://gitclone.com/github.com/llvm/llvm-project.git                                               | 依赖的llvm源码仓    |
 | 开源引入 | https://repo.huaweicloud.com                                            | scripts/prepare_build.sh                           | https://repo.huaweicloud.com/repository/pypi/simple                                                | 用于配置pybind11下载连接 |
 | 开源引入 | https://pypi.tuna.tsinghua.edu.cn                                                                                         | docker/devdocker/triton-ascend_dev.dockerfile | https://pypi.tuna.tsinghua.edu.cn/simple                                                             | python pip源配置         |
-| 开源引入 | https://repo.anaconda.com                                                                | docker/devdocker/triton-ascend_dev.dockerfile | https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-${ARCH}.sh                             | anaconda下载链接        |
 | 开源引入 | https://ascend-repo.obs.cn-east-2.myhuaweicloud.com | docker/build_llvm.dockerfile |https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/Milan-ASL/Milan-ASL V100R001C22B800TP026/Ascend-cann-toolkit_8.2.RC1.alpha002_linux-x86_64.run | 用于下载CANN工具安装包 |
 | 开源引入 | https://ascend-repo.obs.cn-east-2.myhuaweicloud.com | docker/build_llvm.dockerfile |https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/Milan-ASL/Milan-ASL V100R001C22B800TP026/Ascend-cann-kernels-910b_8.2.RC1.alpha002_linux-x86_64.run | 用于下载CANN算子安装包 |
 | 开源引入 | https://triton-ascend-artifacts.obs.myhuaweicloud.com | setup.py |https://triton-ascend-artifacts.obs.myhuaweicloud.com/llvm-builds/{name}.tar.gz | 用于下载预编译的LLVM工具 |

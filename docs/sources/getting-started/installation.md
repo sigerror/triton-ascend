@@ -9,8 +9,7 @@
 ### 安装Ascend CANN
 
 异构计算架构CANN（Compute Architecture for Neural Networks）是昇腾针对AI场景推出的异构计算架构，
-向上支持多种AI框架，包括MindSpore、PyTorch、TensorFlow等，向下服务AI处理器与编程，发挥承上启下的关键作用，是提升昇腾AI处理器计算效率的关键平
-台。
+向上支持多种AI框架，包括MindSpore、PyTorch、TensorFlow等，向下服务AI处理器与编程，发挥承上启下的关键作用，是提升昇腾AI处理器计算效率的关键平台。
 
 您可以访问昇腾社区官网，根据其提供的软件安装指引完成 CANN 的安装配置。
 
@@ -111,7 +110,7 @@ Triton 使用 LLVM20 为 GPU 和 CPU 生成代码。同样，昇腾的毕昇编�
 
 2. clang构建安装LLVM
   
-- 步骤1：推荐使用clang安装LLVM，环境上请安装clang、lld，并指定版本(推荐版本clang>=15，lld>=15)，
+- 步骤1：推荐使用clang安装LLVM，环境上请安装clang、lld，并指定版本（推荐版本clang>=15，lld>=15），
   如未安装，请按下面指令安装clang、lld、ccache：
 
   ```bash

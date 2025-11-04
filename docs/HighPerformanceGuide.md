@@ -60,10 +60,10 @@ def test_gelu(shape, NUMEL):
 	#gelu仅涉及vector运算，因此根据vector核数确定block_size
 	#对于非纯vector计算类的算子，应使用get_npu_properties()["num_aicore"]获得物理核数总数
     num_core = get_npu_properties()["num_vectorcore"]
-    block_size = in.numel()/ncore
+    block_size = in.numel()/num_core
 	#片上内存大小为192KB，对于float32类型数据，则理论可容纳的最大数据量为192*1024/4=49152；
 	#由于需为中间变量等预留片上空间，因此，此示例中选择sub_block_size=49152*0.25=8192
-	#建议使用autotune对sub_block_size参数进行寻优已获得更好的性能
+	#建议使用autotune对sub_block_size参数进行寻优以获得更好的性能
     sub_block_size = 8192
     triton_gelu[num_core, 1, 1](in, out, in.numel(), block_size, sub_block_size)
     print(f"triton_gelu output: out = {out}")
@@ -112,4 +112,4 @@ python triton_xxx_test.py
 cd ~/.triton/dump/
 
 ```
-注： 若设置环境变量TRITON_DEBUG=1，执行Triton算子后，未打印dump路径，可先手动删除临时文件:
+注： 若设置环境变量TRITON_DEBUG=1，执行Triton算子后，未打印dump路径，可先手动删除临时文件。

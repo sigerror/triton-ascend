@@ -10,9 +10,9 @@ msProf工具用于采集和分析运行在昇腾AI处理器上算子的关键性
     对于算子仿真场景，如需要增加-g信息获取代码行调用栈信息的情况，需要通过设置如下环境变量来使能算子代码热点图和代码调用栈功能
     export TRITON_DISABLE_LINE_INFO=0
   - 仿真环境变量
-    进行算子仿真前，需设置需指定算子仿真芯片类型。
+    进行算子仿真前，需设置指定算子仿真芯片类型。
 
-使用资料参考：使用资料可参考：[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha003/devaids/optool/atlasopdev_16_0082.html)
+使用资料参考：[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha003/devaids/optool/atlasopdev_16_0082.html)
 
 ## 2.算子调优
 
@@ -28,7 +28,7 @@ msProf工具包含msprof op（上板）和msprof op simulator（仿真）两种�
 
 ### 2.1 算子代码样例
 
-add算子实代码如下：
+add算子代码样例如下：
 ```Python
 import triton
 import triton.language as tl

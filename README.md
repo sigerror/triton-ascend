@@ -9,7 +9,7 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 
 | 里程碑 | 重要特性更新情况 | 状态 |
 |------|------|------|
-| 2025.05.20 | Triton-Ascend开源，Gitcode代码仓Alive！ :tw-1f389: | ✅ |
+| 2025.05.20 | Triton Ascend开源，Gitcode代码仓Alive！ :tw-1f389: | ✅ |
 | 2025.06.30 | 支持85% Triton Python API，支持连续访存，覆盖基本使用场景需求 | ✅ |
 | 2025.08.15 | 完善Atomic类Triton Python API支持，完成Flaggems开源仓重点Triton算子适配，提供Matmul等简单算子高性能实现参考用例 | TODO |
 | 2025.09.30 | 完善Scan/Sort类Triton Python API，支持非连续访存，完成vLLM、sglang开源仓中重点Triton算子适配，提供FlashAttention等复杂融合算子高性能实现参考用例 | TODO |
@@ -75,9 +75,9 @@ Triton Ascend支持Triton原生的Autotune能力。通过对Tile/Block的形状�
 
 
 - #### Triton Ascend环境变量
-Triton Ascend支持Triton原生的环境变量，此外面向昇腾平台上的新功能特性进行了拓展。Triton Ascend涉及的全量环境变量，请参考 [环境变量总览](./docs/ENVIRONMENT.md) 。
+Triton Ascend支持Triton原生的环境变量，此外，面向昇腾平台上的新功能特性进行了拓展。Triton Ascend涉及的全量环境变量，请参考 [环境变量总览](./docs/ENVIRONMENT.md) 。
 
-- #### Triton Ascend常见报错与应对方案问题
+- #### Triton Ascend常见报错与应对方案
 针对在开发或迁移Triton算子时经常遇到的报错信息与解决方案，我们正在汇总并梳理相关文档供大家参考。该文档正在开发中，将于近期发布，敬请期待。
 
 ## 安全声明

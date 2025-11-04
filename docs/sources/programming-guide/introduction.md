@@ -164,7 +164,7 @@ XBLOCK = 总元素数 / 核数 = (32 × 32768) / 32 = 32768
 
 ##### 1.2.3.3 切分参数的硬件依据
 
-Atlas 800T/I A2产品的片上内存大小为 192KB。假设使用 float32 类型数据，则理论可容纳的最大数据量为（每个float32数占用4个字节数）:
+Atlas 800T/I A2产品的片上内存大小为 192KB。假设使用 float32 类型数据，则理论可容纳的最大数据量为（每个float32数占用4个字节）:
 
 ```text
 最大数据量 = 192 * 1024 / 4 = 49152 个元素
@@ -193,7 +193,7 @@ Atlas 800T/I A2产品的片上内存大小为 192KB。假设使用 float32 类�
 
 ##### 1.2.2.5 完整示例
 
-下面是完整示例，可以复制命名为gelu.py，并运行改示例。
+下面是完整示例，可以复制命名为gelu.py，并运行该示例。
 
 ```Python
 python gelu.py
@@ -346,7 +346,7 @@ rm -rf ~/.triton/dump
 ```
 ## 4. FAQ
 
-1. 目前triton-ascend中含有很多kernel运行时的参数和ascend npu性能无关，为了避免用户微调这些参数以期望达到性能提升的目的，在运行时增加了[WARNING]的提示，用户可以在观察运行时打印输出的log:"[WARNING] Please DO NOT tune arg xxx"，来避免对无效参数比如num_waprs等的微调。
+1. 目前triton-ascend中含有很多kernel运行时的参数和ascend npu性能无关，为了避免用户微调这些参数以期望达到性能提升的目的，在运行时增加了[WARNING]的提示，用户可以在观察运行时打印输出的log:"[WARNING] Please DO NOT tune arg xxx"，来避免对无效参数比如num_warps等的微调。
 
 ## 5 Triton+ 功能
 
@@ -358,4 +358,4 @@ rm -rf ~/.triton/dump
     * `triton.language.sync_block_all(mode)`
     * `triton.language.sync_block_set(sender_core, receiver_core, id)` 
     * `triton.language.sync_block_wait(sender_core, receiver_core, id)`
-3. `triton.language.get_element(src: tl.tensor, indice: tuple(int))`: 接受一个tensor和一个合法坐标，将tensor中该坐标位置的元素作为标量提取出来。
+3. `triton.language.get_element(src: tl.tensor, indices: tuple(int))`: 接受一个tensor和一个合法坐标，将tensor中该坐标位置的元素作为标量提取出来。
