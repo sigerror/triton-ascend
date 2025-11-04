@@ -3,17 +3,11 @@
 
 set -ex
 
-COMPILER_ROOT=/shared/bisheng_toolkit_20251023
-BSIR_COMPILE_PATH=$(find "$COMPILER_ROOT" -name "bishengir-compile" | xargs dirname)
-export PATH=${BSIR_COMPILE_PATH}:$PATH
-export BISHENG_INSTALL_PATH=/shared/cann_compiler/compiler/ccec_compiler/bin
-
-
 script=$(readlink -f "$0")
 script_dir=$(dirname "$script")
 
 # 清理旧日志
-rm -rf /home/pr_test_log/*
+mkdir -p /home/pr_test_log
 
 # 新增：定义统计文件路径
 SUMMARY_FILE="${WORKSPACE}/triton-ascend/ascend/examples/summary.txt"
