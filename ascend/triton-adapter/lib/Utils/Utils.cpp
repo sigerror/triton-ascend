@@ -84,6 +84,24 @@ std::optional<int64_t> getLastStrideOfReinterpretCastOp(memref::ReinterpretCastO
   }
 
   OpFoldResult lastStride = mixedStrides.back();
+  
+  if (op.getStaticStrides().back() > 0) {
+    return op.getStaticStrides().back();
+  } else if (isa<BlockArgument>(op.getStrides().back()) ) {
+    auto u = op.getStrides().back();
+    while (auto blkArg = dyn_cast<BlockArgument>(u)) {
+      if (auto forOp = dyn_cast<scf::ForOp>(blkArg.getOwner()->getParentOp())) {
+        auto prt = forOp->getOperand(3 + blkArg.getArgNumber() - 1);
+        u = prt;
+      } else {
+        u = nullptr;
+        break;
+      }
+    }
+    if (!u) return std::nullopt;
+    lastStride = u;
+  }
+
   if (auto attr = lastStride.dyn_cast<Attribute>()) {
     return getConstantOfAttr(lastStride);
   } else if (auto value = lastStride.dyn_cast<Value>()) {
@@ -96,7 +114,7 @@ std::optional<int64_t> getLastStrideOfReinterpretCastOp(memref::ReinterpretCastO
       int64_t constValue = constIntOp.value();
       return constValue;
     }
-  } 
+  }
   return std::nullopt;
 }
 

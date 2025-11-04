@@ -263,6 +263,11 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     return rewriter.notifyMatchFailure(
         op, "LoadOp expects a memref, not a memref of pointers");
   }
+  if (!op->hasAttr(ConverterUtils::GeneratedByMakeTensorPtrTAG)) {
+    auto memrefOp = dyn_cast<memref::ReinterpretCastOp>(ptr.getDefiningOp());
+    auto ret = mlir::ConverterUtils::getLastStrideOfReinterpretCastOp(memrefOp);
+    if(ret.has_value())lastStride = *ret;
+  }
   bool mayImplicitTransposeWithLastAxis = (existDotFlag) && (!op->hasAttr(ConverterUtils::GeneratedByMakeTensorPtrTAG)) &&
     (lastStride != 1 && mlir::ConverterUtils::isaPermutedMemRefType(memRefType));
   auto memRefShape = memRefType.getShape();
