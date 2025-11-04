@@ -1,3 +1,23 @@
+# Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in
+# all copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+# THE SOFTWARE.
+
 import pytest
 
 import triton
@@ -288,17 +308,12 @@ def test_triton_gpu_kernel(Z, Y, X, dtype, sigtype):
         SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
-    print(f"ref:{out_ref}")
-    print(f"triton:{out}")
     test_common.validate_cmp(sigtype, out_ref, out)
 
 
 @pytest.mark.parametrize('dtype,sigtype', types_all)
 @pytest.mark.parametrize('xnumel, ynumel, XBLOCK, YBLOCK', [(3, 513, 4, 64)])
 def test_k_load_perm_select(xnumel, ynumel, XBLOCK, YBLOCK, dtype, sigtype):
-    # # Fix for int8 not supported
-    # if sigtype == 'int8':
-    #     pytest.skip(f"int8 not supported")
 
     in_ptr = test_common.generate_tensor(shape=(ynumel * 4,), dtype=sigtype).npu()
     out_ptr = torch.zeros_like(in_ptr)
@@ -310,7 +325,7 @@ def test_k_load_perm_select(xnumel, ynumel, XBLOCK, YBLOCK, dtype, sigtype):
     out_ref = torch.zeros_like(out_ptr)
     y_idx = torch.arange(ynumel).unsqueeze(1).npu()        # [ynumel, 1]
     x_idx = torch.arange(xnumel).unsqueeze(0).npu()        # [1, xnumel]
-    idx = (x_idx + 4 * y_idx).reshape(-1)                          # [ynumel * xnumel]
+    idx = (x_idx + 4 * y_idx).reshape(-1)                  # [ynumel * xnumel]
     out_ref[idx] = in_ptr[idx]
     torch.testing.assert_close(out_ptr[idx], out_ref[idx])
 
