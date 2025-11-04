@@ -116,7 +116,7 @@ def validate_cal(dtype, y_cal, y_ref):
         assert diff.all(), "Relative error is less than 0.001 !"
     elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8':
         assert torch.equal(y_cal, y_ref)
-    elif dtype == 'uint8':
+    elif dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
         assert torch.equal(y_cal, y_ref)
     elif dtype == 'bool':
         assert torch.equal(y_cal, y_ref)
@@ -148,7 +148,7 @@ def validate_cmp(dtype, y_cal, y_ref, overflow_mode: Optional[str] = None):
         torch.testing.assert_close(y_ref, y_cal,  rtol=1e-04, atol=1e-04, equal_nan=True)
     elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8':
         assert torch.equal(y_cal, y_ref)
-    elif dtype == 'uint8':
+    elif dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
         assert torch.equal(y_cal, y_ref)
     elif dtype == 'bool':
         assert torch.equal(y_cal, y_ref)

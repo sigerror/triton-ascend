@@ -360,12 +360,12 @@ def logical_and(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.t
         assert input.type.scalar.is_int8(), "input wat bool to int8. However, input.type is not int8."
         input = cast(input, tl.int1, builder)
     if not input.type.is_int1():
-        input = bitcast(input, tl.dtype("int1"), builder)
+        input = not_equal(input, 0, builder)
     if hasattr(other, 'was_bool_to_int8'):
         assert other.type.scalar.is_int8(), "Other input wat bool to int8. However, other input.type is not int8."
         other = cast(other, tl.int1, builder)
     if not other.type.is_int1():
-        other = bitcast(other, tl.dtype("int1"), builder)
+        other = not_equal(other, 0, builder)
     return and_(input, other, builder)
 
 
@@ -374,12 +374,12 @@ def logical_or(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.te
         assert input.type.scalar.is_int8(), "input wat bool to int8. However, input.type is not int8."
         input = cast(input, tl.int1, builder)
     if not input.type.is_int1():
-        input = bitcast(input, tl.dtype("int1"), builder)
+        input = not_equal(input, 0, builder)
     if hasattr(other, 'was_bool_to_int8'):
         assert other.type.scalar.is_int8(), "Other wat bool to int8. However, other.type is not int8."
         other = cast(other, tl.int1, builder)
     if not other.type.is_int1():
-        other = bitcast(other, tl.dtype("int1"), builder)
+        other = not_equal(other, 0, builder)
     return or_(input, other, builder)
 
 

@@ -23,6 +23,7 @@ import triton
 import triton.language as tl
 import torch
 import torch_npu
+import numpy as np
 import test_common
 
 
@@ -47,16 +48,31 @@ def triton_logical_or(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_S
 @pytest.mark.parametrize('param_list',
                          [
                              ['bool', (2, 4096, 8), 2, 32768, 1024],
+                             ['int8', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['int16', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['int32', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['int64', (2, 4096, 8), 2, 32768, 1024],
+                             ['uint8', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['uint16', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['uint32', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['uint64', (2, 4096, 8), 2, 32768, 1024],
+                             ['float16', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['float32', (2, 4096, 8), 2, 32768, 1024],
+                            #  ['bfloat16', (2, 4096, 8), 2, 32768, 1024],
                          ])
 def test_logical_or(param_list):
     # 生成数据
     dtype, shape, ncore, xblock, xblock_sub = param_list
-    x0 = test_common.generate_tensor(shape, dtype).npu()
-    x1 = test_common.generate_tensor(shape, dtype).npu()
+    torch_dtype = eval('torch.' + dtype)
+    np_x0 = test_common.generate_numpy(shape, dtype)
+    np_x1 = test_common.generate_numpy(shape, dtype)
+    x0 = torch.from_numpy(np_x0).to(torch_dtype).npu()
+    x1 = torch.from_numpy(np_x1).to(torch_dtype).npu()
     # torch结果
-    torch_res = torch_logical_or(x0, x1)
+    np_res = np.logical_or(np_x0, np_x1)
+    torch_res = torch.from_numpy(np_res).to(torch.bool)
     # triton结果
-    triton_res = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
+    triton_res = torch.zeros(shape, dtype=torch.bool).npu()
     triton_logical_or[ncore, 1, 1](x0, x1, triton_res, xblock, xblock_sub)
     # 比较结果
     test_common.validate_cmp(dtype, triton_res, torch_res)
