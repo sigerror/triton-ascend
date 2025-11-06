@@ -222,6 +222,8 @@ def _is_auto_map_parallel_blocks_enabled() -> bool:
 def _enable_unpublished_feature() -> bool:
     return os.getenv("ENABLE_UNPUBLISHED_FEATURE", "false").lower() in ("true", "1")
 
+def _enable_print_ub_bits() -> bool:
+    return os.getenv("ENABLE_PRINT_UB_BITS", "false").lower() in ("true", "1")
 
 def _build_npu_ext(obj_name: str, src_path, *, kernel_launcher="torch") -> str:
     suffix = sysconfig.get_config_var("EXT_SUFFIX")

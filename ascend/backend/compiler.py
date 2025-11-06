@@ -36,6 +36,7 @@ from triton.backends.ascend.utils import (
     _check_bishengir_able_save_ir,
     _check_bishengir_is_regbased,
     _enable_unpublished_feature,
+    _enable_print_ub_bits,
     _get_kernel_target,
     _get_llvm_path,
     _get_mlir_path,
@@ -285,6 +286,8 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     metadata["name"] = metadata["kernel_name"] + " " + metadata["mix_mode"]
     # Parse all tensor kinds from arguments
     metadata["tensor_kinds"] = [int(kind) for _, kind in re.findall(TENSOR_KIND_REGEX, linalg)]
+    # init the ub bits of triton kernel for inductor autotune using
+    metadata["required_ub_bits"] = 0
     # remove the mix_mode attribute
     linalg = re.sub(REMOVE_MIX_MODE_REGEX, "", linalg)
     return linalg, metadata
@@ -446,6 +449,9 @@ def linalg_to_bin_enable_npu_compile_A3(linalg: str, metadata, opt):
         if not _is_debug_line_info_disabled():
             _compile_option_list += ["--enable-debug-info=true"]
 
+        if _enable_print_ub_bits():
+            _compile_option_list += ["--enable-print-memory-allocated-size"]
+
         enable_hivm_auto_cv_balance = metadata["enable_hivm_auto_cv_balance"]
         if enable_hivm_auto_cv_balance is not None:
             _compile_option_list += \
@@ -511,6 +517,10 @@ def linalg_to_bin_enable_npu_compile_A3(linalg: str, metadata, opt):
             + ["-o", bin_file]
         )
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
+        match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', ret.stdout.decode('utf-8'))
+        if match:
+            # get the ub bits of triton kernel from bisheng for inductor autotune using
+            metadata["required_ub_bits"] = int(match.group(1))
         if Path(callback_path).is_file():
             lib = ctypes.CDLL(callback_path)
             __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
