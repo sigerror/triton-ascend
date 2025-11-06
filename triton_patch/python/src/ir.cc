@@ -1794,6 +1794,23 @@ void init_triton_ir(py::module &&m) {
              annotationOp->setAttr(self.getBuilder().getStringAttr(attrKey),
                                    attrVal);
            })
+      .def("create_embedding_gather",
+           [](TritonOpBuilder &self, Value &src, Value &idx,
+              const int64_t bound, const int64_t blksiz,
+              std::vector<Value> &offsets, std::vector<Value> &numels) -> Value {
+                auto elemTy = cast<PointerType>(src.getType()).getPointeeType();
+                auto idxTy = cast<RankedTensorType>(idx.getType());
+                auto idxShape = idxTy.getShape();
+                std::vector<int64_t> retShape(idxShape.begin(), idxShape.end());
+                retShape.push_back(blksiz);
+                auto resType = RankedTensorType::get(retShape, elemTy);
+                auto idxBitWidth = idxTy.getElementType().getIntOrFloatBitWidth();
+                auto bound_val = self.create<arith::ConstantIntOp>(bound, idxBitWidth);
+                auto blksiz_val = self.create<arith::ConstantIntOp>(blksiz, idxBitWidth);
+
+                return self.create<EmbeddingGatherOp>(
+                          resType, src, idx, bound_val, blksiz_val, offsets, numels);
+            })
       // Add sort
       .def("create_sort",
            [](TritonOpBuilder &self, Value src, int64_t dim, bool descending) -> Value {

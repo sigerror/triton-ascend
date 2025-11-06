@@ -528,6 +528,16 @@ def make_tensor_descriptor(
     """
     return semantic.make_tensor_descriptor(base, shape, strides, block_shape, _builder)
 
+@builtin
+def embedding_gather(src: tensor, idx: tensor, bound, lstdim_blksiz, offsets, numels, _builder=None):
+    """
+    Embedding
+    :src_ptr:
+    :idx:
+    """
+    bound = _constexpr_to_value(bound)
+    lstdim_blksiz = _constexpr_to_value(lstdim_blksiz)
+    return semantic.embedding_gather(src, idx, bound, lstdim_blksiz, offsets, numels, _builder)
 
 @builtin
 def gather_load(

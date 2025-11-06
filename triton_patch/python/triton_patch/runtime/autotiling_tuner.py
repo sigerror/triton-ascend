@@ -144,7 +144,16 @@ class AutoTilingTuner(Autotuner):
 
         if len(self.gen_configs) == 0 and len(self.user_configs) == 0:
             return [
-                Config({})
+                Config(
+                    {},
+                    num_warps=4,
+                    num_stages=2,
+                    num_ctas=1,
+                    num_buffers_warp_spec=0,
+                    num_consumer_groups=0,
+                    reg_dec_producer=0,
+                    reg_inc_consumer=0,
+                )
             ]
         else:
             return self.gen_configs + self.user_configs

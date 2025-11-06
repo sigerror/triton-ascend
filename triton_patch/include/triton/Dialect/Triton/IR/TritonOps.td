@@ -352,6 +352,46 @@ def TT_StoreOp : TT_Op<"store", [
     let hasCanonicalizer = 1;
 }
 
+//
+// EmbeddingGather Op
+//
+def TT_EmbeddingGatherOp : TT_Op<"embedding_gather", [
+  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+  SameVariadicOperandSize,
+]> {
+    let summary = "Gather load from a tensor pointer with the embedding semantics";
+
+    let arguments = (
+      ins TT_Ptr:$src,
+          TT_Tensor:$idx,
+          AnyTypeOf<[I32, I64]>:$bound,
+          AnyTypeOf<[I32, I64]>:$blocksize,
+          Variadic<AnyTypeOf<[I32, I64]>>:$offsets,
+          Variadic<AnyTypeOf<[I32, I64]>>:$numels
+    );
+
+    let results = (outs TT_Tensor:$result);
+
+    let assemblyFormat = [{
+      $src `:` type($src) `,` $idx `:` type($idx) `,`
+      $bound `:` type($bound) `,` $blocksize `:` type($blocksize) `,`
+      `[` $offsets `:` type($offsets) `]` `,` `[` $numels `:` type($numels) `]`
+      attr-dict `->` type($result)
+    }];
+
+    let builders = [
+      OpBuilder<(ins
+          "Value":$src,
+          "Value":$idx,
+          "Value":$bound,
+          "Value":$blocksize,
+          "ValueRange":$offsets,
+          "ValueRange":$numels
+      )>
+    ];
+    // let hasCanonicalizer = 1;
+}
+
 def TT_GatherLoadOp : TT_Op<"gather_load", [
   MemoryEffects<[MemRead<GlobalMemory>]>,
   DeclareOpInterfaceMethods<InferTypeOpInterface>,

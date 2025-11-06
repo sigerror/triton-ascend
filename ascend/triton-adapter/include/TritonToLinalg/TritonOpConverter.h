@@ -566,6 +566,16 @@ public:
                   ConversionPatternRewriter &rewriter) const override;
 };
 
+class EmbeddingGatherConverter : public OpConversionPattern<triton::EmbeddingGatherOp> {
+public:
+  using OpConversionPattern<triton::EmbeddingGatherOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(triton::EmbeddingGatherOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+private:
+  static constexpr llvm::StringRef funcNameBase = "triton_embedding_gather";
+};
+
 } // end of namespace TTOpConverters
 
 #endif

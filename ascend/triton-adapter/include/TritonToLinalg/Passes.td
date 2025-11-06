@@ -15,7 +15,10 @@ def TritonToLinalg : Pass<"triton-to-linalg", "mlir::ModuleOp"> {
             "use linalg named ops instead of linalg.generic">,
         Option<"enableNd2nzOnVector", "enable-nd2nz-on-vector", 
             "bool", /*default*/"false",
-            "enable nd2nz on vector">
+            "enable nd2nz on vector">,
+        Option<"compileOnA5", "compile-on-a5", 
+            "bool", /*default*/"false",
+            "compile on a5">
     ];
 }
 

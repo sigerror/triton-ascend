@@ -33,6 +33,7 @@ from typing import Any, Dict, Optional, Tuple, Union
 from triton._C.libtriton import ir, passes
 from triton.backends.ascend.utils import (
     _check_bishengir_api_change,
+    _check_bishengir_able_save_ir,
     _check_bishengir_is_regbased,
     _enable_unpublished_feature,
     _get_kernel_target,
@@ -44,6 +45,8 @@ from triton.backends.ascend.utils import (
     _is_debug_line_info_disabled,
     _is_auto_map_parallel_blocks_enabled,
     downgrade_llir,
+    is_remote_run,
+    force_disable_ffts,
 )
 from triton.backends.ascend.driver import (
     NPUUtils
@@ -97,6 +100,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         triton_adapter_opt_path = _get_triton_adapter_opt_path()
 
         enable_nd2nz_on_vector = metadata["enable_nd2nz_on_vector"]
+        compile_on_a5 = metadata["compile_on_a5"]
         cmd_list = [
             triton_adapter_opt_path,
             src_path,
@@ -109,7 +113,8 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             "--triton-to-llvm",
             "--bubble-up-operation",
             f"--triton-to-linalg=global-kernel=false named-ops={named_ops} "\
-            f"enable-nd2nz-on-vector={enable_nd2nz_on_vector}",
+            f"enable-nd2nz-on-vector={enable_nd2nz_on_vector} "\
+            f"compile-on-a5={compile_on_a5}",
             "-o",
             dst_path,
         ]
@@ -285,7 +290,132 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     return linalg, metadata
 
 
-def linalg_to_bin_enable_npu_compile(linalg: str, metadata, opt):
+def _parse_ttir_metadata(ttir: str, metadata: dict):
+    """
+    Parse TTIR to extract metadata required for NPU compilation.
+    Extracts and updates the following fields in metadata:
+      - kernel_name
+      - shared (currently hardcoded)
+    """
+    # --- Regular expressions and examples ---
+    # Example: tt.func @gather_sorted_kernel(%arg0: ...) -> gather_sorted_kernel
+    KERNEL_NAME_REGEX = r"tt\.func\spublic\s+@(\w+)"
+
+    # Example: %arg1: memref<?xf32> {tt.divisibility = 16 : i32, tt.tensor_kind = 0 : i32} -> ('1', '0')
+    TENSOR_KIND_REGEX = r'%arg(\d+):[^,)]*?\{[^}]*?tt\.tensor_kind\s*=\s*([^:\s}]+)\s*:[^}]*?\}'
+
+    # Note: Compiled Kernel requires to estimate size of shared memory to occupy
+    # Currently, NPU backend does not limit on shared memory
+    metadata["shared"] = 1
+    # Note: Currently, for TTIR inputs, we only support vector kernels.
+    metadata["mix_mode"] = "aiv"
+    metadata["kernel_name"] = re.search(KERNEL_NAME_REGEX, ttir).group(1)
+    metadata["name"] = metadata["kernel_name"] + " " + metadata["mix_mode"]
+    # Parse all tensor kinds from arguments
+    metadata["tensor_kinds"] = [int(kind) for _, kind in re.findall(TENSOR_KIND_REGEX, ttir)]
+    return metadata
+
+
+def get_common_bishengir_compile_options(metadata):
+    bishengir_target = metadata['target'].arch
+    bishengir_target_opt = f"--target={bishengir_target}"
+    return [bishengir_target_opt]
+
+def linalg_to_bin_enable_npu_compile_A5(linalg: str, metadata, opt):
+    linalg, metadata = _parse_linalg_metadata(linalg, metadata)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        ttadapter_path = os.path.join(tmpdir, "kernel.ttadapter.mlir")
+        Path(ttadapter_path).write_text(linalg)
+        bin_file = os.path.join(tmpdir, "kernel")
+        if _check_bishengir_api_change():
+            bin_file_with_ext = "kernel.o"
+        else:
+            bin_file_with_ext = "kernel_reloc.o"
+        bin_path = os.path.join(tmpdir, bin_file_with_ext)
+        callback_path = os.path.join(tmpdir, "libkernel.so")
+        _compile_option_list = get_common_bishengir_compile_options(metadata)
+        multibuffer = metadata["multibuffer"]
+        if multibuffer is not None:
+            _compile_option_list += [
+                f"--enable-auto-multi-buffer={multibuffer}",
+            ]
+        if force_disable_ffts():
+            _compile_option_list += ["--disable-ffts"]
+        if _is_ascend_sanitizer_enabled():
+            _compile_option_list += ["--enable-sanitizer=true"]
+        if not _is_debug_line_info_disabled():
+            _compile_option_list += ["--enable-debug-info=true"]
+
+        enable_hivm_auto_cv_balance = metadata["enable_hivm_auto_cv_balance"]
+        if enable_hivm_auto_cv_balance is not None:
+            _compile_option_list += \
+                [f"--enable-hivm-auto-cv-balance={enable_hivm_auto_cv_balance}"]
+
+        unit_flag = metadata["unit_flag"]
+        if unit_flag is not None:
+            _compile_option_list += \
+                [f"--enable-hivm-unit-flag-sync={unit_flag}"]
+
+        inject_barrier_all = metadata["inject_barrier_all"]
+        if inject_barrier_all is not None:
+            _compile_option_list += \
+                [f"--enable-hivm-inject-barrier-all-sync={inject_barrier_all}"]
+        
+        limit_auto_multi_buffer_only_for_local_buffer = metadata["limit_auto_multi_buffer_only_for_local_buffer"]
+        if limit_auto_multi_buffer_only_for_local_buffer is not None:
+            _compile_option_list += \
+                [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
+        
+        set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
+        if set_workspace_multibuffer is not None:
+            _compile_option_list += \
+                [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
+        
+        tile_mix_vector_loop = metadata["tile_mix_vector_loop"]
+        if tile_mix_vector_loop is not None:
+            _compile_option_list += \
+                [f"--tile-mix-vector-loop={tile_mix_vector_loop}"]
+        
+        tile_mix_cube_loop = metadata["tile_mix_cube_loop"]
+        if tile_mix_cube_loop is not None:
+            _compile_option_list += \
+                [f"--tile-mix-cube-loop={tile_mix_cube_loop}"]
+
+        auto_multi_buffer = metadata["limit_auto_multi_buffer_of_local_buffer"]
+        if auto_multi_buffer is not None:
+            _compile_option_list += \
+                [f"--limit-auto-multi-buffer-of-local-buffer={auto_multi_buffer}"]
+        
+        if _is_auto_map_parallel_blocks_enabled():
+            _compile_option_list += ["--enable-auto-blockify-loop"]
+        npu_compiler_path = _get_npucompiler_path()
+        if npu_compiler_path.endswith("bishengir-compile"):
+            _compile_option_list += [
+                "--enable-hfusion-compile=true",
+                "--enable-triton-kernel-compile=true",
+            ]
+        cmd_list = (
+            [npu_compiler_path, ttadapter_path]
+            + _compile_option_list
+            + ["-o", bin_file]
+        )
+
+        ret = subprocess.run(cmd_list, capture_output=True, check=True)
+        if Path(callback_path).is_file():
+            lib = ctypes.CDLL(callback_path)
+            __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
+            __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_num_function", metadata, "lock_num")
+            __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_init_function", metadata, "lock_init_val")
+
+        remote_run = is_remote_run(metadata["target"].arch)
+        if (remote_run):
+            from triton.backends.ascend.utils import copy_file_for_remote_run
+            copy_file_for_remote_run(bin_path, metadata["hash"])
+
+        return Path(bin_path).read_bytes()
+
+
+def linalg_to_bin_enable_npu_compile_A3(linalg: str, metadata, opt):
     linalg, metadata = _parse_linalg_metadata(linalg, metadata)
     with tempfile.TemporaryDirectory() as tmpdir:
         ttadapter_path = os.path.join(tmpdir, "kernel.ttadapter.mlir")
@@ -398,14 +528,16 @@ class NPUOptions:
     kernel_name: str = "triton_"
 
     cluster_dims: tuple = (1, 1, 1)
-    num_warps: int = -1
-    num_ctas: int = -1
-    num_stages: int = 2
+    num_warps: int = 4
+    num_ctas: int = 1
+    num_stages: int = 1
+    warp_size: int = 32
     num_buffers_warp_spec: int = 0
     num_consumer_groups: int = 0
     reg_dec_producer: int = 0
     reg_inc_consumer: int = 0
 
+    compile_on_a5: bool = False
     enable_warp_specialization: bool = False
     enable_nd2nz_on_vector: bool = False
     enable_persistent: bool = False
@@ -430,6 +562,7 @@ class NPUOptions:
 
     stream: int = None
 
+    force_simt_only: bool = False
     def hash(self):
         key = "_".join([f"{name}-{val}" for name, val in self.__dict__.items()])
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
@@ -468,6 +601,35 @@ class AscendAttrsDescriptor(AttrsDescriptor):
         pass
 
 
+def ttir_to_npubin(mod, metadata, opt):
+    # Get Triton-MLIR as string
+    ttir_code = str(mod)
+    metadata = _parse_ttir_metadata(ttir_code, metadata)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # prepare input
+        src_path = os.path.join(tmpdir, "kernel.ttir.mlir")
+        Path(src_path).write_text(ttir_code)
+        # prepare output
+        bin_file = os.path.join(tmpdir, "kernel")
+        bin_path = os.path.join(tmpdir, "kernel.o")
+        # build compile options
+        _compile_option_list = get_common_bishengir_compile_options(metadata)
+        if opt.force_simt_only:
+            _compile_option_list += ["--enable-triton-ir-compile"]
+            _compile_option_list += ["--pure-simt"]
+            _compile_option_list += [f"--num-warps={opt.num_warps}"]
+            _compile_option_list += [f"--threads-per-warp={opt.warp_size}"]
+
+        npu_compiler_path = _get_npucompiler_path()
+        cmd_list = (
+            [npu_compiler_path, src_path]
+            + _compile_option_list
+            + ["-o", bin_file]
+        )
+        ret = subprocess.run(cmd_list, capture_output=True, check=True)
+        return Path(bin_path).read_bytes()
+
+
 class AscendBackend(BaseBackend):
 
     @staticmethod
@@ -489,6 +651,7 @@ class AscendBackend(BaseBackend):
                 for k in NPUOptions.__dataclass_fields__.keys()
                 if k in opts
             }
+            args["compile_on_a5"] = self.target.arch.startswith("Ascend910_95")
             options = NPUOptions(**args)
         else:
             args = {
@@ -534,14 +697,28 @@ class AscendBackend(BaseBackend):
     def add_stages(self, stages, options):
         if self.target.backend == "npu":
             stages["ttir"] = lambda src, metadata: make_ttir(src, metadata, options)
+            if options.force_simt_only:
+                stages["npubin"] = (
+                    lambda src, metadata: ttir_to_npubin(
+                        src, metadata, options
+                    )
+                )
+                return
             stages["ttadapter"] = lambda src, metadata: ttir_to_linalg(
                 src, metadata, options, named_ops=True
             )
-            stages["npubin"] = (
-                lambda src, metadata: linalg_to_bin_enable_npu_compile(
-                    src, metadata, options
+            if options.compile_on_a5:
+                stages["npubin"] = (
+                    lambda src, metadata: linalg_to_bin_enable_npu_compile_A5(
+                        src, metadata, options
+                    )
                 )
-            )
+            else:
+                stages["npubin"] = (
+                    lambda src, metadata: linalg_to_bin_enable_npu_compile_A3(
+                        src, metadata, options
+                    )
+                )
         else:
             stages["ttir"] = lambda src, metadata: make_ttir(src, metadata, options)
             stages["ttadapter"] = lambda src, metadata: ttir_to_linalg(

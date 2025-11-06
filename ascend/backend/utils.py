@@ -26,8 +26,28 @@ import shutil
 import subprocess
 import sysconfig
 from pathlib import Path
-
+import logging
 import pybind11
+
+
+def get_logger(logger_name, logger_level_str):
+    '''
+    '''
+    logging_level_mapping = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    logger = logging.getLogger(logger_name)
+    logger.propagate = False
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.setLevel(logging_level_mapping.get(logger_level_str.upper(), "INFO"))
+    logger.addHandler(console_handler)
+    return logger
 
 
 def downgrade_llir(llir):
@@ -203,8 +223,9 @@ def _enable_unpublished_feature() -> bool:
     return os.getenv("ENABLE_UNPUBLISHED_FEATURE", "false").lower() in ("true", "1")
 
 
-def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) -> str:
+def _build_npu_ext(obj_name: str, src_path, *, kernel_launcher="torch") -> str:
     suffix = sysconfig.get_config_var("EXT_SUFFIX")
+    src_dir = os.path.dirname(src_path)
     so_path = os.path.join(src_dir, f"{obj_name}{suffix}")
 
     cxx = os.environ.get("CC")
@@ -230,6 +251,7 @@ def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) ->
     cc_cmd += [f"-I{py_include_dir}"]
     # device_print.h
     cc_cmd += [f"-I{os.path.dirname(os.path.realpath(__file__))}"]
+    # find the ascend library
     asc_path = _get_ascend_path()
     cc_cmd += [
         f"-I{os.path.join(asc_path, 'include')}",
@@ -240,7 +262,8 @@ def _build_npu_ext(obj_name: str, src_path, src_dir, *, kernel_launcher=None) ->
         "-lruntime",
         "-lascendcl",
     ]
-
+    # FIXME: check why this condition works wrong in parall scene
+    # if kernel_launcher == "torch":
     import torch
     import torch_npu
 
@@ -314,3 +337,204 @@ def convert_sigtype_to_int(sigty: str):
         raise ValueError(f"Unsupported data type: {sigty}")
 
     return MAP_SIGTYPE_TO_INT[sigty]
+
+
+def convert_torch_dtype_to_numpy(torch_dtype):
+    import torch
+    import numpy as np
+    TORCH_TO_NUMPY_DTYPE = {
+        torch.float32: np.float32,
+        torch.float64: np.float64,
+        torch.float16: np.float16,
+        torch.int8: np.int8,
+        torch.uint8: np.uint8,
+        torch.int16: np.int16,
+        torch.int32: np.int32,
+        torch.int64: np.int64,
+        torch.bool: np.bool_,
+        torch.complex64: np.complex64,
+        torch.complex128: np.complex128,
+    }
+    return TORCH_TO_NUMPY_DTYPE[torch_dtype]
+
+
+def _check_bishengir_able_save_ir() -> bool:
+    bishengir_path = _get_npucompiler_path()
+    try:
+        result = subprocess.run(
+            f"{bishengir_path} --help | grep 'save-linked-ir'",
+            shell=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return result.returncode == 0
+    except Exception as e:
+        print(f"ERROR: {e}")
+        return False
+
+def get_ascend_arch_from_env():
+    arch = os.getenv("TRITON_ASCEND_ARCH", "")
+    if arch == "":
+        # User does not set arch by ENV. Thus directly return.
+        return arch
+    # User sets arch by ENV. Thus we need to check if it is supported.
+    valid_arch_list = [
+        "Ascend910B1",
+        "Ascend910B2",
+        "Ascend910B3",
+        "Ascend910B4",
+        "Ascend910_9362",
+        "Ascend910_9372",
+        "Ascend910_9381",
+        "Ascend910_9382",
+        "Ascend910_9391",
+        "Ascend910_9392",
+        "Ascend310B1",
+        "Ascend310B2",
+        "Ascend310B3",
+        "Ascend310B4",
+        "Ascend910_9579",
+        "Ascend910_9581",
+        "Ascend910_9589",
+        "Ascend910_9599",
+    ]
+    is_valid = arch in valid_arch_list
+    if not is_valid:
+        valid_arch_str = ", ".join(valid_arch_list)
+        raise ValueError(f"TRITON_ASCEND_ARCH = {arch} is invalid!"
+                         f"Candidates are [{valid_arch_str}]")
+    return arch
+
+
+def is_remote_run(arch: str):
+    '''
+    '''
+    if arch in ["Ascend310B4"]:
+        return True
+    remote_run = os.getenv("TRITON_REMOTE_RUN", "false").lower() in ("true", "1")
+    return remote_run
+
+
+def is_ffts_supported(arch: str):
+    '''
+    Cases:
+    - empty str: User does not specify arch, thus it runs on 910B/910D both of which support ffts. Return True.
+    - Ascend310B4: 310B4 does not support ffts. Return False.
+    - Other arch: 910B/910D supports ffts. Return True.
+    '''
+    if arch in ["Ascend910A", "Ascend310B4"]:
+        return False
+    return True
+
+
+def force_disable_ffts():
+    '''
+    '''
+    disable_ffts = os.getenv("TRITON_DISABLE_FFTS", "false").lower() in ("true", "1")
+    return disable_ffts
+
+
+def setup_cachedir_for_remote_run(hash: str = ""):
+    home_dir = os.path.expanduser("~")
+    cache_dir = os.path.join(home_dir, ".triton", "remote_cache", hash)
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+    except PermissionError as e:
+        raise PermissionError(f"No permission to mkdir {cache_dir}") from e
+    except Exception as e:
+        raise RuntimeError(f"Failed to mkdir: {e}") from e
+    return cache_dir
+
+
+def copy_file_for_remote_run(src_fpath: str, hash: str = ""):
+    import shutil
+    from triton.backends.ascend.utils import setup_cachedir_for_remote_run
+    cache_dir = setup_cachedir_for_remote_run(hash)
+    dst_fname = os.path.basename(src_fpath)
+    dst_fpath = os.path.join(cache_dir, dst_fname)
+    if os.path.isfile(dst_fpath):
+        return
+    try:
+        shutil.copy2(src_fpath, dst_fpath)
+    except Exception as e:
+        raise RuntimeError(f"Copy {src_fpath} to {dst_fpath} failed: {e}")
+
+
+def connect_to_remote_machine():
+    import paramiko
+    import json
+    import os
+    ssh = paramiko.SSHClient()
+    ssh.load_system_host_keys()
+    ssh.set_missing_host_key_policy(paramiko.WarningPolicy)
+    script_path = os.path.abspath(__file__)
+    script_dir = os.path.dirname(script_path)
+    json_fpath = os.getenv("TRITON_REMOTE_RUN_CONFIG_PATH", os.path.join(script_dir, "remote_run_config.json"))
+    with open(json_fpath, 'r') as f:
+        configs = json.load(f)
+        ip = configs["IP"]
+        username = configs["username"]
+        password = configs["password"]
+    ssh.connect(ip, username=username, password=password)
+    return ssh
+
+
+def sftp_mkdir(sftp, path, mode=511, ignore_existing=True):
+    try:
+        sftp.mkdir(path, mode=mode)
+    except IOError:
+        if ignore_existing:
+            pass
+        else:
+            raise
+
+
+def sftp_put_dir(sftp, localpath: str, remotepath: str):
+    for item in os.listdir(localpath):
+        srcpath = os.path.join(localpath, item)
+        destpath = os.path.join(remotepath, item)
+        if os.path.isfile(srcpath):
+            sftp.put(srcpath, destpath)
+        else:
+            sftp_mkdir(sftp, destpath, ignore_existing=True)
+            sftp_put_dir(sftp, srcpath, destpath)
+
+
+def sftp_clear_dir(sftp, path):
+    import stat
+    def isdir(path):
+        try:
+            return stat.S_ISDIR(sftp.stat(path).st_mode)
+        except IOError:
+            return False
+
+    files = sftp.listdir(path=path)
+    for f in files:
+        filepath = os.path.join(path, f)
+        if isdir(filepath):
+            sftp_rmdir(sftp, filepath)
+        else:
+            sftp.remove(filepath)
+
+
+def sftp_rmdir(sftp, path):
+    sftp_clear_dir(sftp, path)
+    sftp.rmdir(path)
+
+
+def sftp_get_files(sftp, remotepath: str, localpath: str, ext: str):
+    import stat
+    for item in sftp.listdir(remotepath):
+        srcpath = os.path.join(remotepath, item)
+        destpath = os.path.join(localpath, item)
+        try:
+            item_attr = sftp.stat(srcpath)
+            if stat.S_ISDIR(item_attr.st_mode):
+                os.makedirs(destpath, exist_ok=True)
+                sftp_get_files(sftp, srcpath, destpath)
+            else:
+                if item.endswith(f".{ext}"):
+                    sftp.get(srcpath, destpath)
+        except Exception as e:
+            raise RuntimeError(f"Failed to download {srcpath}: {e}")

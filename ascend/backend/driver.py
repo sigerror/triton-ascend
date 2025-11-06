@@ -36,6 +36,10 @@ from triton.backends.ascend.utils import (
     _check_cxx11_abi,
     convert_sigtype_to_int,
     _is_auto_map_parallel_blocks_enabled,
+    get_ascend_arch_from_env,
+	  is_remote_run,
+    is_ffts_supported,
+    force_disable_ffts,
 )
 
 class NPUUtils(object):
@@ -46,17 +50,18 @@ class NPUUtils(object):
 
     def __init__(self):
         dirname = os.path.dirname(os.path.realpath(__file__))
-        src = Path(os.path.join(dirname, "npu_utils.cpp")).read_text()
-        key = hashlib.sha256(src.encode("utf-8")).hexdigest()
+        src_path = os.path.join(dirname, "npu_utils.cpp")
+        src = Path(src_path).read_text()
+        key = hashlib.md5(src.encode("utf-8")).hexdigest()
         cache = get_cache_manager(key)
         fname = "npu_utils.so"
         cache_path = cache.get_file(fname)
         if cache_path is None:
             with tempfile.TemporaryDirectory() as tmpdir:
-                src_path = os.path.join(tmpdir, "npu_utils.cpp")
-                with open(src_path, "w") as f:
+                tmp_src_path = os.path.join(tmpdir, "npu_utils.cpp")
+                with open(tmp_src_path, "w") as f:
                     f.write(src)
-                so = _build_npu_ext("npu_utils", src_path, tmpdir)
+                so = _build_npu_ext("npu_utils", tmp_src_path)
                 with open(so, "rb") as f:
                     cache_path = cache.put(f.read(), fname, binary=True)
         import importlib.util
@@ -64,6 +69,12 @@ class NPUUtils(object):
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         self.npu_utils_mod = mod
+        # setup for remote run
+        env_arch = get_ascend_arch_from_env()
+        remote_run = is_remote_run(env_arch)
+        if (remote_run):
+            from triton.backends.ascend.utils import copy_file_for_remote_run
+            copy_file_for_remote_run(src_path)
 
     def load_binary(self, name, kernel, shared, device):
         fnname, mix_mode = name.split()
@@ -94,6 +105,9 @@ class NPUUtils(object):
 
 class NPULauncher(object):
     def __init__(self, src, metadata):
+        self.compile_only = os.getenv("TRITON_COMPILE_ONLY", 'false').lower() in ('true', '1')
+        self.enable_msprof_register_tensor = os.getenv("TRITON_REGISTER_TENSOR_MSPROF", 'false').lower() in ('true', '1')
+        self.remote_run = is_remote_run(metadata.target.arch)
         debug_mode = metadata.debug
         workspace_size = int(metadata.workspace_size) \
                               if hasattr(metadata, 'workspace_size') else -1
@@ -106,10 +120,29 @@ class NPULauncher(object):
         constants = {cst_key(key): value for key, value in constants.items()}
         signature = {cst_key(key): value for key, value in src.signature.items()}
         mix_mode = metadata.mix_mode
+        # TODO: this can be adapted when we support mix-parallel mode
         wrapper_src = generate_npu_wrapper_src(constants, signature, \
                                                workspace_size, mix_mode, \
-                                               lock_num, lock_init_value)
+                                               lock_num, lock_init_value, \
+                                               metadata.compile_on_a5)
         so_launcher_path = make_npu_launcher_stub(wrapper_src, debug_mode)
+        # setup for remote run
+        # TODO: use a var to pack all vars required to run on a remote machine
+        self.mix_mode = metadata.mix_mode
+        self.shared = metadata.shared
+        if (self.remote_run):
+            from triton.backends.ascend.utils import copy_file_for_remote_run
+            # copy both src of launcher
+            src_dir = os.path.dirname(so_launcher_path)
+            src_name = f"launcher"
+            src_path = os.path.join(src_dir, f"{src_name}.cpp")
+            with open(src_path, "w") as f:
+                f.write(wrapper_src)
+            copy_file_for_remote_run(src_path, metadata.hash)
+            #
+            script_path = os.path.abspath(__file__)
+            script_dir = os.path.dirname(script_path)
+            copy_file_for_remote_run(os.path.join(script_dir, "remote_driver.py"))
         # initialize launcher
         import importlib.util
         spec = importlib.util.spec_from_file_location("__triton_launcher", so_launcher_path)
@@ -117,9 +150,145 @@ class NPULauncher(object):
         spec.loader.exec_module(mod)
         self.launch = getattr(mod, "launch")
 
-    def __call__(self, *args, **kwargs):
-        self.launch(*args, **kwargs)
+    def remote_launch(self, *args, **kwargs):
+        import getpass
+        import json
+        import torch
+        from triton.backends.ascend.utils import (
+          connect_to_remote_machine,
+          sftp_mkdir,
+          sftp_clear_dir,
+          sftp_put_dir,
+          sftp_rmdir,
+          sftp_get_files,
+          setup_cachedir_for_remote_run,
+          get_logger,
+        )
+        # setup the files required to run on a remote machine
+        packed_metadata = args[5]
+        cache_dir = setup_cachedir_for_remote_run(packed_metadata["hash"])
+        print(f"[INFO]: The cache dir for remote run is {cache_dir}")
+        cache_root_dir = os.path.dirname(cache_dir)
+        kernel_info = {}
+        kernel_info["gridX"] = args[0]
+        kernel_info["gridY"] = args[1]
+        kernel_info["gridZ"] = args[2]
+        kernel_info["packed_metadata"] = packed_metadata
+        kernel_info["mix_mode"] = self.mix_mode
+        kernel_info["shared"] = self.shared
+        num_arg = len(args[9:])
+        kernel_info["num_arg"] = num_arg
+        for idx, arg in enumerate(args[9:]):
+            if (torch.is_tensor(arg)):
+                arg_fname = f"arg_{idx}.bin"
+                arg_fpath = os.path.join(cache_dir, arg_fname)
+                with open(arg_fpath, 'wb') as f:
+                    f.write(bytes(arg.untyped_storage()))
+                kernel_info[f"arg_{idx}"] = {}
+                kernel_info[f"arg_{idx}"]["filename"] = arg_fname
+                kernel_info[f"arg_{idx}"]["dtype"] = arg.dtype.__str__()
+                kernel_info[f"arg_{idx}"]["shape"] = list(arg.shape)
+            else:
+                kernel_info[f"arg_{idx}"] = arg
+        kernel_info["kwargs"] = kwargs
+        with open(os.path.join(cache_dir, 'kernel_info.json'), 'w') as f:
+            json.dump(kernel_info, f, indent=4)
+        if self.compile_only:
+            return 
+        # TODO: read commands from config file
+        USER = getpass.getuser()
+        HOME = "/home/HwHiAiUser"
+        REMOTE_ROOT_DIR = os.path.join(HOME, "bishengir-regbase-test-" + USER, packed_metadata["hash"])
+        # FIXME: Why python 3.9 dose not work? We must use python 3.11 as follows.
+        RUN_COMMANDS = f'''
+cd {REMOTE_ROOT_DIR}
+source ~/cann_install/latest/bin/setenv.bash
+export ASCEND_HOME_PATH=$ASCEND_AICPU_PATH
+python3 remote_driver.py'''
+        RUN_COMMANDS += f'''
+exit
+'''
+        ssh = connect_to_remote_machine()
+        sftp = ssh.open_sftp()
+        sftp_mkdir(sftp, os.path.dirname(REMOTE_ROOT_DIR), ignore_existing=True)
+        sftp_mkdir(sftp, REMOTE_ROOT_DIR, ignore_existing=True)
+        sftp_clear_dir(sftp, REMOTE_ROOT_DIR)
+        sftp_put_dir(sftp, cache_dir, REMOTE_ROOT_DIR)
+        sftp.put(os.path.join(cache_root_dir, "remote_driver.py"), os.path.join(REMOTE_ROOT_DIR, "remote_driver.py"))
+        sftp.put(os.path.join(cache_root_dir, "npu_utils.cpp"), os.path.join(REMOTE_ROOT_DIR, "npu_utils.cpp"))
+        transport = ssh.get_transport()
+        channel = transport.open_session()
+        channel.get_pty()
+        channel.invoke_shell()
+        stdin = channel.makefile("wb")
+        stdout = channel.makefile("r")
+        stderr = channel.makefile_stderr("r")
+        stdin.write(RUN_COMMANDS)
+        stdin.close()
+        channel.recv_exit_status()
+        remote_shell_output = stdout.read().strip()
+        remote_shell_error = stderr.read().strip()
+        sftp_get_files(sftp, REMOTE_ROOT_DIR, cache_dir, "bin")
+        if remote_shell_error:
+            print(remote_shell_error.decode())
+        lines = remote_shell_output.decode().replace('\r\n', '\n').replace('\r', '\n').split('\n')
+        lines = [line.strip() for line in lines if line.strip()]
+        start_idx = -1
+        end_idx = -1
+        for i, line in enumerate(lines):
+            if 'remote_driver.py' in line:
+                start_idx = i
+            if '$ exit' in line and start_idx != -1:
+                end_idx = i
+                break
+        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
+            kernel_output = "\n".join(lines[start_idx+1:end_idx]).replace('\x1b[?20041', '')
+        else:
+            kernel_output = ''
+        if kernel_output != '':
+            logger = get_logger("triton kernel's stdout", "INFO")
+            logger.info(kernel_output)
+        # Read in the data file copied from remote
+        for idx, arg in enumerate(args[9:]):
+            if (torch.is_tensor(arg)):
+                arg_fname = f"arg_{idx}.bin"
+                arg_fpath = os.path.join(cache_dir, arg_fname)
+                with open(arg_fpath, 'rb') as f:
+                    buffer = f.read()
+                    storage = torch.UntypedStorage.from_buffer(buffer, dtype=arg.dtype, byte_order='native')
+                    new_arg = torch.tensor([], dtype=arg.dtype).set_(storage, 0, arg.shape)
+                arg.copy_(new_arg.npu())
+            else:
+              pass
+        stdout.close()
+        stderr.close()
+        channel.close()
+        sftp_rmdir(sftp, REMOTE_ROOT_DIR)
+        sftp.close()
+        ssh.close()
 
+    def __call__(self, *args, **kwargs):
+        if self.compile_only:
+            cache_manager = get_cache_manager(args[5]['hash'])
+            print("[INFO]: skip running kernel")
+            print(f"[INFO]: The compiled kernel cache is in {cache_manager.cache_dir}")
+        if self.enable_msprof_register_tensor:
+            import torch
+            tensor_params = [arg for arg in args if isinstance(arg, torch.Tensor)]
+            tensor_params_shape = []
+            for t in tensor_params:
+                tensor_params_shape.append([s for s in t.shape])
+            # args[5] must be the packed metadata.
+            # Check the launch wrapper in which PyArg_ParseTuple specifies the ordering of args
+            args[5]['tensor_params_shape'] = tensor_params_shape
+        if self.remote_run:
+            self.remote_launch(*args, **kwargs)
+        else:
+            if self.compile_only:
+                return
+            profiler_registered = self.launch(*args, **kwargs)
+            import triton
+            triton.backends.ascend.utils.TRITON_PROFILER_REGISTERED = True if profiler_registered == 1 else False
 
 class NPUDriver(DriverBase):
     def __init__(self):
@@ -145,7 +314,11 @@ class NPUDriver(DriverBase):
 
     def get_current_target(self):
         backend = "npu"
-        arch = self.utils.get_arch()
+        env_target = get_ascend_arch_from_env()
+        if env_target:
+            arch = env_target
+        else:
+            arch = self.utils.get_arch()
         warp_size = 0
         return GPUTarget(backend, arch, warp_size)
 
@@ -214,23 +387,22 @@ def make_npu_launcher_stub(src, debug=False):
     if cache_path is not None:
         return cache_path
 
+    kernel_launcher_type = "torch"
+    enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
+    if not enable_taskqueue:
+        kernel_launcher_type = None
+  
     with tempfile.TemporaryDirectory() as tmpdir:
-        if debug:
-            so_cache_manager.put(src, f"{name}.cxx", binary=False)
         src_path = os.path.join(tmpdir, f"{name}.cxx")
         with open(src_path, "w") as f:
             f.write(src)
-        enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
-        if (enable_taskqueue):
-            kernel_launcher_type = "torch"
-        else:
-            kernel_launcher_type = None
-        so = _build_npu_ext(name, src_path, tmpdir, kernel_launcher=kernel_launcher_type)
+        so_path = _build_npu_ext(name, src_path, kernel_launcher=kernel_launcher_type)
         if debug:
-            with open(so, "rb") as f:
-                return dump_manager.put(f.read(), so_name, binary=True)
-        with open(so, "rb") as f:
-            return so_cache_manager.put(f.read(), so_name, binary=True)
+            with open(so_path, "rb") as f:
+                dump_manager.put(f.read(), so_name, binary=True)
+        with open(so_path, "rb") as f:
+            so_cache_path = so_cache_manager.put(f.read(), so_name, binary=True)
+    return so_cache_path
 
 
 def extract_device_print_code_from_cann():
@@ -302,7 +474,7 @@ def extract_device_print_code_from_cann():
 
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
-def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val):
+def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val, compile_on_a5):
     import os
 
     def _ty_to_cpp(ty):
@@ -364,7 +536,10 @@ def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, loc
     format = "iiiKKOOOO" + ''.join([_format_of(_extracted_ty(ty)) for ty in signature.values()])
 
     grid_info = {'X': 'i32', 'Y': 'i32', 'Z': 'i32'}
+    # TODO: automatically check if gather load ops are used.
 
+    arch = get_ascend_arch_from_env()
+    target_support_ffts = is_ffts_supported(arch) and (not force_disable_ffts())
     enable_device_print = os.getenv(
         "TRITON_DEVICE_PRINT", 'false').lower() in ('true', '1')
     enable_taskqueue = os.getenv(
@@ -542,6 +717,20 @@ extern "C" {
     }}
 """
 
+    cpp_kernel_launch = f"""
+    ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
+"""
+    if compile_on_a5:
+        cpp_kernel_launch = """
+    rtArgsEx_t argsInfo = {};
+    argsInfo.args = static_cast<void*>(&args);
+    argsInfo.argsSize = sizeof(args);
+    // TODO: localMemorySize should be specified by user
+    rtTaskCfgInfo_t cfgInfo = {};
+    cfgInfo.localMemorySize = 256*1024;
+    ret = rtKernelLaunchWithFlagV2(func, blockNum, &argsInfo, NULL, stream, 0, &cfgInfo);
+"""
+
     return f"""
 #include <assert.h>
 #include <stdbool.h>
@@ -583,13 +772,11 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     {'blockNum = std::min(blockNum, (uint32_t)' + str(num_physical_blocks) + ');' if enable_auto_map_parallel_blocks else ''}
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
     rtError_t ret;
-    void *ffts_addr = NULL;
-    uint32_t ffts_len; ret = rtGetC2cCtrlAddr((uint64_t*)&ffts_addr, &ffts_len);
-    if (ret != RT_ERROR_NONE) {{
-      return {'ret' if enable_taskqueue else ''};
-    }}
-    void *syncBlockLock_ptr;
-    void *workspace_addr_ptr;
+    {'void *ffts_addr = NULL; uint32_t ffts_len; ret = rtGetC2cCtrlAddr((uint64_t*)&ffts_addr, &ffts_len);' if target_support_ffts else ''}
+    {'if (ret != RT_ERROR_NONE) return ret;' if (target_support_ffts and enable_taskqueue) else 'if (ret != RT_ERROR_NONE) return;' if (target_support_ffts and (not enable_taskqueue)) else ''}
+    // stub argument for workspace
+    void *syncBlockLock_ptr = NULL;
+    void *workspace_addr_ptr = NULL;
     uint16_t ModuleId = 0;
     {f'''
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
@@ -616,27 +803,28 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       {alloc_success_code if enable_taskqueue else workspace_fail_code}
     }}
     ''' if workspace_size > 0 else ''}
+    {'if (ret != RT_ERROR_NONE) return ret;' if (workspace_size > 0 and enable_taskqueue) else 'if (ret != RT_ERROR_NONE) return;' if (workspace_size > 0 and not enable_taskqueue) else ''}
     struct __attribute__((packed)) {{
-      void* ffts_addr __attribute__((aligned(8)));
+      {'void* ffts_addr __attribute__((aligned(8)));' if target_support_ffts else ''}
       void* syncBlockLock __attribute__((aligned(8)));
       void* workspace_addr __attribute__((aligned(8)));
       {' '.join(f'{_ty_to_cpp(ty)} arg{i} __attribute__((aligned({4 if ty[0] != "*" and ty[-2:] != "64" else 8})));' for i, ty in signature.items() if i not in constants)}
       {' '.join(f'{_ty_to_cpp(ty)} grid{mark} __attribute__((aligned(4)));' for mark, ty in grid_info.items())}
-      {'void* DTData __attribute__((aligned(8)));' if enable_device_print else ''}
+      {('void* DTData __attribute__((aligned(8)));' if enable_device_print else '')}
     }} args = {{
-      static_cast<void*>(ffts_addr),
-      {f'syncBlockLock_ptr' if lock_num > 0 else 'nullptr'},
-      {f'workspace_addr_ptr' if workspace_size > 0 else 'nullptr'},
+      {'static_cast<void*>(ffts_addr),' if target_support_ffts else ''}
+      {'static_cast<void*>(syncBlockLock_ptr)' if lock_num > 0 else 'nullptr'},
+      {'static_cast<void*>(workspace_addr_ptr)' if workspace_size > 0 else 'nullptr'},
       {(', '.join(f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants) + ',') if len(signature) > 0 else ''}
       {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(grid{mark})' for mark, ty in grid_info.items())}
       {', static_cast<void*>(DTData)' if enable_device_print else ''}
     }};
     {cpp_msprof_call_before_launch}
-    ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
+    {cpp_kernel_launch}
     {'void *&stream_ref = const_cast<void*&>(stream);' if enable_device_print else ''}
     {'cce::internal::DebugTunnel::Close(DTData, stream_ref);' if enable_device_print else ''}
     {cpp_msprof_call_after_launch}
-    {'return ret;' if enable_taskqueue else ''}
+    {'return ret;' if enable_taskqueue else 'ret = rtStreamSynchronize(stream);'}
    }};
    {'at_npu::native::OpCommand cmd; cmd.Name(name.c_str()).SetCustomHandler(launch_call).Run();' if enable_taskqueue else ''}
   return;

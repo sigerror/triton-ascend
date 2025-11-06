@@ -24,10 +24,25 @@ from typing import List, Optional, Union, Tuple
 import numbers
 import triton.language as tl
 from triton._C.libtriton import ir
-from triton.language.semantic import wrap_tensor, _str_to_rounding_mode, not_equal, _str_to_dot_input_precision, \
-    binary_op_type_checking_impl, integer_promote_impl, broadcast_impl_shape, _str_to_sem, _str_to_scope, bitcast, \
-    bitwise_op_type_checking_impl, shl, ashr, lshr, fdiv, sub, mul, to_tensor, _str_to_load_cache_modifier, _str_to_eviction_policy, \
-    _str_to_padding_option, _load_block_pointer
+from triton.language.semantic import (
+    wrap_tensor, 
+    _str_to_rounding_mode, 
+    not_equal, 
+    _str_to_dot_input_precision,
+    binary_op_type_checking_impl, 
+    integer_promote_impl, 
+    broadcast_impl_shape, 
+    _str_to_sem, 
+    _str_to_scope, 
+    bitcast,
+    bitwise_op_type_checking_impl,
+    shl, ashr, lshr, fdiv, sub, mul, 
+    to_tensor, 
+    _str_to_load_cache_modifier, 
+    _str_to_eviction_policy,
+    _str_to_padding_option, 
+    _load_block_pointer,
+)
 import triton.language.math as math
 import triton.language.core as core
 from triton.language._utils import TRITON_MAX_TENSOR_NUMEL
@@ -899,3 +914,42 @@ def gather_load(
     output_ty = tl.block_type(element_ty, return_shape)
     out = builder.create_gather_load(src.handle, gather_indices.handle, gather_dim, newsrc_shape, newsrc_offset, read_shape, return_shape)
     return tl.tensor(out, output_ty)
+
+def embedding_gather(src: tl.tensor, idx: tl.tensor, bound: int, blksiz: int, offsets: Tuple, numels: Tuple, builder: ir.builder) -> tl.tensor:
+    """
+    Embedding
+    :src_ptr:
+    :idx:
+    """
+    assert idx.dtype.is_int(), "index must be an integer tensor"
+    if not src.dtype.element_ty.is_floating():
+        raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {src.dtype.element_ty}")
+    
+    def _convert_elem_to_ir_value(builder, elem, require_i64):
+        if isinstance(elem, int):
+            elem = tl.constexpr(elem)
+        if isinstance(elem, tl.constexpr):
+            if require_i64:
+                assert -2**63 <= elem.value < 2**63, f"Block pointers only support 64 bit `shape/strides`, " \
+                    f"got a value {elem.value} which is out of the range"
+                return builder.get_int64(elem.value)
+            else:
+                assert -2**31 <= elem.value < 2**31, f"Block pointers only support 32 bit `offsets/block_shape`, " \
+                    f"got a value {elem.value} which is out of the range"
+                return builder.get_int32(elem.value)
+        elif isinstance(elem, tl.tensor):
+            if require_i64:
+                return builder.create_int_cast(elem.handle, builder.get_int64_ty(), elem.dtype.is_int_signed())
+            else:
+                return elem.handle
+        else:
+            assert False, f"Unsupported element type in shape/strides/offsets: {type(elem)}"
+
+    require_i64 = idx.dtype.is_int64()
+    # require_i64 = True
+    offsets = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in offsets]
+    numels = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in numels]
+    ret = builder.create_embedding_gather(src.handle, idx.handle, bound, blksiz, offsets, numels)
+    ret_shape = [_unwrap_if_constexpr(s) for s in idx.shape]
+    ret_shape.append(blksiz)
+    return wrap_tensor(ret, src.dtype.element_ty, ret_shape)

@@ -645,6 +645,7 @@ from .triton_patch.language.core import (
     get_element,
     insert_slice,
     gather_load,
+    embedding_gather,
     extract_slice,
     trans,
     __add__,
@@ -721,6 +722,7 @@ language.argmax = argmax
 language.argmin = argmin
 language.gather = gather
 language.gather_load = gather_load
+language.embedding_gather = embedding_gather
 language.insert_slice = insert_slice
 language.extract_slice = extract_slice
 language.get_element = get_element

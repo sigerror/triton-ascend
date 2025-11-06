@@ -1404,7 +1404,8 @@ GatherConverter::matchAndRewrite(triton::GatherOp op, OpAdaptor adaptor,
   llvm::SmallString<128> funcName = gatherFuncNameBase;
   int uniqueId = 0;
   while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
-    funcName += "_" + std::to_string(uniqueId++);
+    funcName = gatherFuncNameBase;
+    funcName += ("_" + std::to_string(uniqueId++));
   }
 
   auto resTy = res.getType();
@@ -1515,6 +1516,13 @@ LogicalResult DevicePrintConverter::matchAndRewrite(
 LogicalResult DeviceAssertConverter::matchAndRewrite(
     triton::AssertOp op, OpAdaptor adaptor,
     mlir::ConversionPatternRewriter &rewriter) const {
+  // Ascend910_95 does not support DeviceAssert. Thus for now
+  // we directly removes this op.
+  if(compileOnA5Flag){
+    rewriter.eraseOp(op);
+    return success();
+  }
+
   auto msgAttr = op.getMessageAttr();
   // Filter out automatically inserted assert ops
   if (auto strAttr = mlir::dyn_cast<mlir::StringAttr>(msgAttr)) {
@@ -1978,6 +1986,53 @@ PtrToIntConverter::matchAndRewrite(triton::PtrToIntOp op, OpAdaptor adaptor,
       loc, resultType, ptrToIndexOp);
 
   rewriter.replaceOp(op, intResult);
+  return success();
+}
+
+LogicalResult
+EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdaptor adaptor,
+                                          ConversionPatternRewriter &rewriter) const {
+  auto loc = op.getLoc();
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+
+  llvm::SmallString<128> funcName = funcNameBase;
+  int uniqueId = 0;
+  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
+    funcName = funcNameBase;
+    funcName += ("_" + std::to_string(uniqueId++));
+  }
+
+  auto src = adaptor.getSrc();
+  auto idx = op.getIdx();
+  auto bound = op.getBound();
+  auto blksiz = op.getBlocksize();
+  auto offsets = op.getOffsets();
+  auto numels = op.getNumels();
+  auto res = op.getResult();
+  auto resTy = res.getType();
+
+  // convert !tt.ptr<f32> to memref<?xf32>
+  auto srcTy = cast<MemRefType>(src.getType());
+  SmallVector<Type> inputTypes({srcTy, idx.getType(), bound.getType(),
+                                blksiz.getType()});
+  inputTypes.append(offsets.getTypes().begin(), offsets.getTypes().end());
+  inputTypes.append(numels.getTypes().begin(), numels.getTypes().end());
+  auto libFnType = rewriter.getFunctionType(inputTypes, {resTy});
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+
+  rewriter.setInsertionPoint(op);
+  SmallVector<Value> inputVals({src, idx, bound, blksiz});
+  inputVals.append(offsets.begin(), offsets.end());
+  inputVals.append(numels.begin(), numels.end());
+  auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
+                                              TypeRange({resTy}),
+                                              inputVals);
+
+  rewriter.replaceOp(op, callOp);
   return success();
 }
 
