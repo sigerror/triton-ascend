@@ -297,6 +297,20 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   // Force scalarize if memory is not aligned
   if (sizeInByte % 32 != 0)
     ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
+  
+  // Fast path on A5: rewrite tl.load to tt.indirect_load directly.
+  if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
+    if (compileOnA5Flag && ptrOffsetInfo.isUnstructured()) {
+      assert(!isa<RankedTensorType>(srcPtr.getType()) && "src must be ptr type");
+      Value mask = op.getMask();
+      Value other = op.getOther();
+      auto resultType = op.getType();
+      auto indirect = rewriter.create<triton::IndirectLoadOp>(
+          loc, resultType, srcPtr, ptrOffset, mask, other);
+      rewriter.replaceOp(op, indirect.getResult());
+      return success();
+    }
+  }
 
   Value iterArg = nullptr;
 
@@ -572,6 +586,8 @@ TritonToUnstructurePass::TritonToUnstructurePass(
     : TritonToUnstructureBase(options) {}
 
 void TritonToUnstructurePass::runOnOperation() {
+  compileOnA5Flag = this->compileOnA5;
+
   ModuleOp moduleOp = getOperation();
   MLIRContext *ctx = &getContext();
 

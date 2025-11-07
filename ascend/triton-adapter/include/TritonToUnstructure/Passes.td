@@ -9,6 +9,9 @@ def TritonToUnstructure : Pass<"triton-to-unstructure", "mlir::ModuleOp"> {
     let options = [
         Option<"forceScalarizeMode", "force-scalarize-mode", "bool", "false", 
            "Scalarize unstructured memory access even if structured dimensions are mixed.">,
+        Option<"compileOnA5", "compile-on-a5", 
+            "bool", /*default*/"false",
+            "compile on a5">
     ];
 }
 

@@ -108,7 +108,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             "--triton-linearize",
             "--discrete-mask-access-conversion",
             "--triton-to-annotation",
-            "--triton-to-unstructure",
+            f"--triton-to-unstructure=compile-on-a5={compile_on_a5}",
             "--triton-to-hivm",
             "--triton-to-hfusion",
             "--triton-to-llvm",

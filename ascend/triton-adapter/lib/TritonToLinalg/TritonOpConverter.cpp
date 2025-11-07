@@ -2036,4 +2036,48 @@ EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdapto
   return success();
 }
 
+
+LogicalResult
+IndirectLoadConverter::matchAndRewrite(triton::IndirectLoadOp op, OpAdaptor adaptor,
+                                 ConversionPatternRewriter &rewriter) const {
+  auto loc = op.getLoc();
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+
+  llvm::SmallString<128> funcName = funcNameBase;
+  int uniqueId = 0;
+  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
+    funcName = funcNameBase;
+    funcName += ("_" + std::to_string(uniqueId++));
+  }
+
+  auto src = adaptor.getSrc();
+  auto offsets = op.getOffsets();
+  auto mask = op.getMask();
+  auto other = op.getOther();
+  auto res = op.getResult();
+  auto resTy = res.getType();
+
+  // convert !tt.ptr<f32> to memref<?xf32>
+  auto srcTy = cast<MemRefType>(src.getType());
+  SmallVector<Type> inputTypes({srcTy, offsets.getType()});
+  if (mask) inputTypes.push_back(mask.getType());
+  if (other) inputTypes.push_back(other.getType());
+  auto libFnType = rewriter.getFunctionType(inputTypes, {resTy});
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+
+  rewriter.setInsertionPoint(op);
+  SmallVector<Value> inputVals({src, offsets});
+  if (mask)  inputVals.push_back(mask);
+  if (other) inputVals.push_back(other);
+  auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(), 
+                                              TypeRange({resTy}),
+                                              inputVals);
+  rewriter.replaceOp(op, callOp);
+  return success();
+}
+
 } // namespace TTOpConverters

@@ -35,6 +35,8 @@
 #define GEN_PASS_DEF_TRITONTOUNSTRUCTURE
 #include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
 
+extern bool compileOnA5Flag;
+
 namespace mlir {
 namespace triton {
 

@@ -55,6 +55,14 @@ void EmbeddingGatherOp::getEffects(
                        triton::GlobalMemory::get());
 }
 
+
+void IndirectLoadOp::getEffects(
+    SmallVectorImpl<SideEffects::EffectInstance<MemoryEffects::Effect>>
+        &effects) {
+  effects.emplace_back(MemoryEffects::Read::get(), &getSrcMutable(),
+                       triton::GlobalMemory::get());
+}
+
 } // namespace triton
 } // namespace mlir
 
