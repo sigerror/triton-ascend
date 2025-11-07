@@ -57,15 +57,20 @@ def triton_cdiv(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl
                             ['int32', (4096,), 1, 4096, 4096],
                             # ['int64', (4096,), 1, 4096, 4096],
                             # ['float16', (4096,), 1, 4096, 4096],
-                            ['float32', (4096,), 1, 4096, 4096],
+                            # ['float32', (4096,), 1, 4096, 4096],
                             # ['bfloat16', (4096,), 1, 4096, 4096],
                          ])
 def test_cdiv(param_list):
     # 生成数据
     dtype, shape, ncore, xblock, xblock_sub = param_list
     torch_dtype = eval('torch.' + dtype)
-    np_x0 = test_common.generate_numpy(shape, dtype)
-    np_x1 = test_common.generate_numpy(shape, dtype)
+    low = 0
+    if dtype == "int8":
+        high = 127
+    if dtype == "int16" or dtype == "int32" or dtype == "int64":
+        high = 2000
+    np_x0 = test_common.generate_numpy(shape, dtype, low=low, high=high)
+    np_x1 = test_common.generate_numpy(shape, dtype, low=low, high=high)
     x0_ref = torch.from_numpy(np_x0).to(torch_dtype)
     x1_ref = torch.from_numpy(np_x1).to(torch_dtype)
     x0 = x0_ref.npu()

@@ -688,7 +688,6 @@ from .triton_patch.language.math import (
     ceil,
     _check_dtype,
     fma,
-    cdiv,
 )
 from .triton_patch.language.semantic import (
     arange,
@@ -784,7 +783,6 @@ language.erf = erf
 language.tanh = tanh
 language.floor = floor
 language.ceil = ceil
-language.cdiv = cdiv
 language.core.dtype.to_ir = dtype_to_ir
 language.fma = fma
 language.math.umulhi = umulhi

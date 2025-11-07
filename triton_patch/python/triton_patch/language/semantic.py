@@ -371,30 +371,54 @@ def invert(input: tl.tensor, builder: tl.tensor) -> tl.tensor:
 
 
 def logical_and(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
+    dst_sca_ty = tl.dtype("int1")
+    dst_bits = dst_sca_ty.primitive_bitwidth
     if hasattr(input, 'was_bool_to_int8'):
         assert input.type.scalar.is_int8(), "input wat bool to int8. However, input.type is not int8."
         input = cast(input, tl.int1, builder)
     if not input.type.is_int1():
-        input = not_equal(input, 0, builder)
+        src_sca_ty = input.type.scalar
+        src_bits = src_sca_ty.primitive_bitwidth
+        if src_bits == dst_bits or src_sca_ty.is_ptr() or dst_sca_ty.is_ptr():
+            input = bitcast(input, tl.dtype("int1"), builder)
+        else:
+            input = not_equal(input, 0, builder)
     if hasattr(other, 'was_bool_to_int8'):
         assert other.type.scalar.is_int8(), "Other input wat bool to int8. However, other input.type is not int8."
         other = cast(other, tl.int1, builder)
     if not other.type.is_int1():
-        other = not_equal(other, 0, builder)
+        src_sca_ty = other.type.scalar
+        src_bits = src_sca_ty.primitive_bitwidth
+        if src_bits == dst_bits or src_sca_ty.is_ptr() or dst_sca_ty.is_ptr():
+            other = bitcast(other, tl.dtype("int1"), builder)
+        else:
+            other = not_equal(other, 0, builder)
     return and_(input, other, builder)
 
 
 def logical_or(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
+    dst_sca_ty = tl.dtype("int1")
+    dst_bits = dst_sca_ty.primitive_bitwidth
     if hasattr(input, 'was_bool_to_int8'):
         assert input.type.scalar.is_int8(), "input wat bool to int8. However, input.type is not int8."
         input = cast(input, tl.int1, builder)
     if not input.type.is_int1():
-        input = not_equal(input, 0, builder)
+        src_sca_ty = input.type.scalar
+        src_bits = src_sca_ty.primitive_bitwidth
+        if src_bits == dst_bits or src_sca_ty.is_ptr() or dst_sca_ty.is_ptr():
+            input = bitcast(input, tl.dtype("int1"), builder)
+        else:
+            input = not_equal(input, 0, builder)
     if hasattr(other, 'was_bool_to_int8'):
         assert other.type.scalar.is_int8(), "Other wat bool to int8. However, other.type is not int8."
         other = cast(other, tl.int1, builder)
     if not other.type.is_int1():
-        other = not_equal(other, 0, builder)
+        src_sca_ty = other.type.scalar
+        src_bits = src_sca_ty.primitive_bitwidth
+        if src_bits == dst_bits or src_sca_ty.is_ptr() or dst_sca_ty.is_ptr():
+            other = bitcast(other, tl.dtype("int1"), builder)
+        else:
+            other = not_equal(other, 0, builder)
     return or_(input, other, builder)
 
 
