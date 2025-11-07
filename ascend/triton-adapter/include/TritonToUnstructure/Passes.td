@@ -11,7 +11,10 @@ def TritonToUnstructure : Pass<"triton-to-unstructure", "mlir::ModuleOp"> {
            "Scalarize unstructured memory access even if structured dimensions are mixed.">,
         Option<"compileOnA5", "compile-on-a5", 
             "bool", /*default*/"false",
-            "compile on a5">
+            "compile on a5">,
+        Option<"forceSimtTemplate", "force_simt_template", 
+            "bool", /*default*/"false",
+            "force to use simt template">
     ];
 }
 

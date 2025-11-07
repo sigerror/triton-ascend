@@ -43,6 +43,8 @@ using namespace triton;
 
 #include "llvm/Support/Debug.h"
 
+bool forceSimtTemplateFlag = false;
+
 template <typename MemAccOpTy>
 Value UnstructuredMemAccessConverter<MemAccOpTy>::createExtractOp(
     Location loc, Value value, PatternRewriter &rewriter,
@@ -587,6 +589,14 @@ TritonToUnstructurePass::TritonToUnstructurePass(
 
 void TritonToUnstructurePass::runOnOperation() {
   compileOnA5Flag = this->compileOnA5;
+  forceSimtTemplateFlag = this->forceSimtTemplate;
+
+  LLVM_DEBUG({
+    auto &os = llvm::dbgs();
+    os << "TritonToUnstructurePass started with options:\n";
+    os << "  compileOnA5: " << compileOnA5Flag << "\n";
+    os << "  forceSimtTemplate: " << forceSimtTemplateFlag << "\n";
+  });
 
   ModuleOp moduleOp = getOperation();
   MLIRContext *ctx = &getContext();

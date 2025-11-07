@@ -36,6 +36,7 @@
 #include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
 
 extern bool compileOnA5Flag;
+extern bool forceSimtTemplateFlag;
 
 namespace mlir {
 namespace triton {

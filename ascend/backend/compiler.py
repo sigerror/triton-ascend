@@ -102,13 +102,15 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
 
         enable_nd2nz_on_vector = metadata["enable_nd2nz_on_vector"]
         compile_on_a5 = metadata["compile_on_a5"]
+        force_simt_template = metadata["force_simt_template"]
         cmd_list = [
             triton_adapter_opt_path,
             src_path,
             "--triton-linearize",
             "--discrete-mask-access-conversion",
             "--triton-to-annotation",
-            f"--triton-to-unstructure=compile-on-a5={compile_on_a5}",
+            f"--triton-to-unstructure=compile-on-a5={compile_on_a5} " \
+            f"force_simt_template={force_simt_template}",
             "--triton-to-hivm",
             "--triton-to-hfusion",
             "--triton-to-llvm",
@@ -548,6 +550,7 @@ class NPUOptions:
     reg_inc_consumer: int = 0
 
     compile_on_a5: bool = False
+    force_simt_template: bool = False
     enable_warp_specialization: bool = False
     enable_nd2nz_on_vector: bool = False
     enable_persistent: bool = False

@@ -325,8 +325,21 @@ class Config:
     :ivar bishengir_options: dict of options that pass to bishengir.
     """
 
-    def __init__(self, kwargs, num_warps=4, num_stages=2, num_ctas=1, num_buffers_warp_spec=0, num_consumer_groups=0,
-                 reg_dec_producer=0, reg_inc_consumer=0, maxnreg=None, pre_hook=None, **bishengir_options):
+    def __init__(
+        self,
+        kwargs,
+        num_warps=4,
+        num_stages=2,
+        num_ctas=1,
+        num_buffers_warp_spec=0,
+        num_consumer_groups=0,
+        reg_dec_producer=0,
+        reg_inc_consumer=0,
+        maxnreg=None,
+        pre_hook=None,
+        force_simt_template=False,
+        **bishengir_options
+    ):
         self.kwargs = kwargs
         self.num_warps = num_warps
         self.num_ctas = num_ctas
@@ -337,8 +350,9 @@ class Config:
         self.reg_inc_consumer = reg_inc_consumer
         self.maxnreg = maxnreg
         self.pre_hook = pre_hook
+        self.force_simt_template = force_simt_template
 
-                    
+
         # BiShengIR Options allowed for autotune
         self.multibuffer = bishengir_options.get("multibuffer", None) # Compiler Default True
         self.sync_solver = bishengir_options.get("sync_solver", None) # Compiler Default False
@@ -374,6 +388,7 @@ class Config:
                     ("set_workspace_multibuffer", self.set_workspace_multibuffer),
                     ("tile_mix_vector_loop", self.tile_mix_vector_loop),
                     ("tile_mix_cube_loop", self.tile_mix_cube_loop),
+                    ("force_simt_template", self.force_simt_template),
                 ) if v is not None
             }
         }
@@ -401,6 +416,7 @@ class Config:
         res.append(f"set_workspace_multibuffer: {self.set_workspace_multibuffer}")
         res.append(f"tile_mix_vector_loop: {self.tile_mix_vector_loop}")
         res.append(f"tile_mix_cube_loop: {self.tile_mix_cube_loop}")
+        res.append(f"force_simt_template: {self.force_simt_template}")
         return ", ".join(res)
 
 
