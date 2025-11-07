@@ -113,7 +113,7 @@ def accuracy_comparison(y_cal, y_ref):
 
 ```
 
-可以使用下面指令，运行参考示例代码：tutorials/13-accuracy-comparison.py
+可以使用下面指令，运行参考示例代码：tutorials/14-accuracy-comparison.py
 ```
-python triton-ascend/ascend/examples/tutorials/13-accuracy-comparison.py
+python triton-ascend/ascend/examples/tutorials/14-accuracy-comparison.py
 ```

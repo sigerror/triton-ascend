@@ -74,7 +74,7 @@ if __name__ == "__main__":
 # 注意：当split_params和tiling_params有一个参数不为空时即会自动触发进阶的autotune调优方法
 
 # key (Dict[str, str]): axis name: argument name组成的字典，argument 变化会触发候选配置的重新生成与评估
-#     axis name 属于集合 {'x','y','z','w','v','t','rx','ry','rz','rw','rv','rt}，前缀 'r' 表示规约轴
+#     axis name 属于集合 {'x','y','z','w','v','t','rx','ry','rz','rw','rv','rt'}，前缀 'r' 表示规约轴
 #     只有此参数中的轴名称在作为规约轴时才应该添加前缀 r
 # split_params (Dict[str, str]): axis name: argument name组成的字典, argument 是切分轴的可调参数, 例如 'XBLOCK'
 #     axis name必须在参数key的轴名称集合里。 请勿在轴名称前添加前缀 r

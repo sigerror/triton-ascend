@@ -236,7 +236,7 @@ def masked_fill(inp, mask, value):
         return out
     
     grid = lambda meta: (triton.cdiv(N, 4096),)  # 导致 coreDim 超限
-    masked_fill_kernel[grid](inp, expand_mask.to(torch.int), value, out, N, 4096)
+    masked_fill_kernel[grid](inp, mask.to(torch.int), value, out, N, 4096)
     return out
 ```
 

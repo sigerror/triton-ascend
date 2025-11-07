@@ -9,10 +9,10 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 
 | 里程碑 | 重要特性更新情况 | 状态 |
 |------|------|------|
-| 2025.05.20 | Triton Ascend开源，Gitcode代码仓Alive！ :tw-1f389: | ✅ |
+| 2025.05.20 | Triton Ascend开源，Gitcode代码仓Alive！ | ✅ |
 | 2025.06.30 | 支持85% Triton Python API，支持连续访存，覆盖基本使用场景需求 | ✅ |
-| 2025.08.15 | 完善Atomic类Triton Python API支持，完成Flaggems开源仓重点Triton算子适配，提供Matmul等简单算子高性能实现参考用例 | TODO |
-| 2025.09.30 | 完善Scan/Sort类Triton Python API，支持非连续访存，完成vLLM、sglang开源仓中重点Triton算子适配，提供FlashAttention等复杂融合算子高性能实现参考用例 | TODO |
+| 2025.08.15 | 完善Atomic类Triton Python API支持，完成Flaggems开源仓重点Triton算子适配，提供Matmul等简单算子高性能实现参考用例 | ✅ |
+| 2025.09.30 | 完善Scan/Sort类Triton Python API，支持非连续访存，完成vLLM、sglang开源仓中重点Triton算子适配，提供FlashAttention等复杂融合算子高性能实现参考用例 | ✅ |
 
 - #### 已支持平台
 
@@ -43,7 +43,7 @@ pip install -i https://test.pypi.org/simple/ "triton-ascend<3.2.0rc" --pre --no-
 目前Triton Ascend已经使能了85%以上Triton社区官方提供的Python API，详细的功能支持情况（包括数据类型支持度、使用约束等）请参考 [API 支持情况总览](./docs/sources/python-api/outline.md) 。
 
 - #### Triton算子开发指南（入门级）
-在昇腾平台上开发Trtion算子的方式与在GPU平台上基本相同。我们提供了下列算子的示例源码与配套说明来解释如何开发Triton算子的设备侧Kernel函数、主机侧调用代码以及算子功能验证代码。
+在昇腾平台上开发Triton算子的方式与在GPU平台上基本相同。我们提供了下列算子的示例源码与配套说明来解释如何开发Triton算子的设备侧Kernel函数、主机侧调用代码以及算子功能验证代码。
 此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/07-accuracy-comparison.md) 与 [参考样例Python文件](./ascend/examples/tutorials/14-accuracy-comparison.py) 。
 
 | 算子名称 | 开发指南 | 可执行Python文件 |

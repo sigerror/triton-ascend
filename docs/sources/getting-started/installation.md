@@ -93,7 +93,7 @@ apt install ccache # optional
 
 ```bash
 pip install ninja cmake wheel pybind11 # build-time dependencies
-pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml torch==2.6.0 torch-npu==2.6.0rc1 # torch dependencies
+pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml torch==2.6.0 torch-npu==2.6.0 # torch dependencies
 ```
 
 ## 基于LLVM构建
@@ -200,7 +200,7 @@ git clone https://gitcode.com/Ascend/triton-ascend.git && cd triton-ascend && gi
    python3 setup.py install
    ```
 
-- 注3：推荐GCC >= 9.4.0，如果GCC < 9.4，可能报错 “ld.lld: error: unable to find library -lstdc++fs”，说明链接器无法找到 stdc++fs 库。
+- 注3：推荐GCC >= 9.4.0，如果GCC < 9.4.0，可能报错 “ld.lld: error: unable to find library -lstdc++fs”，说明链接器无法找到 stdc++fs 库。
 该库用于支持 GCC 9 之前版本的文件系统特性。此时需要手动把 CMake 文件中相关代码片段的注释打开：
 
 - triton-ascend/CMakeLists.txt

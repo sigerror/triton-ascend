@@ -207,7 +207,7 @@ def _attn_fwd(Q, K, V, M, Out, acc, sm_scale,
                                                 )
         # stage 2: on-band
         if STAGE & 2:
-            # barrier makes it easier for compielr to schedule the
+            # barrier makes it easier for compiler to schedule the
             # two loops independently
             acc_ptr, l_i, m_i = _attn_fwd_inner(acc_ptr, l_i, m_i, q, K_block_ptr, V_block_ptr,  #
                                                 task_m_idx, sm_scale,  #

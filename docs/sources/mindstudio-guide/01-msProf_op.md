@@ -1,15 +1,15 @@
 # msProf op 性能调优
 
-msProf工具用于采集和分析运行在昇腾AI处理器上算子的关键性能指标，用户可根据输出的性能数据，快速定位算子的软、硬件性能瓶颈，提升算子性能的分析效率。已支持Triton算子性能数据采集、仿真流水图生成等，本节中，将展示算子性能调优工具在triton算子开发过程中的应用。
+msProf工具用于采集和分析运行在昇腾AI处理器上算子的关键性能指标，用户可根据输出的性能数据，快速定位算子的软、硬件性能瓶颈，提升算子性能的分析效率。已支持triton算子性能数据采集、仿真流水图生成等，本节中，将展示算子性能调优工具在triton算子开发过程中的应用。
 
 ## 1.环境准备
 
-工具使用前，需完成环境准备，详细参考[README.md](../getting-started/installation.md), 配置triton环境
+工具使用前，需完成环境准备，详细参考[installation.md](../getting-started/installation.md), 配置triton环境
 其他配置：
   - 编译选项指定  
     对于算子仿真场景，如需要增加-g信息获取代码行调用栈信息的情况，需要通过设置如下环境变量来使能算子代码热点图和代码调用栈功能
     export TRITON_DISABLE_LINE_INFO=0
-  - 仿真环境变量
+  - 仿真环境变量  
     进行算子仿真前，需设置指定算子仿真芯片类型。
 
 使用资料参考：[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha003/devaids/optool/atlasopdev_16_0082.html)
@@ -48,7 +48,6 @@ def triton_add(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.
     base1 = tl.arange(0, XBLOCK_SUB)
     loops1: tl.constexpr = (XBLOCK + XBLOCK_SUB - 1) // XBLOCK_SUB
     for loop1 in range(loops1):
-        x0_prime = offset + (loop1 * XBLOCK_SUB) + base1
         x0 = offset + (loop1 * XBLOCK_SUB) + base1
         tmp0 = tl.load(in_ptr0 + (x0), None)
         tmp1 = tl.load(in_ptr1 + (x0), None)
