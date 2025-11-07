@@ -1602,9 +1602,10 @@ void BlockDataParser::rewriteLoopOp(
       iterArgIdxMap.push_back(argCnt++);
     }
 
-    auto indexTensor =
+     auto indexTensor =
         isa<TensorType>(arg.getType()) &&
         isa<IntegerType>(cast<TensorType>(arg.getType()).getElementType()) &&
+        cast<IntegerType>(cast<TensorType>(arg.getType()).getElementType()).getWidth() != 1 &&
         isUsedWithCondition(op.getRegionIterArgs()[i], [](OpOperand *use) {
           auto *user = use->getOwner();
           return isa<triton::AddPtrOp>(user) ||
