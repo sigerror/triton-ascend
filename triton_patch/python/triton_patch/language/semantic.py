@@ -41,7 +41,7 @@ from triton.language.semantic import (
     _str_to_load_cache_modifier, 
     _str_to_eviction_policy,
     _str_to_padding_option, 
-    _load_block_pointer,
+    _canonicalize_boundary_check,
 )
 import triton.language.math as math
 import triton.language.core as core
@@ -495,6 +495,32 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
         ret.was_bool_to_int8 = True
 
     return ret
+
+
+def _load_block_pointer(ptr, mask, other, boundary_check, padding, cache, eviction, is_volatile, builder):
+    # Load by a block pointer: pointer_type<block_type<>>
+    # Block pointer can not have mask and other arguments
+    if mask is not None or other is not None:
+        raise ValueError("mask and other arguments cannot be specified for loading block pointers")
+
+    elt_ty = ptr.type.element_ty.element_ty
+    assert elt_ty != tl.int1, "`tl.int1` should be rewrited in `tl.make_block_ptr`"
+    if elt_ty.is_int() and padding == ir.PADDING_OPTION.PAD_NAN:
+        raise ValueError("Padding option `nan` is not supported for integer block pointers")
+
+    # `dst_ty` is de-referenced type of the pointer type
+    dst_ty = ptr.type.element_ty
+
+    # Check `boundary_check` argument
+    boundary_check = _canonicalize_boundary_check(boundary_check, dst_ty.get_block_shapes())
+
+    if boundary_check and padding is None:
+        padding = ir.PADDING_OPTION.PAD_ZERO
+
+    # Build IR
+    return tl.tensor(
+        builder.create_tensor_pointer_load(ptr.handle, boundary_check, padding, cache, eviction, is_volatile), dst_ty)
+
 
 def load(ptr: tl.tensor, mask: Optional[tl.tensor], other: Optional[tl.tensor], boundary_check: Tuple,
          padding_option: str, cache_modifier: str, eviction_policy: str, is_volatile: bool, care_padding: bool,
