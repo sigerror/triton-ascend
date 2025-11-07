@@ -177,10 +177,93 @@ def round(arg0, _builder=None):
 
 @core.builtin
 @math._check_dtype(dtypes=["bf16", "fp16", "fp32"])
+@math._add_math_1arg_docstr("acos")
+def acos(arg0: core.tensor, _builder: ir.builder):
+    pi = 3.1415926536
+    pi_half = 1.5707963268
+    sqrt2 = 1.4142135624
+    eps = 1e-8
+
+    # |x| < 0.5, acos(x) = pi/2 - [x + x*x²*(0.1666667 + x²*(0.075 + x²*(0.0446429 + 0.0303810*x²))]
+    arg0 = semantic.to_tensor(arg0, _builder)
+    abs_x = math.abs(arg0, _builder=_builder)
+    dtype = arg0.dtype
+    arg0_2 = semantic.mul(arg0, arg0, True, _builder)
+    arg0_4 = semantic.mul(arg0_2, arg0_2, True, _builder)
+    arg0_6 = semantic.mul(arg0_4, arg0_2, True, _builder)
+    arg0_8 = semantic.mul(arg0_6, arg0_2, True, _builder)
+    arg0_10 = semantic.mul(arg0_8, arg0_2, True, _builder)
+    poly = semantic.add(1.0, semantic.mul(0.166667, arg0_2, True, _builder), True, _builder)
+    poly = semantic.add(poly, semantic.mul(0.075, arg0_4, True, _builder), True, _builder)
+    poly = semantic.add(poly, semantic.mul(0.044643, arg0_6, True, _builder), True, _builder)
+    poly = semantic.add(poly, semantic.mul(0.030380, arg0_8, True, _builder), True, _builder)
+    poly = semantic.add(poly, semantic.mul(0.022372, arg0_10, True, _builder), True, _builder)
+    acos_center = semantic.sub(pi_half, semantic.mul(arg0, poly, True, _builder), True, _builder)
+
+    # 0.5<|x|<0.9, acos(x) = 2*arctan(t), t=sqrt((1-abs_x)/(1+abs_x))
+    numerator_mid = semantic.sub(1.0, abs_x, True, _builder)
+    denom_mid = semantic.add(1.0, abs_x, True, _builder)
+    div_mid = semantic.truediv(numerator_mid, denom_mid,  _builder) 
+    t_mid = math.sqrt(div_mid, _builder=_builder)
+    t2_mid = semantic.mul(t_mid, t_mid, True, _builder)  
+    t4_mid = semantic.mul(t2_mid, t2_mid, True, _builder) 
+    t6_mid = semantic.mul(t4_mid, t2_mid, True, _builder) 
+
+    # 1 + t2*(-0.3333310 + t2*(0.1999341 + t2*(-0.1420890 + t2*0.1065976)))
+    poly_mid1 = semantic.mul(0.1065976, t2_mid, True, _builder)
+    poly_mid2 = semantic.add(-0.1420890, poly_mid1, True, _builder)
+    poly_mid3 = semantic.mul(poly_mid2, t2_mid, True, _builder)
+    poly_mid4 = semantic.add(0.1999341, poly_mid3, True, _builder)
+    poly_mid5 = semantic.mul(poly_mid4, t2_mid, True, _builder)
+    poly_mid6 = semantic.add(-0.3333310, poly_mid5, True, _builder)
+    poly_mid = semantic.add(1.0, semantic.mul(poly_mid6, t2_mid, True, _builder), True, _builder)
+    arctan_t = semantic.mul(t_mid, poly_mid, True, _builder)
+    acos_mid = semantic.mul(2.0, arctan_t, True, _builder)
+    is_neg_mid = semantic.less_than(arg0, 0.0, _builder)
+    acos_mid_signed = semantic.where(is_neg_mid, semantic.sub(pi, acos_mid, True, _builder), acos_mid, _builder)
+
+    is_center = semantic.less_than(abs_x, 0.5,  _builder)
+    res_mid_boundary = semantic.where(is_center, acos_center, acos_mid_signed, _builder)
+    return res_mid_boundary
+
+@core.builtin
+@math._check_dtype(dtypes=["bf16", "fp16", "fp32"])
+@math._add_math_1arg_docstr("sinh")
+def sinh(arg0: core.tensor, _builder: ir.builder):
+    arg0 = semantic.to_tensor(arg0, _builder)
+    exp0 = core.tensor(_builder.create_exp(arg0.handle), arg0.type)
+    exp1 = semantic.truediv(1.0, exp0, _builder)
+    tmp = semantic.sub(exp0, exp1, True, _builder)
+    ret = semantic.truediv(tmp, 2.0, _builder)
+    return ret
+
+@core.builtin
+@math._check_dtype(dtypes=["bf16", "fp16", "fp32"])
+@math._add_math_1arg_docstr("cosh")
+def cosh(arg0: core.tensor, _builder: ir.builder):
+    arg0 = semantic.to_tensor(arg0, _builder)
+    exp0 = core.tensor(_builder.create_exp(arg0.handle), arg0.type)
+    exp1 = semantic.truediv(1.0, exp0, _builder)
+    tmp = semantic.add(exp0, exp1, True, _builder)
+    ret = semantic.truediv(tmp, 2.0, _builder)
+    return ret
+
+@core.builtin
+@math._check_dtype(dtypes=["bf16", "fp16", "fp32"])
 @math._add_math_1arg_docstr("acosh")
 def acosh(arg0: core.tensor, _builder: ir.builder):
     arg0 = semantic.to_tensor(arg0, _builder)
     tmp = semantic.sub(semantic.mul(arg0, arg0, True, _builder), 1.0, True, _builder)
+    sqrt_res = core.tensor(_builder.create_sqrt(tmp.handle), tmp.type)
+    sum_res = semantic.add(arg0, sqrt_res, True, _builder)
+    return core.tensor(_builder.create_log(sum_res.handle), sum_res.type)
+
+@core.builtin
+@math._check_dtype(dtypes=["bf16", "fp16", "fp32"])
+@math._add_math_1arg_docstr("asinh")
+def asinh(arg0: core.tensor, _builder: ir.builder):
+    arg0 = semantic.to_tensor(arg0, _builder)
+    tmp = semantic.add(semantic.mul(arg0, arg0, True, _builder), 1.0, True, _builder)
     sqrt_res = core.tensor(_builder.create_sqrt(tmp.handle), tmp.type)
     sum_res = semantic.add(arg0, sqrt_res, True, _builder)
     return core.tensor(_builder.create_log(sum_res.handle), sum_res.type)
