@@ -20,6 +20,7 @@
 
 from triton.language import core, math, semantic
 from triton._C.libtriton import ir
+from math import pi as math_pi
 
 @core.extern
 def reciprocal(arg0, _builder=None):
@@ -444,3 +445,245 @@ def cyl_bessel_i0(arg0: core.tensor, _builder: ir.builder):
     cond = semantic.less_equal(abs_x, 8.0, _builder)
     res = semantic.where(cond, res_a, res_b, _builder)
     return res
+
+
+@core.extern
+@math._check_dtype(dtypes=["fp16", "fp32"])
+def signbit(arg0, _builder=None):
+    arg0_scalar_ty = arg0.type.scalar
+    if arg0_scalar_ty == core.float32:
+        int_ty = core.int32
+    else: # arg0 type: float16 / bfloat16
+        int_ty = core.int16
+    
+    arg0 = semantic.to_tensor(arg0, _builder)
+    int_tensor = semantic.bitcast(arg0, int_ty, _builder)
+    if int_ty == core.int32:
+        shift = 31
+    elif int_ty == core.int16:
+        shift = 15
+    
+    shift = semantic.full(arg0.shape, shift, int_ty, _builder)
+    sign_bit_tensor = semantic.lshr(int_tensor, shift, _builder)
+    sign_bit_tensor = semantic.and_(
+        sign_bit_tensor, semantic.full(arg0.shape, 1, int_ty, _builder), _builder)
+    return semantic.equal(sign_bit_tensor, 1, _builder)
+
+
+# Note:
+# For inputs x very close to ±1 (criterion: 1 - |x| < 1.1e-4), erfinv(x) → ±∞ and the 
+# inverse error function becomes extremely sensitive to tiny changes in x. The asymptotic 
+# behavior includes terms like sqrt(-ln(1-|x|)), so tiny relative changes in (1-|x|) map 
+# to large absolute changes in erfinv, leading to numerical instability and loss of precision,
+# resulting in deviations from the reference results. 
+@core.extern
+@math._check_dtype(dtypes=["fp32"])
+def erfinv(arg0, _builder=None):
+    arg0_scalar_ty = arg0.type.scalar
+    arg0 = semantic.to_tensor(arg0, _builder)
+
+    inv_sqrt_pi_times_2 = semantic.full(
+        arg0.shape, 1.128379167, arg0_scalar_ty, _builder).handle  # 2 / sqrt(pi)
+    coeff_low_numerator = [-0.140543331, 0.914624893, -1.645349621, 0.886226899]
+    coeff_low_denominator = [0.012229801, -0.329097515, 1.442710462, -2.118377725, 1.0]
+    coeff_high_numerator = [1.641345311, 3.429567803, -1.624906493, -1.970840454]
+    coeff_high_denominator = [1.6370678, 3.5438892, 1.0]
+
+    # low cal
+    arg0_squared = _builder.create_fmul(arg0.handle, arg0.handle)
+    numerator_low_range = semantic.full(
+        arg0.shape, coeff_low_numerator[0], arg0_scalar_ty, _builder).handle
+    for i in range(1, len(coeff_low_numerator)):
+        numerator_low_range = _builder.create_fma(numerator_low_range, arg0_squared, 
+            semantic.full(arg0.shape, coeff_low_numerator[i], arg0_scalar_ty, _builder).handle)
+
+    denominator_low_range = semantic.full(
+        arg0.shape, coeff_low_denominator[0], arg0_scalar_ty, _builder).handle
+    for i in range(1, len(coeff_low_denominator)):
+        denominator_low_range = _builder.create_fma(
+            denominator_low_range, arg0_squared, semantic.full(
+                arg0.shape, coeff_low_denominator[i], arg0_scalar_ty, _builder).handle)
+    
+    low_res = _builder.create_fmul(arg0.handle, _builder.create_fdiv(numerator_low_range, denominator_low_range))
+
+    # high cal
+    arg0_erf_trans = _builder.create_sqrt(  # (log2-log(1-|arg0|))^1/2
+        _builder.create_fmul(
+            semantic.full(arg0.shape, -1, arg0_scalar_ty, _builder).handle,
+            _builder.create_log(
+                _builder.create_fdiv(
+                    _builder.create_fsub(
+                        semantic.full(arg0.shape, 1, arg0_scalar_ty, _builder).handle,
+                        _builder.create_fabs(arg0.handle)
+                    ),
+                    semantic.full(arg0.shape, 2, arg0_scalar_ty, _builder).handle
+                )
+            )
+        )
+    )
+    numerator_high_range = semantic.full(arg0.shape, coeff_high_numerator[0], arg0_scalar_ty, _builder).handle
+    for i in range(1, len(coeff_high_numerator)):
+        numerator_high_range = _builder.create_fma(
+            numerator_high_range, arg0_erf_trans, semantic.full(
+                arg0.shape, coeff_high_numerator[i], arg0_scalar_ty, _builder).handle)
+    
+    denominator_high_range = semantic.full(arg0.shape, coeff_high_denominator[0], arg0_scalar_ty, _builder).handle
+    for i in range(1, len(coeff_high_denominator)):
+        denominator_high_range = _builder.create_fma(
+            denominator_high_range, arg0_erf_trans, semantic.full(
+                arg0.shape, coeff_high_denominator[i], arg0_scalar_ty, _builder).handle)
+        
+    high_res = _builder.create_fdiv(numerator_high_range, denominator_high_range)
+    high_res = semantic.mul(
+        semantic.where(
+            signbit(arg0, _builder=_builder),
+            semantic.full(arg0.shape, -1, arg0_scalar_ty, _builder),
+            semantic.full(arg0.shape, 1, arg0_scalar_ty, _builder),
+            _builder),
+        core.tensor(high_res, arg0.type), True, _builder
+    ).handle
+
+    for i in range(2):
+        low_res = _builder.create_fsub(
+            low_res, _builder.create_fdiv(
+                _builder.create_fsub(
+                    _builder.create_erf(low_res), arg0.handle
+                ),
+                _builder.create_fmul(
+                    inv_sqrt_pi_times_2, _builder.create_exp(
+                        _builder.create_fmul(
+                            semantic.full(arg0.shape, -1, arg0_scalar_ty, _builder).handle,
+                            _builder.create_fmul(low_res, low_res)
+                        )
+                    )
+                )                               
+            )
+        )
+
+        high_res = _builder.create_fsub(
+            high_res, _builder.create_fdiv(
+                _builder.create_fsub(
+                    _builder.create_erf(high_res), arg0.handle
+                ),
+                _builder.create_fmul(
+                    inv_sqrt_pi_times_2, _builder.create_exp(
+                        _builder.create_fmul(
+                            semantic.full(arg0.shape, -1, arg0_scalar_ty, _builder).handle,
+                            _builder.create_fmul(high_res, high_res)
+                        )
+                    )
+                )
+            )
+        )
+    
+    arg0_abs = core.tensor(_builder.create_fabs(arg0.handle), arg0.type)
+    # Check if |arg0| > 1
+    arg0_over = semantic.greater_than(
+        arg0_abs, semantic.full(arg0.shape, 1, arg0_scalar_ty, _builder), _builder)
+    nan_tensor = semantic.full(arg0.shape, float("nan"), arg0_scalar_ty, _builder)
+    # Check if |arg0| = 1
+    arg0_equal1 = semantic.equal(
+        arg0_abs, semantic.full(arg0.shape, 1, arg0_scalar_ty, _builder),_builder
+    )
+    pos_inf_tensor = semantic.full(arg0.shape, float("inf"), arg0_scalar_ty, _builder)
+    neg_inf_tensor = semantic.full(arg0.shape, float("-inf"), arg0_scalar_ty, _builder)
+    inf_res = semantic.where(
+        signbit(arg0, _builder=_builder), neg_inf_tensor, pos_inf_tensor, _builder
+    )
+    # Check if |arg0| >= 0.7
+    arg0_high = semantic.greater_equal(
+        arg0_abs, semantic.full(arg0.shape, 0.7, arg0_scalar_ty, _builder), _builder
+    )
+
+    return semantic.where(
+        arg0_equal1, inf_res, semantic.where(
+            arg0_over, nan_tensor, semantic.where(
+                arg0_high, core.tensor(high_res, arg0.type), core.tensor(low_res, arg0.type), _builder
+            ), _builder
+        ), _builder
+    )
+
+
+# Note: 
+# The gamma function is implemented using the reflection formula for negative inputs:
+# gamma(x) = pi / (sin(pi * x) * gamma(1 - x)). For inputs x close to a negative integer 
+# (e.g., -1, -2, ... ), criterion: x = -1 ± 0.66e-3, x = -2 ± 1.30e-3, x = -3 ± 2.30e-3, ...
+# The denominator sin(pi * x) approaches zero, leading to numerical instability and loss 
+# of precision. Resulting in deviations from the reference results;
+# Similar issues occur near other negative integers.
+@core.extern
+@math._check_dtype(dtypes=["fp32"])
+def gamma(arg0, _builder=None):
+    arg0_scalar_ty = arg0.type.scalar
+    arg0 = semantic.to_tensor(arg0, _builder)
+    pi_tensor = semantic.full(arg0.shape, math_pi, arg0_scalar_ty, _builder).handle
+    sqrt_2pi_tensor = semantic.full(arg0.shape, 2.506628275, arg0_scalar_ty, _builder).handle  # sqrt(2*pi)
+    lanczos_coeff = [
+        676.5203681218851,
+        -1259.1392167224028,
+        771.32342877765313,
+        -176.61502916214059,
+        12.507343278686905,
+        -0.13857109526572012,
+        9.9843695780195716e-6,
+        1.5056327351493116e-7
+    ]
+    condition = semantic.less_than(arg0, 0.5, _builder)  # 1 - x = x -> x = 0.5
+    reflect_arg0 = semantic.where(
+        condition, semantic.sub(1, arg0, True, _builder), arg0, _builder
+    )
+    
+    x = semantic.full(arg0.shape, 0.99999999999980993, arg0_scalar_ty, _builder)
+    for i in range(0, len(lanczos_coeff)):
+        x = semantic.add(
+            x, semantic.fdiv(
+                semantic.full(arg0.shape, lanczos_coeff[i], arg0_scalar_ty, _builder),
+                semantic.add(reflect_arg0, i, True, _builder), True, _builder
+            ), True, _builder
+        )
+    t = semantic.add(reflect_arg0, 6.5, True, _builder)
+
+    gamma_res = _builder.create_fmul(
+        _builder.create_fmul(
+            sqrt_2pi_tensor, pow(
+                t, semantic.sub(reflect_arg0, 0.5, True, _builder), _builder=_builder
+            ).handle
+        ),
+        _builder.create_fmul(            
+            x.handle, _builder.create_exp(
+                _builder.create_fmul(
+                    t.handle, semantic.full(arg0.shape, -1, arg0_scalar_ty, _builder).handle
+                )
+            )
+        )
+    )
+
+    gamma_res_reflect = _builder.create_fdiv(
+        _builder.create_fdiv(pi_tensor, gamma_res), 
+        _builder.create_sin(_builder.create_fmul(pi_tensor, arg0.handle))
+    )
+
+    is_neg_int = semantic.logical_and(
+        semantic.equal(math.floor(arg0, _builder=_builder), arg0, _builder),
+        semantic.less_than(arg0, 0, _builder), _builder
+    )
+    inf_tensor = semantic.full(arg0.shape, float('inf'), arg0_scalar_ty, _builder)
+    gamma_res_reflect = semantic.where(
+        is_neg_int, inf_tensor, core.tensor(gamma_res_reflect, arg0.type), _builder)
+    return semantic.where(condition, gamma_res_reflect, core.tensor(gamma_res, arg0.type), _builder)
+
+
+# Note: 
+# The lgamma function computes the natural logarithm of the absolute value of the gamma function.
+# Since it uses gamma(x) internally, it inherits the same numerical instability near negative integers:
+# For inputs x close to a negative integer (e.g., -1, -2, ...), criterion: x = -1 ± 5.75e-5, 
+# x = -2 ± 1.39e-6, ..., the computation involves log(|pi / (sin(pi * x) * gamma(1 - x))|).
+# As sin(pi * x) approaches zero near negative integers, this leads to numerical instability and loss
+# of precision, resulting in deviations from the reference results.
+# Similar issues occur near other negative integers.
+@core.extern
+@math._check_dtype(dtypes=["fp32"])
+def lgamma(arg0, _builder=None):
+    arg0 = semantic.to_tensor(arg0, _builder)
+    gamma_res = _builder.create_fabs(gamma(arg0, _builder=_builder).handle)
+    return core.tensor(_builder.create_log(gamma_res), arg0.type)
