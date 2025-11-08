@@ -772,12 +772,24 @@ LogicalResult PtrState::addState(const PtrState &lhsState,
       size_t dimId = rhsState.stateInfo[i].dim;
       if (dimIndex.count(dimId)) {
         size_t lhsId = dimIndex[dimId];
-        auto newOffset = addOFRs(lhsState.stateInfo[lhsId].offset, rhsState.stateInfo[i].offset, 
+        auto newOffset = addOFRs(lhsState.stateInfo[lhsId].offset, rhsState.stateInfo[i].offset,
                                                 loc, builder);
         auto newStride = addOFRs(lhsState.stateInfo[lhsId].stride, rhsState.stateInfo[i].stride,
                                                     loc, builder);
-        StateInfo newStateInfo(newOffset, newStride, lhsState.stateInfo[lhsId].shape, 
+        StateInfo newStateInfo(newOffset, newStride, lhsState.stateInfo[lhsId].shape,
                                 lhsState.stateInfo[lhsId].mask, lhsState.stateInfo[lhsId].dim);
+        // Synchronize dimOffset when adding two StateInfo
+        // dimOffset should reflect the same addition operation as offset
+        if (lhsState.stateInfo[lhsId].dimOffset && rhsState.stateInfo[i].dimOffset) {
+          newStateInfo.dimOffset = addOFRs(lhsState.stateInfo[lhsId].dimOffset,
+                                           rhsState.stateInfo[i].dimOffset, loc, builder);
+        } else if (lhsState.stateInfo[lhsId].dimOffset) {
+          newStateInfo.dimOffset = addOFRs(lhsState.stateInfo[lhsId].dimOffset,
+                                           rhsState.stateInfo[i].offset, loc, builder);
+        } else if (rhsState.stateInfo[i].dimOffset) {
+          newStateInfo.dimOffset = addOFRs(lhsState.stateInfo[lhsId].offset,
+                                           rhsState.stateInfo[i].dimOffset, loc, builder);
+        }
         this->stateInfo.push_back(newStateInfo);
         dimIndex.erase(dimId);
       } else {
@@ -1713,6 +1725,18 @@ LogicalResult PtrAnalysis::rewriteAddptrOp(triton::AddPtrOp op) {
 
   knownPtrs[op.getResult()] = state;
 
+  if (state.scalar && state.stateInfo.empty()) {
+    PtrState newState;
+    newState.source = op.getResult();  
+    newState.scalar = Value();
+    newState.sizes = state.sizes;
+    newState.memAccTy = state.memAccTy;
+    newState.ptrIsTensor = state.ptrIsTensor;
+
+    knownPtrs[op.getResult()] = newState;
+    return success();
+  }
+
   if(state.sizes.empty() && !(state.source && state.scalar)){
     op->emitError("After addptr, state is empty or missing source/scalar.");
     return failure();
@@ -1825,10 +1849,13 @@ PtrState PtrAnalysis::reconcileLoopPtrState(
   PtrState newState = state;
   int cnt = iterArgIndex + 1;
   if (newState.getRank() == 0) {
-    assert(newState.scalar);
-    // for scalar pointers, the scalar contains the offset and is the only
-    // relevant newState that could be updated by the loop.
-    newState.scalar = getReplacementVal(forOp, cnt);
+    if (newState.scalar) {
+      // for scalar pointers, the scalar contains the offset and is the only
+      // relevant newState that could be updated by the loop.
+      newState.scalar = getReplacementVal(forOp, cnt);
+    }
+    // else: pure pointer with all offsets materialized in source (from immediate
+    // scalar materialization), no update needed
   } else {
     for (auto &info : newState.stateInfo) {
       info.offset = getReplacementVal(forOp, cnt++);
@@ -1923,10 +1950,13 @@ PtrState PtrAnalysis::reconcileWhilePtrState(
     llvm::function_ref<Value(scf::WhileOp op, size_t)> getReplacementVal) {
   PtrState newState = state;
   int cnt = argIndex + 1;
-  
+
   if (newState.getRank() == 0) {
-    assert(newState.scalar && "Scalar pointer must have scalar field");
-    newState.scalar = getReplacementVal(whileOp, cnt);
+    if (newState.scalar) {
+      newState.scalar = getReplacementVal(whileOp, cnt);
+    }
+    // else: pure pointer with all offsets materialized in source (from immediate
+    // scalar materialization), no update needed
   } else {
     for (auto &info : newState.stateInfo) {
       info.offset = getReplacementVal(whileOp, cnt++);
@@ -2135,9 +2165,8 @@ PtrAnalysis::rewriteGetStructuredStateOp(tts::GetStructuredStateOp op) {
     if (state.scalar) {
       replacements.push_back(state.scalar);
     } else {
-      // This operand is a pointer directly from the kernel arguments.
-      // Use offset 0.
-      assert(!tritonValue.getDefiningOp());
+      // Pure pointer with all offsets materialized in source (from immediate
+      // scalar materialization or kernel arguments). Use offset 0.
       replacements.push_back(builder.create<arith::ConstantOp>(
           op.getLoc(), builder.getIndexAttr(0)));
     }
@@ -2261,7 +2290,14 @@ PtrAnalysis::rewriteYieldOp(scf::YieldOp op,
     }
 
     if (state.getRank() == 0) {
-      operands.push_back(state.scalar);
+      if (state.scalar) {
+        operands.push_back(state.scalar);
+      } else {
+        // Pure pointer with all offsets materialized in source, use offset 0
+        auto constOp = builder.create<arith::ConstantOp>(
+            op.getLoc(), builder.getIndexAttr(0));
+        operands.push_back(constOp.getResult());
+      }
     }
   }
 

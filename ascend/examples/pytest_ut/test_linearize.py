@@ -147,3 +147,116 @@ def test_linearize(Z,Y,X, dtype, sigtype) :
     r1 = foo(a, d ,shape )
     test_common.validate_cmp(sigtype, r1, r)
     print(f"data validation passed")
+
+
+# Test linearize offset handling with expert routing pattern
+@triton.jit
+def linearize_offset_kernel(
+    bias_ptr,
+    output_ptr,
+    experts_ids_ptr,
+    N: tl.constexpr,
+    EM: tl.constexpr,
+    stride_bias_e,
+    stride_bias_n,
+    BLOCK_SIZE_M: tl.constexpr,
+    BLOCK_SIZE_N: tl.constexpr,
+    GROUP_SIZE_M: tl.constexpr,
+):
+    pid = tl.program_id(axis=0)
+    num_pid_m = tl.cdiv(EM, BLOCK_SIZE_M)
+    num_pid_n = tl.cdiv(N, BLOCK_SIZE_N)
+    num_pid_in_group = GROUP_SIZE_M * num_pid_n
+    group_id = pid // num_pid_in_group
+    first_pid_m = group_id * GROUP_SIZE_M
+    group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
+    pid_m = first_pid_m + ((pid % num_pid_in_group) % group_size_m)
+    pid_n = (pid % num_pid_in_group) // group_size_m
+
+    off_experts = tl.load(experts_ids_ptr + pid_m).to(tl.int64)
+    offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N).to(tl.int64)) % N
+
+    if bias_ptr is not None:
+        bias = tl.load(
+            bias_ptr + off_experts * stride_bias_e + offs_bn[None, :] * stride_bias_n
+        )
+        tl.store(output_ptr + pid*16 + tl.arange(0, 16), bias.reshape(16))
+
+
+def torch_linearize_offset(bias_ptr, experts_ids_ptr, N, EM, stride_bias_e, stride_bias_n, 
+                           BLOCK_SIZE_M, BLOCK_SIZE_N, GROUP_SIZE_M):
+    """PyTorch reference implementation for offset handling"""
+    output = torch.empty([16, 16], dtype=bias_ptr.dtype, device=bias_ptr.device)
+    
+    num_pid_m = (EM + BLOCK_SIZE_M - 1) // BLOCK_SIZE_M
+    num_pid_n = (N + BLOCK_SIZE_N - 1) // BLOCK_SIZE_N
+    num_pid_in_group = GROUP_SIZE_M * num_pid_n
+    
+    for pid in range(16):
+        group_id = pid // num_pid_in_group
+        first_pid_m = group_id * GROUP_SIZE_M
+        group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M)
+        pid_m = first_pid_m + ((pid % num_pid_in_group) % group_size_m)
+        pid_n = (pid % num_pid_in_group) // group_size_m
+        
+        off_experts = experts_ids_ptr[pid_m].to(torch.int64).item()
+        offs_bn = torch.arange(pid_n * BLOCK_SIZE_N, 
+                               (pid_n + 1) * BLOCK_SIZE_N, 
+                               dtype=torch.int64, device=bias_ptr.device) % N
+        
+        bias = bias_ptr[off_experts, offs_bn]
+        output[pid] = bias
+    
+    return output
+
+
+@pytest.mark.parametrize('dtype,sigtype', [(torch.float32, 'float32')])
+def test_linearize_offset_handling(dtype, sigtype):
+    """
+    Test linearization's handling of complex offset patterns.
+    This test simulates expert routing scenarios where offsets are computed
+    dynamically based on expert IDs, validating correct pointer arithmetic
+    and linearization in the compiler.
+    """
+    print(f"Testing linearize offset handling with dtype={sigtype}")
+    
+    # Setup test data
+    num_experts = 4
+    hidden_dim = 64
+    bias_ptr = torch.arange(0, num_experts * hidden_dim, dtype=dtype).npu().reshape(num_experts, hidden_dim)
+    output_ptr = torch.empty([16, 16], dtype=dtype).npu()
+    experts_ids_ptr = torch.tensor([1, 2, 3, 1], dtype=torch.int32).npu()
+    
+    # Kernel parameters
+    N = 64
+    EM = 64
+    stride_bias_e = 64
+    stride_bias_n = 1
+    BLOCK_SIZE_M = 16
+    BLOCK_SIZE_N = 16
+    GROUP_SIZE_M = 4
+    
+    # Run triton kernel
+    linearize_offset_kernel[(16,)](
+        bias_ptr=bias_ptr,
+        output_ptr=output_ptr,
+        experts_ids_ptr=experts_ids_ptr,
+        N=N,
+        EM=EM,
+        stride_bias_e=stride_bias_e,
+        stride_bias_n=stride_bias_n,
+        BLOCK_SIZE_M=BLOCK_SIZE_M,
+        BLOCK_SIZE_N=BLOCK_SIZE_N,
+        GROUP_SIZE_M=GROUP_SIZE_M,
+    )
+    
+    # Compute reference result
+    expected = torch_linearize_offset(
+        bias_ptr, experts_ids_ptr, N, EM, 
+        stride_bias_e, stride_bias_n,
+        BLOCK_SIZE_M, BLOCK_SIZE_N, GROUP_SIZE_M
+    )
+    
+    # Validate results
+    test_common.validate_cmp(sigtype, expected, output_ptr)
+    print(f"Linearize offset handling test passed")
