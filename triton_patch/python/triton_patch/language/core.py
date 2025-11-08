@@ -529,7 +529,7 @@ def make_tensor_descriptor(
     return semantic.make_tensor_descriptor(base, shape, strides, block_shape, _builder)
 
 @builtin
-def embedding_gather(src: tensor, idx: tensor, bound, lstdim_blksiz, offsets, numels, _builder=None):
+def index_select(src: tensor, idx: tensor, bound, lstdim_blksiz, offsets, numels, _builder=None):
     """
     Embedding
     :src_ptr:

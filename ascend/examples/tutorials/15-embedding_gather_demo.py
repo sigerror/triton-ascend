@@ -85,7 +85,7 @@ def triton_unk_fused_embedding_eq_sum_where_zeros_like_0(
         # tmp10 = tl.load(in_ptr1 + (x1 + 16*tmp8), r2_mask & x1_mask & y0_mask)
         # 用下面这行替换上述6行 SIMT
         tmp8 = tl.reshape(tmp4, [Y0BLOCK_SUB, R1BLOCK_SUB])
-        tmp10 = tl.embedding_gather(in_ptr1, tmp8, EMBEDDING_SIZE, X2BLOCK_SUB, (y0_offset + (loop_y0 * Y0BLOCK_SUB), 0, 0), (y0_numel, r1_numel, x2_numel))
+        tmp10 = tl.index_select(in_ptr1, tmp8, EMBEDDING_SIZE, X2BLOCK_SUB, (y0_offset + (loop_y0 * Y0BLOCK_SUB), 0, 0), (y0_numel, r1_numel, x2_numel))
         tmp14 = tl.sum(tmp10, 1).reshape(Y0BLOCK_SUB, 1, X2BLOCK_SUB)
         tl.store(out_ptr0 + (x2 + 16*y0 ), tmp14, x2_mask & y0_mask)
 
