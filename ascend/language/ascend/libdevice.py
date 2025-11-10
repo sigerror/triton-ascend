@@ -813,8 +813,16 @@ def copysign(arg0: core.tensor, arg1: core.tensor, _builder: ir.builder):
     magnitude = core.tensor(_builder.create_fabs(x.handle), x.type)
     
     zero = semantic.full(y.shape, 0.0, y.type.scalar, _builder)
-    is_positive = semantic.greater_equal(y, zero, _builder)
+    one = semantic.full(y.shape, 1.0, y.type.scalar, _builder)
+    
+    is_zero = semantic.equal(y, zero, _builder)
+    reciprocal = math.fdiv(one, y, _builder=_builder)
+    is_negative_reciprocal = semantic.less_than(reciprocal, zero, _builder)
+    is_negative_zero = semantic.and_(is_zero, is_negative_reciprocal, _builder)
+    
+    is_negative_nonzero = semantic.less_than(y, zero, _builder)
+    is_negative = semantic.or_(is_negative_zero, is_negative_nonzero, _builder)
     
     neg_magnitude = semantic.mul(magnitude, semantic.full(magnitude.shape, -1.0, magnitude.type.scalar, _builder), True, _builder)
     
-    return semantic.where(is_positive, magnitude, neg_magnitude, _builder)
+    return semantic.where(is_negative, neg_magnitude, magnitude, _builder)

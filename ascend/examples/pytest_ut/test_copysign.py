@@ -67,6 +67,30 @@ def test_copysign(shape, dtype):
     x[0, 5] = 0.0
     y[0, 5] = 1.0 # The result should be 0.0
     
+    x[0, 6] = 3.14
+    y[0, 6] = 0.0   # The result should be 3.14
+
+    x[0, 7] = 3.14
+    y[0, 7] = -0.0  # The result should be -3.14
+
+    x[0, 8] = -3.14
+    y[0, 8] = 0.0   # The result should be 3.14
+
+    x[0, 9] = -3.14
+    y[0, 9] = -0.0  # The result should be -3.14
+
+    x[0, 10] = 0.0
+    y[0, 10] = 0.0   # The result should be 0.0
+
+    x[0, 11] = 0.0
+    y[0, 11] = -0.0  # The result should be -0.0
+
+    x[0, 12] = -0.0
+    y[0, 12] = 0.0   # The result should be 0.0
+
+    x[0, 13] = -0.0
+    y[0, 13] = -0.0  # The result should be -0.0
+    
     z = torch.empty_like(x)
     
     BLOCK_SIZE = 192
