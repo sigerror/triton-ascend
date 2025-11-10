@@ -260,3 +260,415 @@ def test_linearize_offset_handling(dtype, sigtype):
     # Validate results
     test_common.validate_cmp(sigtype, expected, output_ptr)
     print(f"Linearize offset handling test passed")
+
+
+def torch_expand_dims_and_add(buffer, cache, buffer_stride, BLOCK, NUMEL):
+    for i in range(buffer.shape[0]):
+        tmp = buffer[i, 0, :buffer_stride]
+        accumulator = torch.zeros(2, buffer_stride).npu()
+        accumulator += tmp[None, :]
+        cache[i, 0, :] = accumulator.reshape(buffer_stride * 2)
+
+
+@triton.jit
+def expand_dims_and_add(
+    buffer_ptr,
+    cache_ptr,
+    buffer_stride: tl.constexpr,
+    BLOCK: tl.constexpr,
+    NUMEL: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    buffer_offset = pid * buffer_stride
+    buffer_index = (buffer_offset + tl.arange(0, buffer_stride)) % NUMEL
+
+    cache_offset = pid * buffer_stride * 2
+    cache_index = cache_offset + tl.arange(0, buffer_stride * 2)
+
+    tmp = tl.load(buffer_ptr + buffer_index[None, :])
+    accumulator = tl.zeros((2, buffer_stride), dtype=tl.float32)
+    accumulator += tmp
+    tl.store(cache_ptr + cache_index, accumulator.reshape(buffer_stride * 2))
+
+
+cache_shapes = [
+    (5, 15),
+]
+
+
+@pytest.mark.parametrize("dtype, sigtype", types)
+@pytest.mark.parametrize("batch_size, buffer_len", cache_shapes)
+def test_expand_dims_and_add(batch_size, buffer_len, dtype, sigtype):
+    block = biggest_divisor(buffer_len)
+    cache_len = buffer_len * 2
+    buffer = test_common.generate_tensor(
+        shape=(batch_size, 1, buffer_len), dtype=sigtype
+    ).npu()
+    cache = torch.zeros(batch_size, 1, cache_len, dtype=dtype).npu()
+    cache_ref = torch.zeros(batch_size, 1, cache_len, dtype=dtype).npu()
+    numel = batch_size * buffer_len * 2
+    torch_expand_dims_and_add(buffer, cache_ref, buffer_len, block, numel)
+    expand_dims_and_add[block, cache_len](buffer, cache, buffer_len, block, numel)
+
+    test_common.validate_cmp(sigtype, cache, cache_ref)
+
+
+def torch_save_cache_to_buffer(
+    buffer,
+    cache1,
+    cache2,
+    buffer_stride,
+    cache_stride,
+    BLOCK
+):
+    idx = torch.arange(0, cache_stride)
+    mask = ((idx // BLOCK) % 2 == 0)
+    max_len = min(buffer_stride, mask.shape[0])
+    for i in range(buffer.shape[0]):
+        if i % 2 == 0:
+            tmp = cache1[i, 0, mask]
+            buffer[i, 0, :max_len] = tmp[:max_len]
+        else:
+            tmp = cache2[i, 0, mask]
+            buffer[i, 0, :max_len] = tmp[:max_len]
+
+
+def torch_save_cache_to_buffer_with_offset(
+    buffer,
+    cache1,
+    cache2,
+    buffer_stride,
+    cache_stride,
+    BLOCK
+):
+    idx = torch.arange(0, cache_stride)
+    mask = ((idx // BLOCK) % 2 == 0)
+    max_len = min(buffer_stride, mask.shape[0])
+    for i in range(buffer.shape[0]):
+        if i % 2 == 0:
+            tmp = cache1[i, 0, mask]
+            buffer[i, 0, :max_len] = tmp[:max_len]
+        else:
+            tmp = cache2[i, 0, ~mask]
+            buffer[i, 0, :max_len] = tmp[:max_len]
+
+
+def torch_rearrange_and_combine_two_buffer(
+    buffer1,
+    buffer2,
+    cache,
+    buffer_stride,
+    NUM_BLOCK,
+    BLOCK,
+):
+    for i in range(buffer1.shape[0]):
+        tmp1 = buffer1[i, 0, :]
+        tmp1 = tmp1.reshape(NUM_BLOCK, BLOCK)
+        tmp1 = tmp1.permute(1, 0)
+        tmp1 = tmp1.reshape(1, -1)
+
+        tmp2 = buffer2[i, 0, :]
+        tmp2 = tmp2.reshape(NUM_BLOCK, BLOCK)
+        tmp2 = tmp2.permute(1, 0)
+        tmp2 = tmp2.reshape(1, -1)
+
+        cache[i, 0, :buffer_stride] = tmp1
+        cache[i, 0, buffer_stride:] = tmp2
+
+
+def torch_save_cache_to_buffer_with_mask(
+    buffer,
+    cache1,
+    cache2,
+    mask_int,
+    buffer_stride,
+    cache_stride,
+    BLOCK,
+    MASK_NUM
+):
+    idx = torch.arange(0, cache_stride)
+    mask_idx = torch.arange(0, buffer_stride)
+    mask = ((idx // BLOCK) % 2 == 0)
+    max_len = min(buffer_stride, mask.shape[0])
+    for i in range(buffer.shape[0]):
+        if i % 2 == 0:
+            tmp = cache1[i, 0, :]
+            tmp[~(idx < MASK_NUM)] = 0
+            tmp = tmp[mask]
+            buffer[i, 0, :max_len] = tmp[:max_len]
+        else:
+            tmp = cache2[i, 0, mask]
+            tmp[~((mask_idx < MASK_NUM) & (mask_idx < mask_int[i]))] = 0
+            buffer[i, 0, :max_len] = tmp[:max_len]
+
+
+def torch_rearrange_cache_with_mask(
+    cache1,
+    cache2,
+    half_buffer_num,
+    buffer_len,
+    NUM_BLOCK,
+    BLOCK,
+):
+    buffer_num = half_buffer_num * 2
+    idx1 = torch.arange(0, half_buffer_num)
+    idx2 = torch.arange(0, buffer_len)
+    # all true
+    mask1 = idx1 < buffer_num
+    mask2 = idx2 < buffer_len
+
+    for i in range(cache1.shape[0]):
+        for j in range(2):
+            mask = (mask1[j] & mask2)
+            tmp1 = cache1[i, j, :]
+            tmp1[~mask] = 0
+            tmp1 = tmp1.reshape(NUM_BLOCK, BLOCK)
+            tmp1 = tmp1.permute(1, 0)
+            tmp1 = tmp1.reshape(1, -1)
+
+            tmp2 = cache1[i, j+half_buffer_num, :]
+            tmp2[~mask] = 0
+            tmp2 = tmp2.reshape(NUM_BLOCK, BLOCK)
+            tmp2 = tmp2.permute(1, 0)
+            tmp2 = tmp2.reshape(1, -1)
+
+            cache2[i, j, :] = -tmp1
+            cache2[i, j+half_buffer_num, :] = tmp2
+
+
+@triton.jit
+def save_cache_to_buffer(
+    buffer_ptr,
+    cache_ptr1,
+    cache_ptr2,
+    buffer_stride: tl.constexpr,
+    BLOCK: tl.constexpr
+):
+    pid_loc = tl.program_id(0)
+    buffer_offset = pid_loc * buffer_stride
+    buffer_index = buffer_offset + tl.arange(0, buffer_stride)
+
+    cache_offset = pid_loc * buffer_stride
+    cache_index = cache_offset + tl.arange(0, buffer_stride)
+    cache_index_0 = cache_index // BLOCK
+    cache_index_1 = cache_index % BLOCK
+
+    if pid_loc % 2 == 0:
+        tmp = tl.load(cache_ptr1 + (2*BLOCK*cache_index_0 + cache_index_1))
+        tl.store(buffer_ptr + buffer_index, tmp)
+    if pid_loc % 2 == 1:
+        tmp = tl.load(cache_ptr2 + (2*BLOCK*cache_index_0 + cache_index_1))
+        tl.store(buffer_ptr + buffer_index, tmp)
+
+
+@triton.jit
+def save_cache_to_buffer_with_offset(
+    buffer_ptr,
+    cache_ptr1,
+    cache_ptr2,
+    buffer_stride: tl.constexpr,
+    BLOCK: tl.constexpr
+):
+    pid_loc = tl.program_id(0)
+    buffer_offset = pid_loc * buffer_stride
+    buffer_index = buffer_offset + tl.arange(0, buffer_stride)
+
+    cache_offset = pid_loc * buffer_stride
+    cache_index = cache_offset + tl.arange(0, buffer_stride)
+    cache_index_0 = cache_index // BLOCK
+    cache_index_1 = cache_index % BLOCK
+
+    if pid_loc % 2 == 0:
+        tmp = tl.load(cache_ptr1 + (2*BLOCK*cache_index_0 + cache_index_1))
+        tl.store(buffer_ptr + buffer_index, tmp)
+    if pid_loc % 2 == 1:
+        tmp = tl.load(cache_ptr2 + BLOCK + (2*BLOCK*cache_index_0 + cache_index_1))
+        tl.store(buffer_ptr + buffer_index, tmp)   
+
+
+@triton.jit
+def rearrange_and_combine_two_buffer(
+    buffer_ptr1,
+    buffer_ptr2,
+    cache_ptr,
+    buffer_stride: tl.constexpr,
+    NUM_BLOCK: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    pid_loc = tl.program_id(0)
+    buffer_offset = pid_loc * buffer_stride
+    buffer_index = buffer_offset + tl.arange(0, buffer_stride)
+
+    tmp1 = tl.load(buffer_ptr1 + buffer_index)
+    tmp2 = tl.load(buffer_ptr2 + buffer_index)
+
+    x_offset = pid_loc * 2 * BLOCK * buffer_stride
+    x_index = x_offset + tl.arange(0, buffer_stride)
+
+    for i in range(2):
+        n_index = (x_index // BLOCK)
+        b_index = (x_index % BLOCK)
+
+        if i % 2 == 0:
+            tl.store(cache_ptr + NUM_BLOCK * b_index + n_index, tmp1)
+        if i % 2 == 1:
+            tl.store(cache_ptr + NUM_BLOCK * b_index + n_index, tmp2)
+
+        x_index = x_index + buffer_stride * BLOCK
+
+
+
+@triton.jit
+def save_cache_to_buffer_with_mask(
+    buffer_ptr,
+    cache_ptr1,
+    cache_ptr2,
+    mask_int_ptr,
+    buffer_stride: tl.constexpr,
+    BLOCK: tl.constexpr,
+    MASK_NUM: tl.constexpr
+):
+    pid_loc = tl.program_id(0)
+
+    buffer_offset = pid_loc * buffer_stride
+
+    buffer_index = tl.arange(0, buffer_stride)
+    index = buffer_offset + buffer_index
+    cache_index_0 = index // BLOCK
+    cache_index_1 = index % BLOCK
+    mask_int = tl.load(mask_int_ptr + pid_loc)
+    if pid_loc % 2 == 0:
+        tmp = tl.load(cache_ptr1 + (2*BLOCK*cache_index_0 + cache_index_1), \
+            ((2*BLOCK*cache_index_0 + cache_index_1) < buffer_offset * 2 + MASK_NUM))
+        tl.store(buffer_ptr + index, tmp)
+    if pid_loc % 2 == 1:
+        tmp = tl.load(cache_ptr2 + (2*BLOCK*cache_index_0 + cache_index_1), \
+            (buffer_index < MASK_NUM) & (buffer_index < mask_int))
+        tl.store(buffer_ptr + index, tmp)
+
+
+@triton.jit
+def rearrange_cache_with_mask(
+    cache_ptr1,
+    cache_ptr2,
+    half_buffer_num: tl.constexpr,
+    buffer_stride: tl.constexpr,
+    NUM_BLOCK: tl.constexpr,
+    BLOCK: tl.constexpr,
+):
+    pid_loc = tl.program_id(0)
+    buffer_num = half_buffer_num * 2
+    buffer_offset = pid_loc * buffer_stride * buffer_num
+
+    index = tl.arange(0, buffer_stride)
+    buffer_index = buffer_offset + index
+    mask_index = index[None, :]
+    load_index = buffer_index[None, :]
+
+    buffer_index2 = buffer_offset * BLOCK + index
+    n_index = (buffer_index2 // BLOCK)
+    b_index = (buffer_index2 % BLOCK)
+    store_index = NUM_BLOCK * b_index + n_index
+    store_index2 = store_index[None, :]
+
+    buffer_num_offset = 0
+    for i in range(2):
+        buffer_num_index = buffer_num_offset + tl.arange(0, half_buffer_num)
+        buffer_num_index2 = buffer_num_index[:, None]
+        
+        tmp1 = tl.load(cache_ptr1 + buffer_stride * buffer_num_index2 + load_index)
+        tmp1 = tmp1 * (2 * i - 1)
+        mask1 = buffer_num_index2 < buffer_num
+        mask2 = mask_index < buffer_stride
+        tl.store(cache_ptr2 + buffer_stride * buffer_num_index2 + store_index2, tmp1, mask1 & mask2)
+        # tl.store(cache_ptr2 + buffer_stride * buffer_num_index2 + store_index2, tmp1, True)
+
+        buffer_num_offset = buffer_num_offset + half_buffer_num
+
+
+@pytest.mark.parametrize('dtype,sigtype', types)
+@pytest.mark.parametrize('batch_size,buffer_len', cache_shapes)
+def test_linearize_jump_load(batch_size, buffer_len, dtype, sigtype):
+    block = biggest_divisor(buffer_len)
+    cache_len = buffer_len * 2
+    buffer_ref = torch.zeros(batch_size, 1, buffer_len, dtype=dtype)
+    buffer = buffer_ref.npu()
+    cache1_ref = test_common.generate_tensor(shape=(batch_size, 1, cache_len), dtype=sigtype)
+    cache1 = cache1_ref.npu()
+    cache2_ref = test_common.generate_tensor(shape=(batch_size, 1, cache_len), dtype=sigtype)
+    cache2 = cache2_ref.npu()
+
+    torch_save_cache_to_buffer(buffer_ref, cache1_ref, cache2_ref, buffer_len, cache_len, block)
+    save_cache_to_buffer[(batch_size, 1, 1)](buffer, cache1, cache2, buffer_len, block)
+    test_common.validate_cmp(sigtype, buffer, buffer_ref)
+
+
+@pytest.mark.parametrize('dtype,sigtype', types)
+@pytest.mark.parametrize('batch_size,buffer_len', cache_shapes)
+def test_linearize_jump_load_with_offset(batch_size, buffer_len, dtype, sigtype):
+    block = biggest_divisor(buffer_len)
+    cache_len = buffer_len * 2
+    buffer_ref = torch.zeros(batch_size, 1, buffer_len, dtype=dtype)
+    buffer = buffer_ref.npu()
+    cache1_ref = test_common.generate_tensor(shape=(batch_size, 1, cache_len), dtype=sigtype)
+    cache1 = cache1_ref.npu()
+    cache2_ref = test_common.generate_tensor(shape=(batch_size, 1, cache_len), dtype=sigtype)
+    cache2 = cache2_ref.npu()
+
+    torch_save_cache_to_buffer_with_offset(buffer_ref, cache1_ref, cache2_ref, buffer_len, cache_len, block)
+    save_cache_to_buffer_with_offset[(batch_size, 1, 1)](buffer, cache1, cache2, buffer_len, block)
+    test_common.validate_cmp(sigtype, buffer, buffer_ref)
+
+
+@pytest.mark.parametrize('dtype,sigtype', types)
+@pytest.mark.parametrize('batch_size,buffer_len', cache_shapes)
+def test_linearize_rearrange(batch_size, buffer_len, dtype, sigtype):
+    block = biggest_divisor(buffer_len)
+    num_block = int(buffer_len / block)
+    cache_len = buffer_len * 2
+    buffer1_ref = test_common.generate_tensor(shape=(batch_size, 1, buffer_len), dtype=sigtype)
+    buffer1 = buffer1_ref.npu()
+    buffer2_ref = test_common.generate_tensor(shape=(batch_size, 1, buffer_len), dtype=sigtype)
+    buffer2 = buffer2_ref.npu()
+    cache_ref = torch.zeros(batch_size, 1, cache_len, dtype=dtype)
+    cache = cache_ref.npu()
+
+    torch_rearrange_and_combine_two_buffer(buffer1_ref, buffer2_ref, cache_ref, buffer_len, num_block, block)
+    rearrange_and_combine_two_buffer[(batch_size, 1, 1)](buffer1, buffer2, cache, buffer_len, num_block, block)
+    test_common.validate_cmp(sigtype, cache, cache_ref)
+
+
+@pytest.mark.skip(reason="mask load still has issues to be fixed by bisheng")
+@pytest.mark.parametrize('dtype,sigtype', types)
+@pytest.mark.parametrize('batch_size,buffer_len', cache_shapes)
+def test_linearize_jump_load_with_mask(batch_size, buffer_len, dtype, sigtype):
+    block = biggest_divisor(buffer_len)
+    cache_len = buffer_len * 2
+    buffer_ref = torch.zeros(batch_size, 1, buffer_len, dtype=dtype)
+    buffer = buffer_ref.npu()
+    cache1_ref = test_common.generate_tensor(shape=(batch_size, 1, cache_len), dtype=sigtype)
+    cache1 = cache1_ref.npu()
+    cache2_ref = test_common.generate_tensor(shape=(batch_size, 1, cache_len), dtype=sigtype)
+    cache2 = cache2_ref.npu()
+    mask_ref = torch.arange(0, batch_size, dtype=torch.int64)*2
+    mask = mask_ref.npu()
+    mask_num = 16
+    torch_save_cache_to_buffer_with_mask(buffer_ref, cache1_ref, cache2_ref, mask_ref, buffer_len, cache_len, block, mask_num)
+    save_cache_to_buffer_with_mask[(batch_size, 1, 1)](buffer, cache1, cache2, mask, buffer_len, block, mask_num)
+    test_common.validate_cmp(sigtype, buffer, buffer_ref)
+
+
+@pytest.mark.skip(reason="mask still has issues to be fixed")
+@pytest.mark.parametrize('dtype,sigtype', types)
+@pytest.mark.parametrize('batch_size,buffer_len', cache_shapes)
+def test_linearize_rearrange_with_mask(batch_size, buffer_len, dtype, sigtype):
+    block = biggest_divisor(buffer_len)
+    num_block = int(buffer_len/block)
+    cache1_ref = test_common.generate_tensor(shape=(batch_size, 4, buffer_len), dtype=sigtype)
+    cache1 = cache1_ref.npu()
+    cache2_ref = torch.zeros(batch_size, 4, buffer_len, dtype=dtype)
+    cache2 = cache2_ref.npu()
+
+    torch_rearrange_cache_with_mask(cache1_ref, cache2_ref, 2, buffer_len, num_block, block)
+    rearrange_cache_with_mask[(batch_size, 1, 1)](cache1, cache2, 2, buffer_len, num_block, block)
+    test_common.validate_cmp(sigtype, cache2, cache2_ref)

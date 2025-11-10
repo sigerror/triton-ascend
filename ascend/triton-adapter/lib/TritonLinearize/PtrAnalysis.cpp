@@ -355,29 +355,43 @@ LogicalResult PtrState::broadcastIfNeeded(SmallVector<StateInfo> &infoPerDim,
 }
 
 bool PtrState::countDims() {
-  // initialize
-  dimLenth = SmallVector<size_t>();
-
-  // Use a map to track the first occurrence of each dimension
-  llvm::DenseMap<unsigned, unsigned> dimToIndex;
-  for (const auto& info : stateInfo) {
-    unsigned dim = info.dim;
-
-    if (dimToIndex.count(dim)) {
-      // Dimension has been seen before, increment its count
-      ++dimLenth[dimToIndex[dim]];
-    } else {
-      // First occurrence of this dim, append to dimLenth and record its position
-      dimToIndex[dim] = dimLenth.size();
-      dimLenth.push_back(1);
+    // initialize
+    dimLenth = SmallVector<size_t>();
+    auto dimLenthInDimOrder = SmallVector<size_t>();
+    // Ensure dimLenth has size sizes.size() + 1
+    while (dimLenth.size() < sizes.size() + 1) {
+        dimLenth.push_back(0);
+        dimLenthInDimOrder.push_back(0);
     }
-  }
 
-  // Ensure dimLenth has size sizes.size() + 1
-  while (dimLenth.size() < sizes.size() + 1) {
-    dimLenth.push_back(0);
-  }
-  return true;
+    // Count the numbers of info in each dimension
+    for (const auto &info : stateInfo) {
+        unsigned dim = info.dim;
+        ++dimLenthInDimOrder[dim];
+    }
+
+    // Use a map to track the first occurrence of each dimension
+    llvm::DenseMap<unsigned, unsigned> dimToIndex;
+    unsigned insert_pos = 0;
+    for (const auto& info : stateInfo) {
+        unsigned dim = info.dim;
+        while (insert_pos < dimLenthInDimOrder.size() && dimLenthInDimOrder[insert_pos] == 0) {
+            ++insert_pos;
+        }
+        if (dimToIndex.count(dim)) {
+            ++dimLenth[dimToIndex[dim]];
+        } else {
+            // Record the first occurrence of this dimension
+            dimToIndex[dim] = insert_pos;
+            if (insert_pos >= dimLenth.size()) {
+                // This should not happen if the input data is valid
+                break;
+            }
+            dimLenth[dimToIndex[dim]] = 1;
+            ++insert_pos;
+        }
+    }
+    return true;
 }
 
 LogicalResult PtrState::removeConstDim(SmallVector<StateInfo> &infoPerDim,
