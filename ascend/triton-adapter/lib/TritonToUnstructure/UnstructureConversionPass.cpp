@@ -302,7 +302,7 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   
   // Fast path on A5: rewrite tl.load to tt.indirect_load directly.
   if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
-    if (compileOnA5Flag && ptrOffsetInfo.isUnstructured()) {
+    if (compileOnA5Flag && forceSimtTemplateFlag && ptrOffsetInfo.isUnstructured()) {
       assert(!isa<RankedTensorType>(srcPtr.getType()) && "src must be ptr type");
       Value mask = op.getMask();
       Value other = op.getOther();

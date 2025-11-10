@@ -1560,7 +1560,7 @@ def TT_IndirectLoadOp : TT_Op<"indirect_load", [
       "Value":$src,
       "Value":$offsets,
       "Value":$mask,
-      "Value":$blocksize
+      "Value":$other
     )>
   ];
 }
