@@ -52,6 +52,7 @@ using namespace mlir;
 using namespace triton;
 const std::string globalKernelAttr = "global_kernel";
 const std::string kernelMixModeName = "mix_mode";
+const std::string kernelParallelModeName = "parallel_mode";
 const unsigned INT_BIT_WIDTH = 32;
 const unsigned SET_INIT_SIZE = 16;
 
@@ -75,7 +76,7 @@ private:
   template <typename OpTy>
   void addTensorKindToArguments(OpTy op, triton::FuncOp func, TensorKind tensorKind);
 
-  void convertTTFunc(triton::FuncOp func, const bool existDot);
+  void convertTTFunc(triton::FuncOp func, const bool existDot, const bool existSIMTOp);
 
   LogicalResult convertMultipleBlockControlFlow(Operation *funcOp,
                                                 OpBuilder &builder);

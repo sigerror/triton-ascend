@@ -124,7 +124,8 @@ class NPULauncher(object):
         wrapper_src = generate_npu_wrapper_src(constants, signature, \
                                                workspace_size, mix_mode, \
                                                lock_num, lock_init_value, \
-                                               metadata.compile_on_a5)
+                                               metadata.compile_on_a5, \
+                                               metadata.parallel_mode)
         so_launcher_path = make_npu_launcher_stub(wrapper_src, debug_mode)
         # setup for remote run
         # TODO: use a var to pack all vars required to run on a remote machine
@@ -194,7 +195,7 @@ class NPULauncher(object):
         with open(os.path.join(cache_dir, 'kernel_info.json'), 'w') as f:
             json.dump(kernel_info, f, indent=4)
         if self.compile_only:
-            return 
+            return
         # TODO: read commands from config file
         USER = getpass.getuser()
         HOME = "/home/HwHiAiUser"
@@ -391,7 +392,7 @@ def make_npu_launcher_stub(src, debug=False):
     enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
     if not enable_taskqueue:
         kernel_launcher_type = None
-  
+
     with tempfile.TemporaryDirectory() as tmpdir:
         src_path = os.path.join(tmpdir, f"{name}.cxx")
         with open(src_path, "w") as f:
@@ -463,7 +464,7 @@ def extract_device_print_code_from_cann():
         new_code = new_code.replace('__CCELIB_RT_MEMCPY_DEVICE_TO_HOST', 'RT_MEMCPY_DEVICE_TO_HOST')
         return new_code
 
-    # the following headers should be included in this order 
+    # the following headers should be included in this order
     return '\n'.join([
         read_header('common/common_impl.h'),
         read_header('internal/debug_tunnel/payload.h'),
@@ -474,7 +475,7 @@ def extract_device_print_code_from_cann():
 
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
-def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val, compile_on_a5):
+def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val, compile_on_a5, parallel_mode):
     import os
 
     def _ty_to_cpp(ty):
@@ -720,14 +721,14 @@ extern "C" {
     cpp_kernel_launch = f"""
     ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
 """
-    if compile_on_a5:
+    if compile_on_a5 and ("simt" in parallel_mode):
         cpp_kernel_launch = """
     rtArgsEx_t argsInfo = {};
     argsInfo.args = static_cast<void*>(&args);
     argsInfo.argsSize = sizeof(args);
     // TODO: localMemorySize should be specified by user
     rtTaskCfgInfo_t cfgInfo = {};
-    cfgInfo.localMemorySize = 256*1024;
+    cfgInfo.localMemorySize = 216 * 1024;
     ret = rtKernelLaunchWithFlagV2(func, blockNum, &argsInfo, NULL, stream, 0, &cfgInfo);
 """
 

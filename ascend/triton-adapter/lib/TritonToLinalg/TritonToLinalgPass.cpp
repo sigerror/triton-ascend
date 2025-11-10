@@ -291,7 +291,8 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
 }
 
 void TritonToLinalgPass::convertTTFunc(triton::FuncOp func,
-                                       const bool existDot) {
+                                       const bool existDot,
+                                       const bool existSIMTOp) {
   OpBuilder builder(func);
 
   auto name = func.getName();
@@ -371,6 +372,12 @@ void TritonToLinalgPass::convertTTFunc(triton::FuncOp func,
   // The backend needs to know the mix_mode because the host wrapper
   // needs to set the devbin.magic. Check npu_utils.cpp.
   funcFunc->setAttr(kernelMixModeName, builder.getStringAttr(kernelMixMode));
+
+  std::string parallelMode = "simd";
+  if (existSIMTOp) {
+    parallelMode = "mix_simd_simt";
+  }
+  funcFunc->setAttr(kernelParallelModeName, builder.getStringAttr(parallelMode));
 
   auto &funcFuncBody = funcFunc.getBody();
   auto &funcBody = func.getBody();
@@ -650,6 +657,12 @@ void TritonToLinalgPass::runOnOperation() {
     });
   existDotFlag = existDot;
 
+  bool existSIMTOp = false;
+  moduleOp.walk([&](triton::EmbeddingGatherOp op) {
+    existSIMTOp = true;
+    return WalkResult::interrupt();
+  });
+
   RewritePatternSet canonicalizerPatterns(&getContext());
 
   // Execute tensor descriptor operations conversion
@@ -737,7 +750,7 @@ void TritonToLinalgPass::runOnOperation() {
 
   // 8.函数头尾转换
   moduleOp.walk(
-      [&](triton::FuncOp func) { this->convertTTFunc(func, existDot); });
+      [&](triton::FuncOp func) { this->convertTTFunc(func, existDot, existSIMTOp); });
 
   // 9.清除无效代码，简化代码。
   PassManager pm(&getContext(), moduleOp.getOperationName());

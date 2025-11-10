@@ -268,6 +268,9 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Example: mix_mode = "aiv" -> aiv
     MIX_MODE_REGEX = r'mix_mode\s*=\s*"([^"]+)"'
 
+    # Example: mix_mode = "aiv" -> aiv
+    PARALLEL_MODE_REGEX = r'parallel_mode\s*=\s*"([^"]+)"'
+
     # Example: func.func @gather_sorted_kernel(%arg0: ...) -> gather_sorted_kernel
     KERNEL_NAME_REGEX = r"func\.func\s+@(\w+)"
 
@@ -282,6 +285,7 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     metadata["shared"] = 1
     # the mix mode is also encoded into metadata['name'] for runtime to distinguish
     metadata["mix_mode"] = re.search(MIX_MODE_REGEX, linalg).group(1)
+    metadata["parallel_mode"] = re.search(PARALLEL_MODE_REGEX, linalg).group(1)
     metadata["kernel_name"] = re.search(KERNEL_NAME_REGEX, linalg).group(1)
     # Use while space to split kernel_name and mix_mode.
     # Check the function load_binary in npu_driver.py.
@@ -365,22 +369,22 @@ def linalg_to_bin_enable_npu_compile_A5(linalg: str, metadata, opt):
         if inject_barrier_all is not None:
             _compile_option_list += \
                 [f"--enable-hivm-inject-barrier-all-sync={inject_barrier_all}"]
-        
+
         limit_auto_multi_buffer_only_for_local_buffer = metadata["limit_auto_multi_buffer_only_for_local_buffer"]
         if limit_auto_multi_buffer_only_for_local_buffer is not None:
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-only-for-local-buffer={limit_auto_multi_buffer_only_for_local_buffer}"]
-        
+
         set_workspace_multibuffer = metadata["set_workspace_multibuffer"]
         if set_workspace_multibuffer is not None:
             _compile_option_list += \
                 [f"--set-workspace-multibuffer={set_workspace_multibuffer}"]
-        
+
         tile_mix_vector_loop = metadata["tile_mix_vector_loop"]
         if tile_mix_vector_loop is not None:
             _compile_option_list += \
                 [f"--tile-mix-vector-loop={tile_mix_vector_loop}"]
-        
+
         tile_mix_cube_loop = metadata["tile_mix_cube_loop"]
         if tile_mix_cube_loop is not None:
             _compile_option_list += \
@@ -390,7 +394,7 @@ def linalg_to_bin_enable_npu_compile_A5(linalg: str, metadata, opt):
         if auto_multi_buffer is not None:
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-of-local-buffer={auto_multi_buffer}"]
-        
+
         if _is_auto_map_parallel_blocks_enabled():
             _compile_option_list += ["--enable-auto-blockify-loop"]
         npu_compiler_path = _get_npucompiler_path()
@@ -574,7 +578,7 @@ class NPUOptions:
     disable_auto_inject_block_sync: bool = None
 
     stream: int = None
-
+    parallel_mode: str = "simd"
     force_simt_only: bool = False
     def hash(self):
         key = "_".join([f"{name}-{val}" for name, val in self.__dict__.items()])
