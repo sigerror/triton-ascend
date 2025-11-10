@@ -687,3 +687,134 @@ def lgamma(arg0, _builder=None):
     arg0 = semantic.to_tensor(arg0, _builder)
     gamma_res = _builder.create_fabs(gamma(arg0, _builder=_builder).handle)
     return core.tensor(_builder.create_log(gamma_res), arg0.type)
+
+
+@core.builtin
+@math._check_dtype(dtypes=["fp32",])
+@math._add_math_1arg_docstr("trunc")
+def trunc(arg0: core.tensor, _builder: ir.builder):
+    """
+    Truncate the input to the nearest integer toward zero.
+    
+    For positive numbers, this is equivalent to floor(x).
+    For negative numbers, this is equivalent to ceil(x).
+    
+        Special cases:
+        - trunc(±0) returns ±0.
+        - trunc(±inf) returns ±inf.
+        - trunc(NaN) returns NaN.
+    """
+    arg0 = semantic.to_tensor(arg0, _builder)
+    
+    zero = semantic.full(arg0.shape, 0.0, arg0.type.scalar, _builder)
+    condition = semantic.greater_equal(arg0, zero, _builder)
+    
+    floor_result = core.tensor(_builder.create_floor(arg0.handle), arg0.type)
+    ceil_result = core.tensor(_builder.create_ceil(arg0.handle), arg0.type)
+    
+    return semantic.where(condition, floor_result, ceil_result, _builder)
+
+
+@core.builtin
+@math._check_dtype(dtypes=["fp32",])
+@math._add_math_1arg_docstr("nearbyint")
+def nearbyint(arg0: core.tensor, _builder: ir.builder):
+    """
+    Round argument x to an integer value in floating-point format.
+    
+    Uses the current rounding mode (round-to-nearest-even, aka banker's rounding).
+    """
+    arg0 = semantic.to_tensor(arg0, _builder)
+    
+    half = semantic.full(arg0.shape, 0.5, arg0.type.scalar, _builder)
+    
+    positive_adjust = semantic.add(arg0, half, True, _builder)
+    negative_adjust = semantic.sub(arg0, half, True, _builder)
+    
+    positive_result = core.tensor(_builder.create_floor(positive_adjust.handle), arg0.type)
+    negative_result = core.tensor(_builder.create_ceil(negative_adjust.handle), arg0.type)
+    
+    zero = semantic.full(arg0.shape, 0.0, arg0.type.scalar, _builder)
+    is_positive = semantic.greater_equal(arg0, zero, _builder)
+    basic_round = semantic.where(is_positive, positive_result, negative_result, _builder)
+    
+    # Banker's rounding special treatment: For values exactly in the middle, round to the nearest even number.
+    fractional = semantic.sub(arg0, basic_round, True, _builder)
+    abs_fractional = core.tensor(_builder.create_fabs(fractional.handle), fractional.type)
+    
+    is_half = semantic.equal(abs_fractional, half, _builder)
+    
+    two = semantic.full(arg0.shape, 2.0, arg0.type.scalar, _builder)
+    
+    half_value = math.fdiv(basic_round, two, _builder=_builder)
+    half_floor = core.tensor(_builder.create_floor(half_value.handle), half_value.type)
+    double_half = semantic.mul(half_floor, two, True, _builder)
+    
+    is_even = semantic.equal(basic_round, double_half, _builder)
+    
+    adjustment = semantic.where(is_positive, 
+                               semantic.full(arg0.shape, -1.0, arg0.type.scalar, _builder), 
+                               semantic.full(arg0.shape, 1.0, arg0.type.scalar, _builder), 
+                               _builder)
+    
+    banker_result = semantic.where(is_even, basic_round, 
+                                  semantic.add(basic_round, adjustment, True, _builder), 
+                                  _builder)
+    
+    # Final result: Use banker's rounding for cases exactly at 0.5, otherwise use basic rounding.
+    return semantic.where(is_half, banker_result, basic_round, _builder)
+
+
+@core.builtin
+@math._check_dtype(dtypes=["fp32",])
+@math._add_math_1arg_docstr("arcsine")
+def asin(arg0: core.tensor, _builder: ir.builder):
+    """
+    Calculate the principal value of the arc sine of the input argument x.
+    
+    Returns result in radians, in the interval [-π/2, +π/2] for x inside [-1, +1].
+    Returns NaN for x outside [-1, +1].
+    """
+    arg0 = semantic.to_tensor(arg0, _builder)
+    
+    # asin(x) = π/2 - acos(x)
+    half_pi = semantic.full(arg0.shape, 1.5707963267948966, arg0.type.scalar, _builder)  # π/2
+    acos_val = acos(arg0, _builder=_builder)
+    return semantic.sub(half_pi, acos_val, True, _builder)
+
+
+@core.builtin
+@math._check_dtype(dtypes=["fp32",])
+@math._add_math_1arg_docstr("base-10 logarithm")
+def log10(arg0: core.tensor, _builder: ir.builder):
+    """
+    Calculate the base 10 logarithm of the input argument x.
+    
+    Returns NaN for x < 0, -inf for x = 0, and +0 for x = 1.
+    log10(x) = log(x) / log(10)
+    """
+    arg0 = semantic.to_tensor(arg0, _builder)
+    
+    log_val = math.log(arg0, _builder=_builder)
+    log10_const = semantic.full(arg0.shape, 2.302585092994046, arg0.type.scalar, _builder)
+    
+    return math.fdiv(log_val, log10_const, _builder=_builder)
+
+@core.builtin
+@math._check_dtype(dtypes=["fp32",])
+@math._add_math_2arg_docstr("copysign")
+def copysign(arg0: core.tensor, arg1: core.tensor, _builder: ir.builder):
+    """
+    Create a floating-point value with the magnitude of x and the sign of y.
+    """
+    x = semantic.to_tensor(arg0, _builder)
+    y = semantic.to_tensor(arg1, _builder)
+    
+    magnitude = core.tensor(_builder.create_fabs(x.handle), x.type)
+    
+    zero = semantic.full(y.shape, 0.0, y.type.scalar, _builder)
+    is_positive = semantic.greater_equal(y, zero, _builder)
+    
+    neg_magnitude = semantic.mul(magnitude, semantic.full(magnitude.shape, -1.0, magnitude.type.scalar, _builder), True, _builder)
+    
+    return semantic.where(is_positive, magnitude, neg_magnitude, _builder)
