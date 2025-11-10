@@ -12,7 +12,7 @@ msProf工具用于采集和分析运行在昇腾AI处理器上算子的关键性
   - 仿真环境变量  
     进行算子仿真前，需设置指定算子仿真芯片类型。
 
-使用资料参考：[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha003/devaids/optool/atlasopdev_16_0082.html)
+使用资料参考：[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/devaids/optool/atlasopdev_16_0082.html)
 
 ## 2.算子调优
 
@@ -77,7 +77,7 @@ def test_case(param_list):
 ```
 msprof op --kernel-name=triton_add pytest test_add.py
 ```
-说明： 更多特性可参考官方资料[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha003/devaids/optool/atlasopdev_16_0082.html)
+说明： `pytest test_add.py`为需要测试的可执行命令。更多特性可参考官方资料[《算子开发工具-算子调优》](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha003/devaids/optool/atlasopdev_16_0082.html)
 
 
 执行结果：

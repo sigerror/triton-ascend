@@ -101,7 +101,7 @@ def accuracy_comparison(y_cal, y_ref):
     elif tensor_dtype == torch.float32:
         # float32 精度较高，使用更严格的容差
         torch.testing.assert_close(y_ref, y_cal, rtol=1e-4, atol=1e-4, equal_nan=True)
-    elif tensor_dtype in [torch.int64, torch.int32, torch.int16, torch.int8, torch.uint32]:
+    elif tensor_dtype in [torch.int64, torch.int32, torch.int16, torch.int8]:
         # 整数类型应完全相等
         assert torch.equal(y_cal, y_ref), f"Integer tensors are not equal for dtype {tensor_dtype}"
     elif tensor_dtype == torch.bool:

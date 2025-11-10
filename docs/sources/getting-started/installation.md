@@ -13,14 +13,14 @@
 
 您可以访问昇腾社区官网，根据其提供的软件安装指引完成 CANN 的安装配置。
 
-在安装过程中，请选择 CANN 版本 **8.3.RC1.alpha003**，并根据实际环境指定CPU架构(AArch64/X86_64)，NPU硬件型号对应的软件包。
+在安装过程中，CANN 版本“**{version}**”请选择 **8.3.RC1.alpha003**，并根据实际环境(aarch64/x86_64)指定CPU架构“**{arch}**”，NPU硬件型号对应的软件包。
 
 建议下载安装:
 
 | 软件类型 | 软件包说明       | 软件包名称                       |
 |----------|------------------|----------------------------------|
-| Toolkit  | CANN开发套件包   | Ascend-cann-toolkit_version_linux-arch.run  |
-| Kernels  | CANN二进制算子包 | Ascend-cann-kernels-chip_type_version_linux-arch.run |
+| Toolkit  | CANN开发套件包   | Ascend-cann-toolkit_**{version}**_linux-**{arch}**.run  |
+| Kernels  | CANN二进制算子包 | Ascend-cann-kernels-chip_type_**{version}**_linux-**{arch}**.run |
 
 社区下载链接：
 

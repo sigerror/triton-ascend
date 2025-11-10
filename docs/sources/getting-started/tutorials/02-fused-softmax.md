@@ -82,7 +82,7 @@ kernels = {}
 def softmax(x, stream):
     n_rows, n_cols = x.shape
 
-    # 每次循环迭代的块大小是大于`x`列数的最小二的幂
+    # 每次循环迭代的块大小是大于或等于`x`列数的最小二的幂
     BLOCK_SIZE = triton.next_power_of_2(n_cols)
     # 分配输出空间
     y = torch.empty_like(x)

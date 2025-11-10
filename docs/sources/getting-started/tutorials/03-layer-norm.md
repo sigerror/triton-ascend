@@ -65,7 +65,7 @@ def _layer_norm_fwd_fused(
 
 ```Python
 @torch.inference_mode()
-def layer_norm(x, normalized_shape, weight, bias, eps=1e-5):
+def layer_norm(x, weight, bias, eps=1e-5):
     # 分配与输入相同形状和数据类型的输出张量
     y = torch.empty_like(x)
     
@@ -97,8 +97,8 @@ def _layer_norm(M, N, dtype, eps=1e-5, device='npu'):
     dy = .1 * torch.randn_like(x)
     x.requires_grad_(True)
     # 前向传播
-    y_tri = layer_norm(x, w_shape, weight, bias, eps)
-    y_ref = torch.nn.functional.layer_norm(x, w_shape, weight, bias, eps).to(dtype)
+    y_tri = layer_norm(x, weight, bias, eps)
+    y_ref = torch.nn.functional.layer_norm(x, weight, bias, eps).to(dtype)
     # 判断是否近似
     assert torch.allclose(y_tri, y_ref, atol=1e-2, rtol=0)
     print(f"y_tri: {y_tri}")
@@ -168,6 +168,6 @@ y_ref: tensor([[-0.2980,  0.2922,  0.6481,  ...,  0.9786,  0.7304,  0.8982],
 Layer Normalization 128,128 torch.float32 PASSED!
 ```
 
-"Layer Normalization 128,128 torch.float16 PASSED!、\
-Layer Normalization 128,128 torch.bfloat16 PASSED! \
-Layer Normalization 128,128 torch.float32 PASSED!" 表明Triton和PyTorch上float16、bfloat16、float32数据类型的输出结果完全一致。
+“Layer Normalization 128,128 torch.float16 PASSED!”、\
+“Layer Normalization 128,128 torch.bfloat16 PASSED!”、\
+“Layer Normalization 128,128 torch.float32 PASSED!” 表明Triton和PyTorch上float16、bfloat16、float32数据类型的输出结果完全一致。

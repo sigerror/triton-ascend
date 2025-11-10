@@ -11,29 +11,26 @@ import torch_npu
 import triton
 import triton.language as tl
 @triton.jit
-def triton_dot_2_None(output_ptr, x_ptr, y_ptr, z_ptr,A : tl.constexpr,B : tl.constexpr,C : tl.constexpr,D : tl.constexpr):
-    aidx=tl.arange(0,A)
-    bidx=tl.arange(0,B)
-    cidx=tl.arange(0,C)
-    didx=tl.arange(0,D)
-    accumulator = tl.zeros((B, D), dtype=tl.float32)
-    Xidx=bidx[:,None]*C+cidx[None,:]
-    Yidx=cidx[:,None]*D+didx[None,:]
-    Zidx=bidx[:,None]*D+didx[None,:]
+def triton_dot_2_Bias(output_ptr, x_ptr, y_ptr, z_ptr,A : tl.constexpr,B : tl.constexpr,C : tl.constexpr):
+    bidx=tl.arange(0,A)
+    cidx=tl.arange(0,B)
+    didx=tl.arange(0,C)
+    Xidx=bidx[:,None]*B+cidx[None,:]
+    Yidx=cidx[:,None]*C+didx[None,:]
+    Zidx=bidx[:,None]*C+didx[None,:]
     X = tl.load(x_ptr+Xidx)
     Y = tl.load(y_ptr+Yidx)
     Z = tl.load(z_ptr+Zidx)
-    tl.device_print("X: ", X)
-    ret = tl.dot(X, Y)
-    oidx=bidx[:,None]*D+didx[None,:]
+    ret = tl.dot(X, Y) + Z
+    oidx=bidx[:,None]*C+didx[None,:]
     tl.store(output_ptr+oidx,ret)
 ```
 
 ## 工具方法
 
 ```Python
-def torch_dot_None(x0, x1):
-    res = torch.matmul(x0, x1)
+def torch_dot_Bias(x0, x1, bias):
+    res = torch.matmul(x0, x1) + bias
     return res
 
 def get_torch_typename(dtype):
@@ -90,36 +87,36 @@ def validate_cmp(dtype, y_cal, y_ref):
 
 ```Python
 testlist = [   
-    (3, 16, 16, 16), 
+    (16, 16, 16), 
 ]
 
 typelist = ['float16',]
 
-@pytest.mark.parametrize('A, B, C, D',testlist)
+@pytest.mark.parametrize('A, B, C',testlist)
 @pytest.mark.parametrize('sigtype',typelist)
-def test_dot_2_None(sigtype, A, B, C, D):
+def test_dot_2_Bias(sigtype, A, B, C):
     dtype = get_torch_typename(sigtype)
-    x0 = generate_tensor(shape = (B, C),dtype = sigtype).npu()
-    x1 = generate_tensor(shape = (C, D),dtype = sigtype).npu()
+    x0 = generate_tensor(shape = (A, B),dtype = sigtype).npu()
+    x1 = generate_tensor(shape = (B, C),dtype = sigtype).npu()
     if 'int' in sigtype:
-        x2 = generate_tensor(shape = (B, D),dtype = 'int32').npu()
-        ans = torch_dot_None(x0.to(torch.float32), x1.to(torch.float32)).to(dtype)
+        bias = generate_tensor(shape = (A, C),dtype = 'int32').npu()
+        ans = torch_dot_Bias(x0.to(torch.float32), x1.to(torch.float32), bias.to(torch.float32)).to(dtype)
     else:
-        x2 = generate_tensor(shape = (B, D),dtype = 'float32').npu()
-        ans = torch_dot_None(x0, x1)
-    output = torch.zeros((B, D), dtype = dtype).npu()
-    triton_dot_2_None[1,1,1](output, x0, x1, x2, A, B, C, D, debug = True)
+        bias = generate_tensor(shape = (A, C),dtype = 'float32').npu()
+        ans = torch_dot_Bias(x0, x1, bias).to(eval(f"torch.{dtype}"))
+    output = torch.zeros((A, C), dtype = dtype).npu()
+    triton_dot_2_Bias[1,1,1](output, x0, x1, bias, A, B, C, debug = True)
     validate_cmp(sigtype,output,ans)
-    print(f"Test matmul with dtype={sigtype}, shape=({A},{B},{C},{D}) PASSED!")
+    print(f"Test matmul with dtype={sigtype}, shape=({A},{B},{C}) PASSED!")
 
 if __name__ == "__main__":
-    test_dot_2_None("float16", 3, 16, 16, 16)
+    test_dot_2_Bias("float16", 16, 16, 16)
 ```
 
 Out:
 
 ```Python
-Test matmul with dtype=float16, shape=(3,16,16,16) PASSED!
+Test matmul with dtype=float16, shape=(16,16,16) PASSED!
 ```
 
 上面输出日志表明Triton和Pytorch上的输出结果完全一致。
