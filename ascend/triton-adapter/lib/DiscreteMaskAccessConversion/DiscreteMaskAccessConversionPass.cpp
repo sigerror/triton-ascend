@@ -97,6 +97,10 @@ LogicalResult matchAndRewrite(triton::LoadOp op,
     return failure();
   }
 
+  if (compileOnA5Flag && forceSimtTemplateFlag){
+    return failure();
+  }
+
   if (!other) {
     auto ptrType = ptr.getType();
     auto elementType = getElementTypeOrSelf(ptrType); 
@@ -163,7 +167,14 @@ LogicalResult matchAndRewrite(triton::AtomicRMWOp op, PatternRewriter &rewriter)
 }
 };
 
+DiscreteMaskAccessConversionPass::DiscreteMaskAccessConversionPass(
+    const DiscreteMaskAccessConversionOptions &options)
+    : DiscreteMaskAccessConversionBase(options) {}
+
 void DiscreteMaskAccessConversionPass::runOnOperation() {
+  compileOnA5Flag = this->compileOnA5;
+  forceSimtTemplateFlag = this->forceSimtTemplate;
+
   auto moduleOp = getOperation();
 
   RewritePatternSet patterns(&getContext());
@@ -176,6 +187,8 @@ void DiscreteMaskAccessConversionPass::runOnOperation() {
   }
 }
 
-std::unique_ptr<OperationPass<ModuleOp>> mlir::triton::createDiscreteMaskAccessConversionPass() {
-  return std::make_unique<DiscreteMaskAccessConversionPass>();
+std::unique_ptr<OperationPass<ModuleOp>> mlir::triton::createDiscreteMaskAccessConversionPass(
+  const DiscreteMaskAccessConversionOptions &options
+) {
+  return std::make_unique<DiscreteMaskAccessConversionPass>(options);
 }
