@@ -355,6 +355,9 @@ def linalg_to_bin_enable_npu_compile_A5(linalg: str, metadata, opt):
         if not _is_debug_line_info_disabled():
             _compile_option_list += ["--enable-debug-info=true"]
 
+        if _enable_print_ub_bits():
+            _compile_option_list += ["--enable-print-memory-allocated-size"]
+
         enable_hivm_auto_cv_balance = metadata["enable_hivm_auto_cv_balance"]
         if enable_hivm_auto_cv_balance is not None:
             _compile_option_list += \
@@ -410,6 +413,10 @@ def linalg_to_bin_enable_npu_compile_A5(linalg: str, metadata, opt):
         )
 
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
+        match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', ret.stdout.decode('utf-8'))
+        if match:
+            # get the ub bits of triton kernel from bisheng for inductor autotune using
+            metadata["required_ub_bits"] = int(match.group(1))
         if Path(callback_path).is_file():
             lib = ctypes.CDLL(callback_path)
             __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
