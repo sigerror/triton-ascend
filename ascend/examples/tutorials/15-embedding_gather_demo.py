@@ -1,4 +1,4 @@
-# only available on A5
+# only available on 910_95
 import torch
 import torch_npu
 from torch import empty_strided

@@ -75,7 +75,7 @@ using namespace mlir;
 using namespace triton;
 
 int nd2nzFlag = 0;
-bool compileOnA5Flag = false;
+bool compileOn91095Flag = false;
 bool existDotFlag = false;
 
 TritonTypeConverter::TritonTypeConverter() {
@@ -531,7 +531,7 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
     patterns.add<TTOpConverters::MakeTensorPtrCanonicalizer>(patterns.getContext());
     patterns.add<TTOpConverters::ReduceSingleCanonicalizer>(patterns.getContext());
     // FIXME: temporarily revert SelectCanonicalizer on A3
-    if (this->compileOnA5) {
+    if (this->compileOn91095) {
       patterns.add<TTOpConverters::SelectCanonicalizer>(patterns.getContext());
     }
 }
@@ -640,7 +640,7 @@ LogicalResult TritonToLinalgPass::processDescriptorOperations(ModuleOp moduleOp)
 }
 
 void TritonToLinalgPass::runOnOperation() {
-  compileOnA5Flag = this->compileOnA5;
+  compileOn91095Flag = this->compileOn91095;
 
   auto moduleOp = getOperation();
 

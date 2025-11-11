@@ -1518,7 +1518,7 @@ LogicalResult DeviceAssertConverter::matchAndRewrite(
     mlir::ConversionPatternRewriter &rewriter) const {
   // Ascend910_95 does not support DeviceAssert. Thus for now
   // we directly removes this op.
-  if(compileOnA5Flag){
+  if(compileOn91095Flag){
     rewriter.eraseOp(op);
     return success();
   }

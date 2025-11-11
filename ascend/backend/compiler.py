@@ -101,16 +101,16 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         triton_adapter_opt_path = _get_triton_adapter_opt_path()
 
         enable_nd2nz_on_vector = metadata["enable_nd2nz_on_vector"]
-        compile_on_a5 = metadata["compile_on_a5"]
+        compile_on_910_95 = metadata["compile_on_910_95"]
         force_simt_template = metadata["force_simt_template"]
         cmd_list = [
             triton_adapter_opt_path,
             src_path,
             "--triton-linearize",
-            f"--discrete-mask-access-conversion=compile-on-a5={compile_on_a5} "\
+            f"--discrete-mask-access-conversion=compile-on-910-95={compile_on_910_95} "\
             f"force_simt_template={force_simt_template}",
             "--triton-to-annotation",
-            f"--triton-to-unstructure=compile-on-a5={compile_on_a5} " \
+            f"--triton-to-unstructure=compile-on-910-95={compile_on_910_95} " \
             f"force_simt_template={force_simt_template}",
             "--triton-to-hivm",
             "--triton-to-hfusion",
@@ -118,7 +118,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             "--bubble-up-operation",
             f"--triton-to-linalg=global-kernel=false named-ops={named_ops} "\
             f"enable-nd2nz-on-vector={enable_nd2nz_on_vector} "\
-            f"compile-on-a5={compile_on_a5}",
+            f"compile-on-910-95={compile_on_910_95}",
             "-o",
             dst_path,
         ]
@@ -331,7 +331,7 @@ def get_common_bishengir_compile_options(metadata):
     bishengir_target_opt = f"--target={bishengir_target}"
     return [bishengir_target_opt]
 
-def linalg_to_bin_enable_npu_compile_A5(linalg: str, metadata, opt):
+def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
     linalg, metadata = _parse_linalg_metadata(linalg, metadata)
     with tempfile.TemporaryDirectory() as tmpdir:
         ttadapter_path = os.path.join(tmpdir, "kernel.ttadapter.mlir")
@@ -432,7 +432,7 @@ def linalg_to_bin_enable_npu_compile_A5(linalg: str, metadata, opt):
         return Path(bin_path).read_bytes()
 
 
-def linalg_to_bin_enable_npu_compile_A3(linalg: str, metadata, opt):
+def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
     linalg, metadata = _parse_linalg_metadata(linalg, metadata)
     with tempfile.TemporaryDirectory() as tmpdir:
         ttadapter_path = os.path.join(tmpdir, "kernel.ttadapter.mlir")
@@ -561,7 +561,7 @@ class NPUOptions:
     reg_dec_producer: int = 0
     reg_inc_consumer: int = 0
 
-    compile_on_a5: bool = False
+    compile_on_910_95: bool = False
     force_simt_template: bool = False
     enable_warp_specialization: bool = False
     enable_nd2nz_on_vector: bool = False
@@ -676,7 +676,7 @@ class AscendBackend(BaseBackend):
                 for k in NPUOptions.__dataclass_fields__.keys()
                 if k in opts
             }
-            args["compile_on_a5"] = self.target.arch.startswith("Ascend910_95")
+            args["compile_on_910_95"] = self.target.arch.startswith("Ascend910_95")
             options = NPUOptions(**args)
         else:
             args = {
@@ -732,15 +732,15 @@ class AscendBackend(BaseBackend):
             stages["ttadapter"] = lambda src, metadata: ttir_to_linalg(
                 src, metadata, options, named_ops=True
             )
-            if options.compile_on_a5:
+            if options.compile_on_910_95:
                 stages["npubin"] = (
-                    lambda src, metadata: linalg_to_bin_enable_npu_compile_A5(
+                    lambda src, metadata: linalg_to_bin_enable_npu_compile_910_95(
                         src, metadata, options
                     )
                 )
             else:
                 stages["npubin"] = (
-                    lambda src, metadata: linalg_to_bin_enable_npu_compile_A3(
+                    lambda src, metadata: linalg_to_bin_enable_npu_compile_A2_A3(
                         src, metadata, options
                     )
                 )

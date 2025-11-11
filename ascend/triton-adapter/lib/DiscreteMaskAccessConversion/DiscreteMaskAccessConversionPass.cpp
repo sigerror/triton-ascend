@@ -97,7 +97,7 @@ LogicalResult matchAndRewrite(triton::LoadOp op,
     return failure();
   }
 
-  if (compileOnA5Flag && forceSimtTemplateFlag){
+  if (compileOn91095Flag && forceSimtTemplateFlag){
     return failure();
   }
 
@@ -172,7 +172,7 @@ DiscreteMaskAccessConversionPass::DiscreteMaskAccessConversionPass(
     : DiscreteMaskAccessConversionBase(options) {}
 
 void DiscreteMaskAccessConversionPass::runOnOperation() {
-  compileOnA5Flag = this->compileOnA5;
+  compileOn91095Flag = this->compileOn91095;
   forceSimtTemplateFlag = this->forceSimtTemplate;
 
   auto moduleOp = getOperation();

@@ -1,4 +1,4 @@
-// RUN: triton-adapter-opt --triton-to-unstructure=compile-on-a5=true %s | FileCheck %s
+// RUN: triton-adapter-opt --triton-to-unstructure=compile-on-910-95=true %s | FileCheck %s
 
 tt.func public @triton_ldst_indirect_05_kernel(%arg0: !tt.ptr<f32>, %arg1: !tt.ptr<i64>, %arg2: !tt.ptr<f32>, %arg3: i32) attributes {noinline = false} {
     %cst = arith.constant dense<16> : tensor<8x1xi32>

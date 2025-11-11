@@ -33,7 +33,7 @@
 #include "ascend/triton-adapter/include/TritonToLinalg/Passes.h.inc"
 
 extern int nd2nzFlag;
-extern bool compileOnA5Flag;
+extern bool compileOn91095Flag;
 extern bool existDotFlag;
 
 namespace mlir {

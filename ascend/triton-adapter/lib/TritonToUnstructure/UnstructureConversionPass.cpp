@@ -341,7 +341,7 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   
   // Fast path on A5: rewrite tl.load to tt.indirect_load directly.
   if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
-    if (compileOnA5Flag && forceSimtTemplateFlag && ptrOffsetInfo.isUnstructured()) {
+    if (compileOn91095Flag && forceSimtTemplateFlag && ptrOffsetInfo.isUnstructured()) {
       assert(!isa<RankedTensorType>(srcPtr.getType()) && "src must be ptr type");
       Value mask = op.getMask();
       Value other = op.getOther();
@@ -824,13 +824,13 @@ TritonToUnstructurePass::TritonToUnstructurePass(
     : TritonToUnstructureBase(options) {}
 
 void TritonToUnstructurePass::runOnOperation() {
-  compileOnA5Flag = this->compileOnA5;
+  compileOn91095Flag = this->compileOn91095;
   forceSimtTemplateFlag = this->forceSimtTemplate;
 
   LLVM_DEBUG({
     auto &os = llvm::dbgs();
     os << "TritonToUnstructurePass started with options:\n";
-    os << "  compileOnA5: " << compileOnA5Flag << "\n";
+    os << "  compileOn91095: " << compileOn91095Flag << "\n";
     os << "  forceSimtTemplate: " << forceSimtTemplateFlag << "\n";
   });
 

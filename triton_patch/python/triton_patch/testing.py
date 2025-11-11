@@ -24,13 +24,14 @@ import functools
 import os
 import subprocess
 import multiprocessing
-import os
 import sys
 from contextlib import contextmanager
 from typing import Any, Dict, List
 from . import language as tl
 from . import runtime
 
+import acl
+is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
 
 def nvsmi(attrs):
     attrs = ','.join(attrs)

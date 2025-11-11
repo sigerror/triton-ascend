@@ -124,7 +124,7 @@ class NPULauncher(object):
         wrapper_src = generate_npu_wrapper_src(constants, signature, \
                                                workspace_size, mix_mode, \
                                                lock_num, lock_init_value, \
-                                               metadata.compile_on_a5, \
+                                               metadata.compile_on_910_95, \
                                                metadata.parallel_mode)
         so_launcher_path = make_npu_launcher_stub(wrapper_src, debug_mode)
         # setup for remote run
@@ -475,7 +475,7 @@ def extract_device_print_code_from_cann():
 
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
-def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val, compile_on_a5, parallel_mode):
+def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val, compile_on_910_95, parallel_mode):
     import os
 
     def _ty_to_cpp(ty):
@@ -721,7 +721,7 @@ extern "C" {
     cpp_kernel_launch = f"""
     ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
 """
-    if compile_on_a5 and ("simt" in parallel_mode):
+    if compile_on_910_95 and ("simt" in parallel_mode):
         cpp_kernel_launch = """
     rtArgsEx_t argsInfo = {};
     argsInfo.args = static_cast<void*>(&args);

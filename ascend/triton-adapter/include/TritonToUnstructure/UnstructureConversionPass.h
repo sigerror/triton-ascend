@@ -35,7 +35,7 @@
 #define GEN_PASS_DEF_TRITONTOUNSTRUCTURE
 #include "ascend/triton-adapter/include/TritonToUnstructure/Passes.h.inc"
 
-extern bool compileOnA5Flag;
+extern bool compileOn91095Flag;
 extern bool forceSimtTemplateFlag;
 
 namespace mlir {
