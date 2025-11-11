@@ -175,12 +175,15 @@ def floor(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["bf16", "fp16", "fp32"])
 @_add_math_1arg_docstr("ceil")
 @core._tensor_member_fn
 def ceil(x, _builder=None):
     x = semantic.to_tensor(x, _builder)
-    return core.tensor(_builder.create_ceil(x.handle), x.type)
+    if x.type.scalar.is_int():
+        return x
+    elif x.type.scalar.is_floating():
+        return core.tensor(_builder.create_ceil(x.handle), x.type)
+    raise ValueError("ceil does not support boolean type")
 
 
 @core.builtin
@@ -195,3 +198,40 @@ def fma(x, y, z, _builder=None):
     z, y = core.binary_op_type_legalization(z, y, _builder)
     return core.tensor(_builder.create_fma(x.handle, y.handle, z.handle), x.type)
 
+
+@core.builtin
+@_add_math_2arg_docstr("cdiv")
+@core._tensor_member_fn
+def cdiv(x, div, _builder=None):
+    if isinstance(x, core.constexpr):
+        x = x.value
+    if isinstance(div, core.constexpr):
+        div = div.value
+    from math import ceil as py_ceil
+    if isinstance(x, numbers.Number) and isinstance(div, numbers.Number):
+        if isinstance(x, bool) or isinstance(div, bool):
+            raise ValueError("cdiv does not support boolean type")
+        elif isinstance(x, int) and isinstance(div, int):
+            res = x // div
+            rem = x % div
+            return res + (1 if rem != 0 else 0)
+        else:
+            return py_ceil(x / div)
+
+    x = semantic.to_tensor(x, _builder)
+    div = semantic.to_tensor(div, _builder)
+    x_scalar_type = x.type.scalar
+    div_scalar_type = div.type.scalar
+    if x_scalar_type.is_bool() or div_scalar_type.is_bool():
+        raise ValueError("cdiv does not support boolean type")
+    elif x_scalar_type.is_int() and div_scalar_type.is_int():
+        # integer cdiv: (x + div - 1) // div as before
+        return semantic.floordiv(
+            semantic.add(x, semantic.sub(div, 1, True, _builder), True, _builder),
+            div,
+            _builder
+        )
+    else:
+        div_res = semantic.truediv(x, div, _builder)
+        cdiv_res = core.tensor(_builder.create_ceil(div_res.handle), div_res.type)
+        return semantic.cast(cdiv_res, x_scalar_type, _builder)

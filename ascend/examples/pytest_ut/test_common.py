@@ -161,7 +161,8 @@ def validate_cmp_with_expection(dtype, y_cal, y_ref, expect):
             assert torch.allclose(y_ref, y_cal,  rtol=1e-03, atol=1e-03, equal_nan=True)
         else:
             assert not torch.allclose(y_ref, y_cal, rtol=1e-03, atol=1e-03, equal_nan=True)
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' or dtype == 'uint8':
+    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' \
+        or dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
         if expect:
             assert torch.equal(y_cal, y_ref)
         else:

@@ -30,6 +30,9 @@ import torch_npu
 import test_common
 
 def torch_ceil(x0):
+    if x0.dtype in [torch.int8, torch.int16, torch.int32, torch.int64,
+                    torch.uint8, torch.uint16, torch.uint32, torch.uint64]:
+        return x0
     res = torch.ceil(x0)
     return res
 
@@ -47,15 +50,23 @@ def triton_ceil(in_ptr0, out_ptr0, XBLOCK : tl.constexpr, XBLOCK_SUB : tl.conste
 
 @pytest.mark.parametrize('param_list',
                          [
-                             # ['float16', (2, 4096, 8), 32, 2048, 64],
+                             ['float16', (2, 4096, 8), 32, 2048, 64],
+                            #  ['bfloat16', (2, 4096, 8), 32, 2048, 64],
                              ['float32', (2, 4096, 8), 32, 2048, 64],
-                             # ['int8', (2, 4096, 8), 32, 2048, 64],
+                             ['int8', (2, 4096, 8), 32, 2048, 64],
+                            #  ['int16', (2, 4096, 8), 32, 2048, 64],
+                            #  ['int32', (2, 4096, 8), 32, 2048, 64],
+                            #  ['int64', (2, 4096, 8), 32, 2048, 64],
+                             ['uint8', (2, 4096, 8), 32, 2048, 64],
+                            #  ['uint16', (2, 4096, 8), 32, 2048, 64],
+                            #  ['uint32', (2, 4096, 8), 32, 2048, 64],
+                            #  ['uint64', (2, 4096, 8), 32, 2048, 64],
                          ])
 def test_ceil(param_list):
     dtype, shape, ncore, xblock, xblock_sub = param_list
-    x0 = test_common.generate_tensor(shape, dtype)
+    np_x0 = test_common.generate_numpy(shape, dtype)
+    x0 = torch.from_numpy(np_x0).to(eval('torch.' + dtype)).npu()
     y_ref = torch_ceil(x0)
-    tyname = test_common.get_triton_sig_typename(dtype)
     
     y_cal = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
     x0 = x0.npu()

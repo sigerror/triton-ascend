@@ -27,7 +27,7 @@ import test_common
 
 
 def torch_cdiv(x0, x1, dtype_x):
-    if dtype_x in [torch.int8, torch.int16, torch.int32, torch.int64]:
+    if dtype_x in [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64]:
         return torch.div(x0, x1, rounding_mode='floor') + (x0 % x1 != 0).to(torch.int)
     else:
         if dtype_x in ["float16", "bfloat16"]:
@@ -35,6 +35,14 @@ def torch_cdiv(x0, x1, dtype_x):
             x1 = x1.to(torch.float32)
         return torch.ceil(x0 / x1).to(eval("torch." + dtype_x))
     
+
+def torch_cdiv_special(x0, x1, dtype_x):
+    if dtype_x in [torch.uint8, torch.int8, torch.int16, torch.int32, torch.int64]:
+        return torch.div(x0, x1, rounding_mode='floor') + (x0 % x1 != 0).to(torch.int)
+    else:
+        if dtype_x in ["float16", "bfloat16"]:
+            x0 = x0.to(torch.float32)
+        return torch.ceil(x0 / x1).to(eval("torch." + dtype_x))
 
 
 @triton.jit
@@ -50,35 +58,56 @@ def triton_cdiv(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl
         tl.store(out_ptr0 + x_index, tmp2, None)
 
 
-@pytest.mark.parametrize('param_list',
-                         [
-                            # ['int8', (4096,), 1, 4096, 4096],
-                            # ['int16', (4096,), 1, 4096, 4096],
-                            ['int32', (4096,), 1, 4096, 4096],
-                            # ['int64', (4096,), 1, 4096, 4096],
-                            # ['float16', (4096,), 1, 4096, 4096],
-                            # ['float32', (4096,), 1, 4096, 4096],
-                            # ['bfloat16', (4096,), 1, 4096, 4096],
-                         ])
+@triton.jit
+def triton_cdiv_special(in_ptr0, div, out_ptr0, XBLOCK, XBLOCK_SUB: tl.constexpr):
+    offset = tl.program_id(0) * XBLOCK
+    base1 = tl.arange(0, XBLOCK_SUB)
+    loops1: tl.constexpr = tl.cdiv(XBLOCK, XBLOCK_SUB)
+    for loop1 in range(loops1):
+        x_index = offset + (loop1 * XBLOCK_SUB) + base1
+        tmp0 = tl.load(in_ptr0 + x_index, None)
+        tmp2 = tl.cdiv(tmp0, div)
+        tl.store(out_ptr0 + x_index, tmp2, None)
+
+
+param_lists = [
+    # ['int8', (4096,), 1, 4096, 4096],
+    # ['int16', (4096,), 1, 4096, 4096],
+    ['int32', (4096,), 1, 4096, 4096],
+    # ['int64', (4096,), 1, 4096, 4096],
+    # ['float16', (4096,), 1, 4096, 4096],
+    ['float32', (4096,), 1, 4096, 4096],
+    # ['bfloat16', (4096,), 1, 4096, 4096],
+]
+
+
+@pytest.mark.parametrize('param_list', param_lists)
 def test_cdiv(param_list):
     # 生成数据
     dtype, shape, ncore, xblock, xblock_sub = param_list
     torch_dtype = eval('torch.' + dtype)
-    low = 0
-    if dtype == "int8":
-        high = 127
-    if dtype == "int16" or dtype == "int32" or dtype == "int64":
-        high = 2000
-    np_x0 = test_common.generate_numpy(shape, dtype, low=low, high=high)
-    np_x1 = test_common.generate_numpy(shape, dtype, low=low, high=high)
-    x0_ref = torch.from_numpy(np_x0).to(torch_dtype)
-    x1_ref = torch.from_numpy(np_x1).to(torch_dtype)
-    x0 = x0_ref.npu()
-    x1 = x1_ref.npu()
+    x0 = test_common.generate_tensor(shape, dtype).npu()
+    x1 = test_common.generate_tensor(shape, dtype).npu()
     # torch结果
-    torch_res = torch_cdiv(x0_ref, x1_ref, dtype)
+    torch_res = torch_cdiv(x0, x1, dtype)
     # triton结果
     triton_res = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
     triton_cdiv[ncore, 1, 1](x0, x1, triton_res, xblock, xblock_sub)
+    # 比较结果
+    test_common.validate_cmp(dtype, triton_res, torch_res)
+
+
+@pytest.mark.parametrize('param_list', param_lists)
+def test_cdiv_special(param_list):
+    # 生成数据
+    dtype, shape, ncore, xblock, xblock_sub = param_list
+    torch_dtype = eval('torch.' + dtype)
+    x0 = test_common.generate_tensor(shape, dtype).npu()
+    x1 = 2
+    # torch结果
+    torch_res = torch_cdiv_special(x0, x1, dtype)
+    # triton结果
+    triton_res = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
+    triton_cdiv_special[ncore, 1, 1](x0, x1, triton_res, xblock, xblock_sub)
     # 比较结果
     test_common.validate_cmp(dtype, triton_res, torch_res)
