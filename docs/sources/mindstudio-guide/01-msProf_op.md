@@ -4,7 +4,7 @@ msProf工具用于采集和分析运行在昇腾AI处理器上算子的关键性
 
 ## 1.环境准备
 
-工具使用前，需完成环境准备，详细参考[installation.md](../getting-started/installation.md), 配置triton环境
+工具使用前，需完成环境准备，详细参考[installation.md](../getting-started/installation.md)，配置triton环境
 其他配置：
   - 编译选项指定  
     对于算子仿真场景，如需要增加-g信息获取代码行调用栈信息的情况，需要通过设置如下环境变量来使能算子代码热点图和代码调用栈功能
