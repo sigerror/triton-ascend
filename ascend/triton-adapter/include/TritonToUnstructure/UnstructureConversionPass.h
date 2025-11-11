@@ -96,6 +96,7 @@ public:
                                 PatternRewriter &rewriter) const override;
 
 private:
+  bool checkUnstructureAnnotated(MemAccOpTy op, PatternRewriter &rewriter) const;
   Value createExtractOp(Location loc, Value value, PatternRewriter &rewriter,
                         ArrayRef<OpFoldResult> iterIdx) const;
   Value createExtractOp(Location loc, Value value, PatternRewriter &rewriter,
