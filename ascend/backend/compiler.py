@@ -108,10 +108,10 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             src_path,
             "--triton-linearize",
             f"--discrete-mask-access-conversion=compile-on-910-95={compile_on_910_95} "\
-            f"force_simt_template={force_simt_template}",
+            f"force-simt-template={force_simt_template}",
             "--triton-to-annotation",
             f"--triton-to-unstructure=compile-on-910-95={compile_on_910_95} " \
-            f"force_simt_template={force_simt_template}",
+            f"force-simt-template={force_simt_template}",
             "--triton-to-hivm",
             "--triton-to-hfusion",
             "--triton-to-llvm",

@@ -28,6 +28,10 @@ import test_common
 from test_common import TestUtils
 
 
+full_dtype = test_common._float_dtypes + test_common._int_dtypes + test_common._uint_dtypes
+temporarily_not_support_dtype = ['bool']
+
+
 @triton.jit
 def triton_tensor_descriptor_2d(
         out_ptr, x_ptr,
@@ -174,18 +178,16 @@ def triton_tensor_descriptor_function_2d(
     tl.store_tensor_descriptor(out_desc, [moffset, noffset], block)
 
 
-temporarily_not_support_dtype = ['bool']
-
-
-@pytest.mark.parametrize('dtype', TestUtils.full_dtype)
+@pytest.mark.parametrize('dtype', full_dtype)
 @pytest.mark.parametrize('shape', TestUtils.full_shape)
 def test_tensor_descriptor_load_store_nd(dtype, shape):
-    """测试tensor_descriptor的load和store功能"""
+    """test tensor_descriptor load/store for nd tensor"""
 
     if dtype in temporarily_not_support_dtype:
         pytest.skip(f"{dtype} not supported")
 
-    inp = test_common.generate_tensor(shape, dtype).npu()
+    inp = test_common.generate_numpy(shape, dtype)
+    inp = torch.from_numpy(inp).npu()
     out = inp.new_empty(shape)
     blocks = list(inp.size())
     strides = list(inp.stride())
@@ -202,26 +204,30 @@ def test_tensor_descriptor_load_store_nd(dtype, shape):
             triton_tensor_descriptor_2d[shape[0], 1, 1](out, inp, 1, shape[1], 1, shape[1])
         else:
             triton_tensor_descriptor_2d[grid](out, inp, *shape, *blocks)
-        torch.testing.assert_close(inp, out)
+        test_common.validate_cmp(dtype, inp, out)
     elif dims == 3:
         triton_tensor_descriptor_3d[grid](out, inp, *shape, *strides, *blocks)
-        torch.testing.assert_close(inp, out)
+        test_common.validate_cmp(dtype, inp, out)
     elif dims == 4:
         triton_tensor_descriptor_4d[grid](out, inp, *shape, *strides, *blocks)
-        torch.testing.assert_close(inp, out)
+        test_common.validate_cmp(dtype, inp, out)
     elif dims == 5:
         triton_tensor_descriptor_5d[grid](out, inp, *shape, *strides, *blocks)
-        torch.testing.assert_close(inp, out)
+        test_common.validate_cmp(dtype, inp, out)
     else:
         pytest.skip(f"{dims}d not supported")
 
 
-@pytest.mark.parametrize("dtype", ["float32"])
+@pytest.mark.parametrize("dtype", test_common._uint_dtypes)
 def test_tensor_descriptor_in_function(dtype):
-    """测试函数式接口是否正常工作"""
+    """test tensor_descriptor load/store in function"""
+
+    if dtype in temporarily_not_support_dtype:
+        pytest.skip(f"{dtype} not supported")
     
     M, N = 32, 128
-    inp = test_common.generate_tensor((M, N), dtype).npu()
+    inp = test_common.generate_numpy((M, N), dtype)
+    inp = torch.from_numpy(inp).npu()
     out = inp.new_empty((M, N))
 
     M_BLOCK = 8
@@ -230,4 +236,4 @@ def test_tensor_descriptor_in_function(dtype):
     grid_n = N // N_BLOCK
 
     triton_tensor_descriptor_function_2d[(grid_m, grid_n)](out, inp, M, N, M_BLOCK, N_BLOCK)
-    torch.testing.assert_close(inp, out)
+    test_common.validate_cmp(dtype, inp, out)

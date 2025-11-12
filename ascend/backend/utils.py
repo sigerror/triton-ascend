@@ -334,6 +334,8 @@ def convert_sigtype_to_int(sigty: str):
         "bf16": 27,  # DT_BF16
         "fp32": 0,  # FLOAT
         "fp64": 11,  # DOUBLE
+        "fp8e5m2": 35,  # FLOAT8_E5M2
+        "fp8e4m3fn": 36,  # FLOAT8_E4M3FN
     }
     if sigty not in MAP_SIGTYPE_TO_INT:
         raise ValueError(f"Unsupported data type: {sigty}")

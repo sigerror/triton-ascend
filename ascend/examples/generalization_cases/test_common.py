@@ -27,6 +27,18 @@ import logging
 from typing import AnyStr
 import pytest
 import functools
+import numpy as np
+
+
+_float_dtypes = [
+    'float32', 'float16', 'bfloat16'
+]
+_int_dtypes = [
+    'int32', 'int64', 'int16', 'int8'
+]
+_uint_dtypes = [
+    'uint8', 'uint16', 'uint32', 'uint64'
+]
 
 log_level = os.getenv("LOG_LEVEL", "WARN").upper()
 level_mapping = {
@@ -149,6 +161,23 @@ def check_ub_mem_overflow(dtype, shape):
     return False
 
 
+def generate_numpy(shape, dtype, low=None, high=None):
+    if dtype in _int_dtypes + _uint_dtypes:
+        iinfo = np.iinfo(getattr(np, dtype))
+        low = iinfo.min if low is None else max(low, iinfo.min)
+        high = iinfo.max if high is None else min(high, iinfo.max)
+        dty = getattr(np, dtype)
+        return np.random.randint(low, high, shape, dtype=dty)
+    elif dtype == 'float16' or dtype == 'float32':
+        return np.random.normal(0, 1, shape).astype(dtype)
+    elif dtype == 'bfloat16':
+        return (np.random.normal(0, 1, shape).astype('float32').view('uint32') & np.uint32(0xffff0000)).view('float32')
+    elif dtype == 'bool':
+        return np.random.randint(low=0, high=2, size=shape).astype(bool)
+    else:
+        raise ValueError('Invalid parameter \"dtype\" is found : {}'.format(dtype))
+
+
 def generate_tensor(shape, dtype):
     if dtype == 'float32' or dtype == 'float16' or dtype == 'bfloat16':
         return torch.randn(size=shape, dtype=eval('torch.' + dtype))
@@ -237,9 +266,9 @@ def validate_cmp(dtype, y_cal, y_ref):
                                    equal_nan=True)
     elif dtype == 'float32':
         torch.testing.assert_close(y_ref, y_cal, rtol=1e-04, atol=1e-04, equal_nan=True)
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' or dtype == 'uint32':
+    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8':
         assert torch.equal(y_cal, y_ref)
-    elif dtype == 'uint8':
+    elif dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
         assert torch.equal(y_cal, y_ref)
     elif dtype == 'bool':
         assert torch.equal(y_cal.cpu(), y_ref.cpu())
@@ -253,7 +282,8 @@ def validate_cmp_with_expection(dtype, y_cal, y_ref, expect):
             assert torch.allclose(y_ref, y_cal, rtol=1e-03, atol=1e-03, equal_nan=True)
         else:
             assert not torch.allclose(y_ref, y_cal, rtol=1e-03, atol=1e-03, equal_nan=True)
-    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' or dtype == 'uint8':
+    elif dtype == 'int32' or dtype == 'int64' or dtype == 'int16' or dtype == 'int8' \
+         or dtype == 'uint8' or dtype == 'uint16' or dtype == 'uint32' or dtype == 'uint64':
         if expect:
             assert torch.equal(y_cal, y_ref)
         else:

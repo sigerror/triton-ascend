@@ -377,6 +377,7 @@ class Config:
                     ("reg_dec_producer", self.reg_dec_producer),
                     ("reg_inc_consumer", self.reg_inc_consumer),
                     ("maxnreg", self.maxnreg),
+                    ("force_simt_template", self.force_simt_template),
 
                     ("multibuffer", self.multibuffer),
                     ("enable_hivm_auto_cv_balance", self.enable_hivm_auto_cv_balance),
@@ -388,7 +389,6 @@ class Config:
                     ("set_workspace_multibuffer", self.set_workspace_multibuffer),
                     ("tile_mix_vector_loop", self.tile_mix_vector_loop),
                     ("tile_mix_cube_loop", self.tile_mix_cube_loop),
-                    ("force_simt_template", self.force_simt_template),
                 ) if v is not None
             }
         }
