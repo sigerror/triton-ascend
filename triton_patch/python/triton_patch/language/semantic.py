@@ -601,19 +601,6 @@ def atom_red_typechecking_impl(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, 
         raise ValueError("Pointer argument of store instruction is " + ptr.type.__repr__())
     if ptr.type.is_const() or ptr.type.element_ty.is_const():
         raise ValueError("Cannot store to a constant pointer")
-    element_ty = ptr.type.scalar.element_ty                         
-    if element_ty in [tl.int1, tl.float16, tl.float32, tl.float64, tl.bfloat16] and op in ['or', 'xor']:
-        raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
-                         "All support dtypes are int8, int16, int32, int64.")
-    if element_ty in [tl.int1, tl.float64, tl.bfloat16] and op == 'xchg':
-        raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
-                         "All support dtypes are int8, int16, int32, int64, float16, float32.")
-    if element_ty in [tl.int1, tl.int64, tl.float64] and op in ['add', 'max', 'min']:
-        raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
-                         "All support dtypes are int8, int16, int32, float16, float32, bfloat16.")                         
-    if element_ty in [tl.int1, tl.float64]:
-        raise ValueError(f"atomic_{op} does not support {str(element_ty)}. "
-                         "All support dtypes are int8, int16, int32, int64, float16, float32, bfloat16.")
     if ptr.type.is_block():
         if mask is not None:
             mask = broadcast_impl_shape(mask, ptr.type.get_block_shapes(), builder)

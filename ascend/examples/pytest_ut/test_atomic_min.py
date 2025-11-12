@@ -28,7 +28,7 @@ import numpy as np
 
 
 @triton.jit
-def triton_test_fn_atomic_max_dma(
+def triton_test_fn_atomic_min_dma(
     in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr
 ):
     xoffset = tl.program_id(0) * BLOCK_SIZE
@@ -38,12 +38,11 @@ def triton_test_fn_atomic_max_dma(
     x0 = xindex
     x1 = yindex
     tmp0 = tl.load(in_ptr0 + (x0))
-    # only set mask of atomic_max
-    tl.atomic_max(out_ptr0 + (x1), tmp0, xmask)
+    tl.atomic_min(out_ptr0 + (x1), tmp0, xmask)
 
 
 @triton.jit
-def triton_test_fn_atomic_max_dma_supply(
+def triton_test_fn_atomic_min_dma_supply(
     in_ptr0, out_ptr0, n_elements: tl.constexpr, BLOCK_SIZE: tl.constexpr
 ):
     xoffset = tl.program_id(0) * BLOCK_SIZE
@@ -53,54 +52,44 @@ def triton_test_fn_atomic_max_dma_supply(
     x0 = xindex
     x1 = yindex
     tmp0 = tl.load(in_ptr0 + (x0), xmask)
-    tmp1 = tl.atomic_max(out_ptr0 + (x1), tmp0, xmask)
-# torch.max do not support int
+    tmp1 = tl.atomic_min(out_ptr0 + (x1), tmp0, xmask)
+
 @pytest.mark.parametrize('param_list',
                          [
+                             ['int8', (32, 32), 2],
                              ['int16', (32, 32), 2],
-                             ['float16', (32, 32), 2],
-                             ['float32', (128, 128), 8],
-                             ['float32', (32768, 16), 32],
                              ['int32', (32, 32), 2],
-                             ['int32', (128, 128), 8],
-                             ['int32', (32768, 16), 32],
+                             ['float16', (64, 64), 4],
+                             ['float32', (32, 32), 2],
                          ]
                          )
-def test_atomic_max(param_list):
+def test_atomic_min(param_list):
     dtype, shape, ncore = param_list
     block_size = shape[0] * shape[1] / ncore
     split_size = shape[0] // ncore
-    # old size: (32768, 256)
-    # tensor of (1024, 256) is too big, and it will lead to failure in the backend
-    # so here we make it smaller
     x0 = test_common.generate_tensor(shape, dtype)
     x1 = test_common.generate_tensor((split_size, shape[1]), dtype)
     y = test_common.generate_tensor((split_size, shape[1]), dtype)
 
     merged_tensor = torch.cat((x0, x1), dim=0)
     chunks = torch.stack(torch.chunk(merged_tensor, ncore+1, dim=0))
-    x1_ref = torch.max(chunks, dim=0)[0]
+    x1_ref = torch.min(chunks, dim=0)[0]
     x0 = x0.npu()
     x1 = x1.npu()
     y = y.npu()
 
     n_elements = shape[0] * shape[1]
-    triton_test_fn_atomic_max_dma[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=split_size * shape[1])
+    triton_test_fn_atomic_min_dma[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=split_size * shape[1])
     test_common.validate_cmp(dtype, x1, x1_ref)
 
 @pytest.mark.parametrize('shape', [(3, 1), (13, 1), (32, 1), (256, 1)])
 @pytest.mark.parametrize('dtype', ['float32'])
-def test_atomic_max_2d_supply(dtype, shape):
-    # old size: (32768, 256)
-    # tensor of (1024, 256) is too big, and it will lead to failure in the backend
-    # so here we make it smaller
+def test_atomic_min_2d_supply(dtype, shape):
     x0 = test_common.generate_tensor(shape, dtype).npu()
     x1 = test_common.generate_tensor(shape, dtype).npu()
 
-    x1_ref = torch.maximum(x0, x1)
+    x1_ref = torch.minimum(x0, x1)
 
     n_elements = shape[0] * shape[1]
-    triton_test_fn_atomic_max_dma_supply[shape[0], 1, 1](x0, x1, n_elements, BLOCK_SIZE=shape[1])
+    triton_test_fn_atomic_min_dma_supply[shape[0], 1, 1](x0, x1, n_elements, BLOCK_SIZE=shape[1])
     test_common.validate_cmp(dtype, x1, x1_ref)
-# if __name__ == "__main__":
-#     test_atomic_max(['int32', (8, 8), 2])

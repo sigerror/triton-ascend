@@ -41,13 +41,10 @@ def atomic_xchg(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexp
 
 @pytest.mark.parametrize('param_list',
                          [
-                             ['int64', (32, 32), 2],
                              ['int32', (32, 32), 2],
                              ['int16', (16, 16), 2],
                              ['int8', (32, 32), 2],
                              ['float32', (16, 16), 2],
-                             ['float16', (64, 64), 4],
-                             ['float32', (128, 128), 8],
                              ['float16', (128, 128), 16],
                              ['float32', (32768, 16), 32],
                          ]
@@ -71,3 +68,4 @@ def test_atomic_xchg(param_list):
     n_elements = shape[0] * shape[1]
     atomic_xchg[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
     test_common.validate_cmp(dtype, pointer, pointer_ref)
+

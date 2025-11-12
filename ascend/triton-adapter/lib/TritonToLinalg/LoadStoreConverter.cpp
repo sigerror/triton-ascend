@@ -445,10 +445,6 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
   }
 
   auto rmwOp = op.getAtomicRmwOp();
-  if (rmwOp == triton::RMWOp::UMAX || rmwOp == triton::RMWOp::UMIN) {
-    return rewriter.notifyMatchFailure(
-        op, "AtomicRMWConverter: unsupported atomic kind for now");
-  }
 
   // 1. Simple case where no mask is used.
   auto type = dyn_cast<MemRefType>(ptr.getType());

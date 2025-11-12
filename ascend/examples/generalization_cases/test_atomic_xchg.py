@@ -27,7 +27,7 @@ import triton.language as tl
 
 import test_common
 from test_common import TestUtils
-filtered_dtype = [dtype for dtype in TestUtils.full_dtype if dtype not in {'uint32', 'bfloat16', 'int64', 'bool'}]
+filtered_dtype = [dtype for dtype in TestUtils.full_dtype if dtype not in {'uint32', 'bfloat16', 'bool'}]
 
 
 @triton.jit
@@ -375,3 +375,39 @@ def test_atomic_xchg_1d(x_dtype_str, shaape):
 
     expected = x_temp[shape[0]:x_shape[0]].expand(out_temp.shape)
     torch.testing.assert_close(out, expected)
+    
+
+@pytest.mark.parametrize('param_list',
+                         [
+                             ['uint8', (32, 32), 2],
+                             ['uint16', (32, 32), 2],
+                             ['uint32', (32, 32), 2],
+                             ['uint64', (32, 32), 2]
+                         ]
+                         )
+def test_atomic_xchg_uint(param_list):
+    dtype, shape, ncore = param_list
+    block_size = shape[0] * shape[1] // ncore
+    split_size = shape[0] // ncore
+
+    val_cpu = torch.randint(low=0, high=10, size=shape, dtype=eval(f'torch.{dtype}')).cpu()
+    val = val_cpu.to("npu")
+
+    pointer_cpu = torch.randint(low=0, high=10, size=(split_size, shape[1]), dtype=eval(f'torch.{dtype}')).cpu()
+    pointer = pointer_cpu.to("npu")
+
+    pointer_ref = pointer.clone()
+    pointer_old_cpu = torch.full_like(val_cpu, -10).cpu()
+    pointer_old = pointer_old_cpu.to("npu")
+    pointer_old_ref = pointer_old.clone()
+
+    pointer_ref = val[((ncore - 1) * split_size):(ncore * split_size)].clone()
+    pointer_old_ref[0:split_size] = pointer
+    pointer_old_ref[split_size:((ncore - 1) * split_size)] = val[0:(ncore - 2) * split_size]
+    
+    n_elements = shape[0] * shape[1]
+    atomic_xchg[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
+
+    pointer_cpu = pointer.cpu()
+    pointer_ref_cpu = pointer_ref.cpu()
+    assert (pointer_cpu == pointer_ref_cpu).all()

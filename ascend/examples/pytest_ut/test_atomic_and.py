@@ -25,7 +25,6 @@ import test_common
 import torch
 import torch_npu
 
-
 @triton.jit
 def atomic_and(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
     xoffset = tl.program_id(0) * BLOCK_SIZE

@@ -25,6 +25,7 @@ import triton
 
 import triton.language as tl
 
+import numpy as np
 import test_common
 from test_common import TestUtils
 filtered_dtype = [dtype for dtype in TestUtils.full_dtype if dtype not in {'int64', 'bool'}]
@@ -528,3 +529,34 @@ def test_atomic_add_2d(x_dtype_str, y_dtype_str, param_list):
     
     expected = out_temp + y_temp + x0_temp
     torch.testing.assert_close(out, expected)
+    
+    
+@pytest.mark.parametrize('param_list',
+                         [
+                             ['uint8', (32, 32), 2],
+                             ['uint16', (32, 32), 2],
+                             ['uint32', (32, 32), 2],
+                         ]
+                         )
+def test_atomic_add_uint(param_list):
+    dtype, shape, ncore = param_list
+    block_size = shape[0] * shape[1] / ncore
+    split_size = shape[0] // ncore
+    x0_value = 3
+    x0_cpu = torch.full(shape, x0_value, dtype = eval(f'torch.{dtype}')).cpu()
+    x0 = x0_cpu.to("npu")
+    x1_cpu = torch.full((split_size, shape[1]), 4, dtype = eval(f'torch.{dtype}')).cpu()
+    x1 = x1_cpu.to("npu")
+    y_cpu = torch.full((split_size, shape[1]), -10, dtype = eval(f'torch.{dtype}')).cpu()
+    y = y_cpu.to("npu")
+
+    x1_np = x1_cpu.numpy()
+    y_ref_np = x1_np + 0
+    x1_ref_np = x1_np + ncore * x0_value
+    
+    x1_ref = torch.from_numpy(x1_ref_np).npu()
+    y_ref = torch.from_numpy(y_ref_np).npu()
+
+    n_elements = shape[0] * shape[1]
+    atomic_add[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=split_size * shape[1])
+    test_common.validate_cmp(dtype, x1, x1_ref)

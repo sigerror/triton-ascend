@@ -27,7 +27,7 @@ import triton.language as tl
 
 import test_common
 from test_common import TestUtils
-filtered_dtype = [dtype for dtype in TestUtils.full_dtype if dtype not in {'uint32', 'float16', 'float32', 'bfloat16', 'int64', 'bool'}]
+filtered_dtype = [dtype for dtype in TestUtils.full_dtype if dtype not in {'uint32', 'float16', 'float32', 'bfloat16', 'bool'}]
 
 
 @triton.jit
@@ -378,3 +378,38 @@ def test_atomic_xor_1d(x_dtype_str, shape):
 
     expected = out_temp ^ x_temp[0:shape[0]] ^ x_temp[shape[0]:x_shape[0]]
     torch.testing.assert_close(out, expected)
+    
+    
+@pytest.mark.parametrize('param_list',
+                         [
+                             ['uint8', (32, 32), 2],
+                             ['uint16', (32, 32), 2],
+                             ['uint32', (32, 32), 2],
+                             ['uint64', (32, 32), 2],
+                         ]
+                         )
+def test_atomic_xor_uint(param_list):
+    dtype, shape, ncore = param_list
+    block_size = shape[0] * shape[1] // ncore
+    split_size = shape[0] // ncore
+
+    val_value = 3
+    val_cpu = torch.full(shape, val_value, dtype=eval(f'torch.{dtype}')).cpu()
+    val = val_cpu.to("npu")
+
+    pointer_value = 5
+    pointer_cpu = torch.full((split_size, shape[1]), pointer_value, dtype=eval(f'torch.{dtype}')).cpu()
+    pointer = pointer_cpu.to("npu")
+    pointer_old_cpu = torch.full_like(pointer_cpu, -10).cpu()
+    pointer_old = pointer_old_cpu.to("npu")
+    
+    pointer_result = pointer_value
+    for _ in range(ncore):
+        pointer_result ^= val_value
+
+    pointer_ref_cpu = torch.full_like(pointer_cpu, pointer_result).cpu()
+    pointer_ref = pointer_ref_cpu.to("npu")
+
+    n_elements = shape[0] * shape[1]
+    atomic_xor[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
+    test_common.validate_cmp(dtype, pointer, pointer_ref)

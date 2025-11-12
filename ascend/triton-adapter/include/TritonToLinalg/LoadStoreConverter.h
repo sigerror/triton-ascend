@@ -204,6 +204,10 @@ private:
       }
     } else if (rmwOp == triton::RMWOp::XCHG) {
       binaryOp = rhs;
+    } else if (rmwOp == triton::RMWOp::UMAX) {
+      binaryOp = builder.create<arith::MaxUIOp>(loc, lhs, rhs);
+    } else if (rmwOp == triton::RMWOp::UMIN) {
+      binaryOp = builder.create<arith::MinUIOp>(loc, lhs, rhs);
     } else {
       op.emitOpError("unsupported atomic RMW operation: ");
       llvm_unreachable(
