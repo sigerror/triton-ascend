@@ -444,7 +444,7 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
                          "pointers or loading a scalar. Because the compiler does not know the boundary; please "
                          "use block pointers (defined by `make_block_ptr`) instead")
 
-    if other is None and care_padding == True:
+    if mask is not None and other is None and care_padding == True:
         other = to_tensor(0, builder)
     # For a pointer of scalar, check the type of `mask` and `other`
     if not ptr.type.is_block():
