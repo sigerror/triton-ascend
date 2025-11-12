@@ -50,6 +50,7 @@ def triton_sub(in_ptr0, in_ptr1, out_ptr0, XBLOCK: tl.constexpr, XBLOCK_SUB: tl.
                              ['float16', (2, 4096, 8), 2, 32768, 1024],
                              ['int32', (2, 4096, 8), 2, 32768, 1024],
                              ['int8', (2, 4096, 8), 2, 32768, 1024],
+                             ['uint8', (2, 4096, 8), 2, 32768, 1024],
                          ]
                          )
 

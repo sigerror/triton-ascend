@@ -27,6 +27,7 @@ import torch
 import test_common
 from test_common import TestUtils
 import logging
+import numpy as np
 
 
 @triton.jit
@@ -411,3 +412,24 @@ def test_add_2d_to_5d(x_dtype_str, y_dtype_str, param_list):
         raise ValueError(f"Unsupported tensor dim: {ndim}")
     expected = out_temp + y_temp + x0_temp
     torch.testing.assert_close(out, expected)
+
+
+@pytest.mark.parametrize('shape', TestUtils.test_shape1d)
+@pytest.mark.parametrize('dtype', ['uint16', 'uint32', 'uint64'])
+def test_add_uint(shape, dtype):
+    torch_dtype = eval('torch.' + dtype)
+    np_x0 = test_common.generate_numpy(shape, dtype)
+    np_x1 = test_common.generate_numpy(shape, dtype)
+    np_x2 = test_common.generate_numpy(shape, dtype)  
+
+    x0 = torch.from_numpy(np_x0).to(torch_dtype).npu()
+    x1 = torch.from_numpy(np_x1).to(torch_dtype).npu()
+    x2 = torch.from_numpy(np_x2).to(torch_dtype).npu()   
+
+    #numpy result
+    ans_numpy = np_x0 + np_x1
+    z_ref1 = torch.from_numpy(ans_numpy).npu()
+
+    triton_res = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
+    triton_add[1, 1, shape[0]](triton_res, x0, x1, x2, 1, 1, 1, 1, 1, shape[0]) 
+    test_common.validate_cmp(dtype, z_ref1, triton_res)
