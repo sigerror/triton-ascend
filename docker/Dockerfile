@@ -78,16 +78,7 @@ RUN cd build && \
     cd .. && \
     rm -rf build
 
-# Add user triton
-RUN useradd triton \
-    --create-home \
-    --shell=/bin/bash \
-    --uid=1000 \
-    --user-group && \
-    echo "triton ALL=(ALL) NOPASSWD:ALL" >>/etc/sudoers.d/nopasswd && \
-    echo "source /usr/local/Ascend/ascend-toolkit/set_env.sh" >> /home/triton/.bashrc
-	
-USER triton
+RUN echo "source /usr/local/Ascend/ascend-toolkit/set_env.sh" >> ~/.bashrc && \
+    echo "export LD_LIBRARY_PATH=/usr/local/Ascend/driver/lib64/common/:/usr/local/Ascend/driver/lib64/driver/:$LD_LIBRARY_PATH" >> ~/.bashrc
 
-WORKDIR /home/triton
 
