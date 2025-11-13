@@ -61,6 +61,11 @@ from triton.backends.compiler import (
 from triton.runtime import driver
 from triton.runtime.cache import get_dump_manager
 
+try:
+    import acl
+    is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
+except Exception as e:
+    is_compile_on_910_95 = False
 
 # TODO: materialize the concrete min shape
 def min_dot_size(target: GPUTarget):
@@ -561,7 +566,7 @@ class NPUOptions:
     reg_dec_producer: int = 0
     reg_inc_consumer: int = 0
 
-    compile_on_910_95: bool = False
+    compile_on_910_95: bool = is_compile_on_910_95
     force_simt_template: bool = False
     enable_warp_specialization: bool = False
     enable_nd2nz_on_vector: bool = False
@@ -573,7 +578,7 @@ class NPUOptions:
     max_num_imprecise_acc_default: bool = None
     extern_libs: dict = None
 
-    multibuffer: bool = True
+    multibuffer: bool = not is_compile_on_910_95
     enable_hivm_auto_cv_balance: bool = None
     sync_solver: bool = None
     unit_flag: bool = None
@@ -676,7 +681,6 @@ class AscendBackend(BaseBackend):
                 for k in NPUOptions.__dataclass_fields__.keys()
                 if k in opts
             }
-            args["compile_on_910_95"] = self.target.arch.startswith("Ascend910_95")
             options = NPUOptions(**args)
         else:
             args = {
