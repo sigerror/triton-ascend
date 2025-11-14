@@ -553,14 +553,16 @@ void replaceOperands(MutableArrayRef<OpOperand> oprs, RewriterBase &rewriter,
       parse(operand, operand.getLoc(), rewriter, offsetMap);
       opr.set(offsetMap.at(operand).getOffset());
     } else if (auto ptrType = dyn_cast<triton::PointerType>(operand.getType())) {
+      parse(operand, operand.getLoc(), rewriter, offsetMap);
       if (auto tensorType =
               dyn_cast<RankedTensorType>(ptrType.getPointeeType())) {
-        parse(operand, operand.getLoc(), rewriter, offsetMap);
         for (auto offset: offsetMap.at(operand).getOffsets()) {
           it->set(offset);
           ++it;
         }
         --it;
+      } else {
+        opr.set(offsetMap.at(operand).getOffset());
       }
     }
   }
@@ -592,21 +594,21 @@ void replaceArgs(ValueRange args, RewriterBase &rewriter,
       rewriter.replaceOpWithNewOp<triton::AddPtrOp>(
           tempVar.getDefiningOp(), tempVar.getType(), src, arg);
     } else if (auto ptrType = dyn_cast<triton::PointerType>(arg.getType())) {
+      RewriterBase::InsertionGuard guard(rewriter);
+      if (auto blockArg = dyn_cast<BlockArgument>(arg)) {
+        rewriter.setInsertionPointToStart(blockArg.getOwner());
+      } else {
+        rewriter.setInsertionPointAfterValue(arg);
+      }
+      auto tempVar = rewriter
+                        .create<UnrealizedConversionCastOp>(
+                            arg.getLoc(), arg.getType(), ValueRange({}))
+                        ->getResult(0);
+      parse(arg, arg.getLoc(), rewriter, offsetMap);
+      rewriter.replaceAllUsesWith(arg, tempVar);
       if (auto tensorType =
               dyn_cast<RankedTensorType>(ptrType.getPointeeType())) {
-        RewriterBase::InsertionGuard guard(rewriter);
-        if (auto blockArg = dyn_cast<BlockArgument>(arg)) {
-          rewriter.setInsertionPointToStart(blockArg.getOwner());
-        } else {
-          rewriter.setInsertionPointAfterValue(arg);
-        }
-        auto tempVar = rewriter
-                          .create<UnrealizedConversionCastOp>(
-                              arg.getLoc(), arg.getType(), ValueRange({}))
-                          ->getResult(0);
-        parse(arg, arg.getLoc(), rewriter, offsetMap);
         auto srcOp = offsetMap.at(arg).getPtr().getDefiningOp<triton::MakeTensorPtrOp>();
-        rewriter.replaceAllUsesWith(arg, tempVar);
         arg.setType(rewriter.getIntegerType(32));
         SmallVector<Value> newOffsets;
         for (auto offset: offsetMap.at(arg).getOffsets()) {
@@ -616,6 +618,11 @@ void replaceArgs(ValueRange args, RewriterBase &rewriter,
         --it;
         rewriter.replaceOpWithNewOp<triton::MakeTensorPtrOp>(
           tempVar.getDefiningOp(), tempVar.getType(), srcOp.getBase(), srcOp.getShape(), srcOp.getStrides(), newOffsets, srcOp.getOrder());  
+      } else {
+        auto src = offsetMap.at(arg).getPtr();
+        arg.setType(rewriter.getIntegerType(64));
+        rewriter.replaceOpWithNewOp<triton::AddPtrOp>(
+            tempVar.getDefiningOp(), tempVar.getType(), src, arg);
       }
     }
   }
