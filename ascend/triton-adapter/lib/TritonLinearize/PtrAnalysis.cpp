@@ -1751,14 +1751,14 @@ LogicalResult PtrAnalysis::rewriteAddptrOp(triton::AddPtrOp op) {
     return success();
   }
 
-  if(state.sizes.empty() && !(state.source && state.scalar)){
-    op->emitError("After addptr, state is empty or missing source/scalar.");
-    return failure();
-  }
-
   if (state.memAccTy.isUnstructured() || state.memAccTy.isFallback()) {
     LLVM_DEBUG({ llvm::dbgs() << "do nothing for indirect loading"<< "\n"; });
     return success();
+  }
+
+  if(state.sizes.empty() && !(state.source && state.scalar)){
+    op->emitError("After addptr, state is empty or missing source/scalar.");
+    return failure();
   }
 
   // analyze whether permute is needed 
