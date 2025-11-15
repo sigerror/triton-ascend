@@ -134,3 +134,71 @@ module {
 // CHECK: %[[TENSOR:.*]] = bufferization.to_tensor %[[INPUT_BUF]] restrict writable : memref<8xi64>
 // CHECK: %{{.*}} = call @triton_cumsum_0(%[[TENSOR]], %c0_i32, %false) : (tensor<8xi64>, i32, i1) -> tensor<8xi64>
 // CHECK: bufferization.materialize_in_destination
+
+
+// === f8E4M3FN version ===
+module {
+  tt.func public @fn_npu_f8E4M3FN(
+    %arg0: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32},
+    %arg1: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32}
+  ) {
+    %0 = tt.make_range {end = 8 : i32, start = 0 : i32} : tensor<8xi32>
+    %1 = tt.splat %arg1 : !tt.ptr<f8E4M3FN> -> tensor<8x!tt.ptr<f8E4M3FN>>
+    %2 = tt.addptr %1, %0 : tensor<8x!tt.ptr<f8E4M3FN>>, tensor<8xi32>
+    %3 = tt.load %2 : tensor<8x!tt.ptr<f8E4M3FN>>
+    %4 = "tt.scan"(%3) <{axis = 0 : i32, reverse = false}> ({
+    ^bb0(%arg2: f8E4M3FN, %arg3: f8E4M3FN):
+      %7 = arith.addf %arg2, %arg3 : f8E4M3FN
+      tt.scan.return %7 : f8E4M3FN
+    }) : (tensor<8xf8E4M3FN>) -> tensor<8xf8E4M3FN>
+    %5 = tt.splat %arg0 : !tt.ptr<f8E4M3FN> -> tensor<8x!tt.ptr<f8E4M3FN>>
+    %6 = tt.addptr %5, %0 : tensor<8x!tt.ptr<f8E4M3FN>>, tensor<8xi32>
+    tt.store %6, %4 : tensor<8x!tt.ptr<f8E4M3FN>>
+    tt.return
+  }
+}
+
+// -----
+
+// CHECK: func.func private @triton_cumsum_0(tensor<8xf8E4M3FN>, i32, i1) -> tensor<8xf8E4M3FN>
+// CHECK: %false = arith.constant false
+// CHECK: %c0_i32 = arith.constant 0 : i32
+// CHECK: %[[INPUT_BUF:.+]] = memref.alloc() : memref<8xf8E4M3FN>
+// CHECK: memref.copy {{.*}}, %[[INPUT_BUF]] : memref<8xf8E4M3FN{{.*}}> to memref<8xf8E4M3FN>
+// CHECK: %[[TENSOR:.+]] = bufferization.to_tensor %[[INPUT_BUF]] restrict writable : memref<8xf8E4M3FN>
+// CHECK: %{{.*}} = call @triton_cumsum_0(%[[TENSOR]], %c0_i32, %false) : (tensor<8xf8E4M3FN>, i32, i1) -> tensor<8xf8E4M3FN>
+// CHECK: bufferization.materialize_in_destination
+
+
+// === f8E5M2 version ===
+module {
+  tt.func public @fn_npu_f8E5M2(
+    %arg0: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32},
+    %arg1: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32}
+  ) {
+    %0 = tt.make_range {end = 8 : i32, start = 0 : i32} : tensor<8xi32>
+    %1 = tt.splat %arg1 : !tt.ptr<f8E5M2> -> tensor<8x!tt.ptr<f8E5M2>>
+    %2 = tt.addptr %1, %0 : tensor<8x!tt.ptr<f8E5M2>>, tensor<8xi32>
+    %3 = tt.load %2 : tensor<8x!tt.ptr<f8E5M2>>
+    %4 = "tt.scan"(%3) <{axis = 0 : i32, reverse = false}> ({
+    ^bb0(%arg2: f8E5M2, %arg3: f8E5M2):
+      %7 = arith.addf %arg2, %arg3 : f8E5M2
+      tt.scan.return %7 : f8E5M2
+    }) : (tensor<8xf8E5M2>) -> tensor<8xf8E5M2>
+    %5 = tt.splat %arg0 : !tt.ptr<f8E5M2> -> tensor<8x!tt.ptr<f8E5M2>>
+    %6 = tt.addptr %5, %0 : tensor<8x!tt.ptr<f8E5M2>>, tensor<8xi32>
+    tt.store %6, %4 : tensor<8x!tt.ptr<f8E5M2>>
+    tt.return
+  }
+}
+
+// -----
+
+// CHECK: func.func private @triton_cumsum_0(tensor<8xf8E5M2>, i32, i1) -> tensor<8xf8E5M2>
+// CHECK: %false = arith.constant false
+// CHECK: %c0_i32 = arith.constant 0 : i32
+// CHECK: %[[INPUT_BUF:.+]] = memref.alloc() : memref<8xf8E5M2>
+// CHECK: memref.copy {{.*}}, %[[INPUT_BUF]] : memref<8xf8E5M2{{.*}}> to memref<8xf8E5M2>
+// CHECK: %[[TENSOR:.+]] = bufferization.to_tensor %[[INPUT_BUF]] restrict writable : memref<8xf8E5M2>
+// CHECK: %{{.*}} = call @triton_cumsum_0(%[[TENSOR]], %c0_i32, %false) : (tensor<8xf8E5M2>, i32, i1) -> tensor<8xf8E5M2>
+// CHECK: bufferization.materialize_in_destination

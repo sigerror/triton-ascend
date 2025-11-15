@@ -122,3 +122,79 @@ module {
 // CHECK-DAG: arith.constant 0 : i64
 // CHECK-DAG: tensor.empty() : tensor<8x8x4xi64>
 // CHECK-DAG: linalg.fill ins(%{{.*}} : i64) outs(%{{.*}} : tensor<8x8x4xi64>) -> tensor<8x8x4xi64>
+
+
+// === f8E4M3FN version ===
+module {
+  tt.func public @fn_npu_f8E4M3FN(%arg0: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32}) {
+    %cst = arith.constant dense<0.000000e+00> : tensor<8x8x4xf8E4M3FN>
+    %cst_0 = arith.constant dense<4> : tensor<1x8x1xi32>
+    %cst_1 = arith.constant dense<4> : tensor<8x1x1xi32>
+    %cst_2 = arith.constant dense<8> : tensor<8x1x1xi32>
+    %0 = tt.make_range {end = 8 : i32, start = 0 : i32} : tensor<8xi32>
+    %1 = tt.make_range {end = 4 : i32, start = 0 : i32} : tensor<4xi32>
+    %2 = tt.expand_dims %0 {axis = 1 : i32} : tensor<8xi32> -> tensor<8x1xi32>
+    %3 = tt.expand_dims %2 {axis = 2 : i32} : tensor<8x1xi32> -> tensor<8x1x1xi32>
+    %4 = arith.muli %3, %cst_2 : tensor<8x1x1xi32>
+    %5 = arith.muli %4, %cst_1 : tensor<8x1x1xi32>
+    %6 = tt.expand_dims %0 {axis = 0 : i32} : tensor<8xi32> -> tensor<1x8xi32>
+    %7 = tt.expand_dims %6 {axis = 2 : i32} : tensor<1x8xi32> -> tensor<1x8x1xi32>
+    %8 = arith.muli %7, %cst_0 : tensor<1x8x1xi32>
+    %9 = tt.broadcast %5 : tensor<8x1x1xi32> -> tensor<8x8x1xi32>
+    %10 = tt.broadcast %8 : tensor<1x8x1xi32> -> tensor<8x8x1xi32>
+    %11 = arith.addi %9, %10 : tensor<8x8x1xi32>
+    %12 = tt.expand_dims %1 {axis = 0 : i32} : tensor<4xi32> -> tensor<1x4xi32>
+    %13 = tt.expand_dims %12 {axis = 1 : i32} : tensor<1x4xi32> -> tensor<1x1x4xi32>
+    %14 = tt.broadcast %11 : tensor<8x8x1xi32> -> tensor<8x8x4xi32>
+    %15 = tt.broadcast %13 : tensor<1x1x4xi32> -> tensor<8x8x4xi32>
+    %16 = arith.addi %14, %15 : tensor<8x8x4xi32>
+    %17 = tt.splat %arg0 : !tt.ptr<f8E4M3FN> -> tensor<8x8x4x!tt.ptr<f8E4M3FN>>
+    %18 = tt.addptr %17, %16 : tensor<8x8x4x!tt.ptr<f8E4M3FN>>, tensor<8x8x4xi32>
+    tt.store %18, %cst : tensor<8x8x4x!tt.ptr<f8E4M3FN>>
+    tt.return
+  }
+}
+
+// -----
+
+// CHECK-DAG: arith.constant 0.0 : f8E4M3FN
+// CHECK-DAG: tensor.empty() : tensor<8x8x4xf8E4M3FN>
+// CHECK-DAG: linalg.fill ins(%{{.*}} : f8E4M3FN) outs(%{{.*}} : tensor<8x8x4xf8E4M3FN>) -> tensor<8x8x4xf8E4M3FN>
+
+
+// === f8E5M2 version ===
+module {
+  tt.func public @fn_npu_f8E5M2(%arg0: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32}) {
+    %cst = arith.constant dense<0.000000e+00> : tensor<8x8x4xf8E5M2>
+    %cst_0 = arith.constant dense<4> : tensor<1x8x1xi32>
+    %cst_1 = arith.constant dense<4> : tensor<8x1x1xi32>
+    %cst_2 = arith.constant dense<8> : tensor<8x1x1xi32>
+    %0 = tt.make_range {end = 8 : i32, start = 0 : i32} : tensor<8xi32>
+    %1 = tt.make_range {end = 4 : i32, start = 0 : i32} : tensor<4xi32>
+    %2 = tt.expand_dims %0 {axis = 1 : i32} : tensor<8xi32> -> tensor<8x1xi32>
+    %3 = tt.expand_dims %2 {axis = 2 : i32} : tensor<8x1xi32> -> tensor<8x1x1xi32>
+    %4 = arith.muli %3, %cst_2 : tensor<8x1x1xi32>
+    %5 = arith.muli %4, %cst_1 : tensor<8x1x1xi32>
+    %6 = tt.expand_dims %0 {axis = 0 : i32} : tensor<8xi32> -> tensor<1x8xi32>
+    %7 = tt.expand_dims %6 {axis = 2 : i32} : tensor<1x8xi32> -> tensor<1x8x1xi32>
+    %8 = arith.muli %7, %cst_0 : tensor<1x8x1xi32>
+    %9 = tt.broadcast %5 : tensor<8x1x1xi32> -> tensor<8x8x1xi32>
+    %10 = tt.broadcast %8 : tensor<1x8x1xi32> -> tensor<8x8x1xi32>
+    %11 = arith.addi %9, %10 : tensor<8x8x1xi32>
+    %12 = tt.expand_dims %1 {axis = 0 : i32} : tensor<4xi32> -> tensor<1x4xi32>
+    %13 = tt.expand_dims %12 {axis = 1 : i32} : tensor<1x4xi32> -> tensor<1x1x4xi32>
+    %14 = tt.broadcast %11 : tensor<8x8x1xi32> -> tensor<8x8x4xi32>
+    %15 = tt.broadcast %13 : tensor<1x1x4xi32> -> tensor<8x8x4xi32>
+    %16 = arith.addi %14, %15 : tensor<8x8x4xi32>
+    %17 = tt.splat %arg0 : !tt.ptr<f8E5M2> -> tensor<8x8x4x!tt.ptr<f8E5M2>>
+    %18 = tt.addptr %17, %16 : tensor<8x8x4x!tt.ptr<f8E5M2>>, tensor<8x8x4xi32>
+    tt.store %18, %cst : tensor<8x8x4x!tt.ptr<f8E5M2>>
+    tt.return
+  }
+}
+
+// -----
+
+// CHECK-DAG: arith.constant 0.0 : f8E5M2
+// CHECK-DAG: tensor.empty() : tensor<8x8x4xf8E5M2>
+// CHECK-DAG: linalg.fill ins(%{{.*}} : f8E5M2) outs(%{{.*}} : tensor<8x8x4xf8E5M2>) -> tensor<8x8x4xf8E5M2>
