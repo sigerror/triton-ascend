@@ -20,6 +20,7 @@
 
 
 import functools
+import hashlib
 import os
 import re
 import shutil
@@ -27,6 +28,8 @@ import subprocess
 import sysconfig
 from pathlib import Path
 import logging
+from platform import python_version
+
 import pybind11
 
 
@@ -196,7 +199,7 @@ def _check_bishengir_is_regbased() -> bool:
 
 
 @functools.lru_cache(None)
-def _get_ascend_path() -> str:
+def _get_ascend_path() -> Path:
     path = os.getenv("ASCEND_HOME_PATH", "")
     if path == "":
         raise EnvironmentError(
@@ -225,11 +228,7 @@ def _enable_unpublished_feature() -> bool:
 def _enable_print_ub_bits() -> bool:
     return os.getenv("ENABLE_PRINT_UB_BITS", "false").lower() in ("true", "1")
 
-def _build_npu_ext(obj_name: str, src_path, *, kernel_launcher="torch") -> str:
-    suffix = sysconfig.get_config_var("EXT_SUFFIX")
-    src_dir = os.path.dirname(src_path)
-    so_path = os.path.join(src_dir, f"{obj_name}{suffix}")
-
+def _get_cxx():
     cxx = os.environ.get("CC")
     if cxx is None:
         clangxx = shutil.which("clang++")
@@ -237,7 +236,41 @@ def _build_npu_ext(obj_name: str, src_path, *, kernel_launcher="torch") -> str:
         cxx = clangxx if clangxx is not None else gxx
         if cxx is None:
             raise RuntimeError("Failed to find C++ compiler")
-    cc_cmd = [cxx, src_path]
+    return cxx
+
+def _get_cxx_precompiled(header_path):
+    cc_cmd = []
+    cxx = os.environ.get("CC")
+    if cxx is None:
+        clangxx = shutil.which("clang++")
+        gxx = shutil.which("g++")
+        if clangxx is not None:
+            cc_cmd += [clangxx, "-include", header_path]
+        elif gxx is not None:
+            cc_cmd += [gxx]
+        else:
+            raise RuntimeError("Failed to find C++ compiler")
+    return cc_cmd
+
+def _precompile_npu_hash(header_src):
+    import sys
+    import torch
+    import torch_npu
+    cxx = _get_cxx()
+    py_version = sys.version
+    torch_version = torch.version.git_version
+    torch_npu_version = torch_npu.version.git_version
+    asc_path = _get_ascend_path().name
+    version_txt = [header_src, cxx, py_version, torch_version, torch_npu_version, asc_path]
+    hash_txt = hashlib.sha256("_".join(version_txt).encode("utf-8")).hexdigest()
+    return hash_txt
+
+def _precompile_npu_ext(src_path):
+    src_dir = os.path.dirname(src_path)
+    gch_path = os.path.join(src_dir, "precompiled.h.gch")
+    cxx = _get_cxx()
+
+    cc_cmd = [cxx, "-x", "c++-header", src_path]
     # disable all warnings
     cc_cmd += [f"-w"]
     # find the python library
@@ -255,6 +288,63 @@ def _build_npu_ext(obj_name: str, src_path, *, kernel_launcher="torch") -> str:
     cc_cmd += [f"-I{os.path.dirname(os.path.realpath(__file__))}"]
     # find the ascend library
     asc_path = _get_ascend_path()
+    cc_cmd += [
+        f"-I{os.path.join(asc_path, 'include')}",
+        f"-I{os.path.join(asc_path, 'include/experiment')}",
+        f"-I{os.path.join(asc_path, 'include/experiment/msprof')}",
+        f"-I{pybind11.get_include()}",
+    ]
+    import torch
+    import torch_npu
+
+    torch_path = os.path.dirname(os.path.realpath(torch.__file__))
+    torch_npu_path = os.path.dirname(os.path.realpath(torch_npu.__file__))
+    use_cxx11_abi = _check_cxx11_abi()
+    cc_cmd += [
+        f"-I{os.path.join(torch_path, 'include')}",
+        f"-I{os.path.join(torch_npu_path, 'include')}",
+        f"-D_GLIBCXX_USE_CXX11_ABI={use_cxx11_abi}",
+    ]
+
+    cc_cmd += ["-std=c++17", "-shared", "-fPIC", "-o", gch_path]
+
+    ret = subprocess.check_call(cc_cmd)
+
+    if ret != 0:
+        print(f"Unable to precompile header file, ret is: {ret}")
+
+    return src_path
+
+def _build_npu_ext(obj_name: str, header_path, src_path, *, kernel_launcher="torch") -> str:
+    suffix = sysconfig.get_config_var("EXT_SUFFIX")
+    src_dir = os.path.dirname(src_path)
+    so_path = os.path.join(src_dir, f"{obj_name}{suffix}")
+    if header_path is not None:
+        cc_cmd = _get_cxx_precompiled(header_path)
+        cc_cmd += [src_path]
+    else:
+        cxx = _get_cxx()
+        cc_cmd = [cxx, src_path]
+    # disable all warnings
+    cc_cmd += [f"-w"]
+    # find the python library
+    if hasattr(sysconfig, "get_default_scheme"):
+        scheme = sysconfig.get_default_scheme()
+    else:
+        scheme = sysconfig._get_default_scheme()
+    # 'posix_local' is a custom scheme on Debian. However, starting Python 3.10, the default install
+    # path changes to include 'local'. This change is required to use triton with system-wide python.
+    if scheme == "posix_local":
+        scheme = "posix_prefix"
+    py_include_dir = sysconfig.get_paths(scheme=scheme)["include"]
+    cc_cmd += [f"-I{py_include_dir}"]
+    # device_print.h
+    cc_cmd += [f"-I{os.path.dirname(os.path.realpath(__file__))}"]
+    # find the ascend library
+    asc_path = _get_ascend_path()
+    if header_path is not None:
+        cc_cmd += [f"-I{os.path.dirname(header_path)}"]
+
     cc_cmd += [
         f"-I{os.path.join(asc_path, 'include')}",
         f"-I{os.path.join(asc_path, 'include/experiment')}",
@@ -280,7 +370,7 @@ def _build_npu_ext(obj_name: str, src_path, *, kernel_launcher="torch") -> str:
         f"-D_GLIBCXX_USE_CXX11_ABI={use_cxx11_abi}",
     ]
 
-    cc_cmd += ["-std=c++17", "-shared", "-fPIC", "-o", so_path]
+    cc_cmd += ["-std=c++17", "-shared", "-fPIC", "-Winvalid-pch", "-o", so_path]
 
     ret = subprocess.check_call(cc_cmd)
 
