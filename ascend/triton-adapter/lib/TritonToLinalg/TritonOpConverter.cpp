@@ -1356,6 +1356,40 @@ CatConverter::matchAndRewrite(triton::CatOp op, OpAdaptor adaptor,
   auto loc = op.getLoc();
 
   auto resType = dyn_cast<RankedTensorType>(op.getResult().getType());
+  if (!resType || resType.getRank() != 1) {
+    return rewriter.notifyMatchFailure(op, "only support 1D cat");
+  }
+
+  auto inputTypeA = dyn_cast<RankedTensorType>(opa.getType());
+  auto inputTypeB = dyn_cast<RankedTensorType>(opb.getType());
+  if (!inputTypeA || !inputTypeB || inputTypeA.getRank() != 1 ||
+      inputTypeB.getRank() != 1) {
+    return rewriter.notifyMatchFailure(op, "inputs must be 1D tensors");
+  }
+
+  int64_t sizeA = inputTypeA.getShape()[0];
+  int64_t sizeB = inputTypeB.getShape()[0];
+
+  // Only handle the case where both inputs have size 1 (i.e., scalar-like)
+  if (sizeA == 1 && sizeB == 1) {
+    // Use scalar extract + insert
+    auto emptyOp = rewriter.create<tensor::EmptyOp>(
+        loc, resType.getShape(), resType.getElementType());
+
+    Value zero = rewriter.create<arith::ConstantIndexOp>(loc, 0);
+    Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
+    Value scalarA = rewriter.create<tensor::ExtractOp>(loc, opa, zero);
+    Value scalarB = rewriter.create<tensor::ExtractOp>(loc, opb, zero);
+
+    Value inserted0 = rewriter.create<tensor::InsertOp>(loc, scalarA, emptyOp, zero);
+    Value inserted1 = rewriter.create<tensor::InsertOp>(loc, scalarB, inserted0, one);
+
+    rewriter.replaceOp(op, inserted1);
+    return success();
+  }
+
+  // General case: use tensor.insert_slice
   auto emptyOp = rewriter.create<tensor::EmptyOp>(loc, resType.getShape(),
                                                   resType.getElementType());
 
