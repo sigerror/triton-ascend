@@ -59,7 +59,7 @@ pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6
 pip install torch_npu==2.6.0
 ```
 
-## 安装二级制发行版
+## 通过pip安装Triton-Ascend
 
 ### 最新稳定版本
 您可以通过pip安装Triton-Ascend的最新稳定版本
@@ -75,9 +75,9 @@ pip install -i https://test.pypi.org/simple/ "triton-ascend<3.2.0rc" --pre --no-
 ```
 同时用户也能在 [历史列表](https://test.pypi.org/project/triton-ascend/#history) 中找到所有的nightly build包。
 
-注意，如果您在执行`pip install`时遇到ssl相关问题，可追加`--trusted-host test.pypi.org --trusted-host test-files.pythonhosted.org`选项解决。
+注意，如果您在执行`pip install`时遇到ssl相关报错，可追加`--trusted-host test.pypi.org --trusted-host test-files.pythonhosted.org`选项解决。
 
-## 源代码安装 Triton-Ascend
+## 通过源码安装Triton-Ascend
 
 如果您需要对 triton-ascend 进行开发或自定义修改，则应采用源代码编译安装的方法。这种方式允许您根据项目需求调整源代码，并编译安装定制化的triton-ascend 版本。
 
@@ -86,13 +86,9 @@ pip install -i https://test.pypi.org/simple/ "triton-ascend<3.2.0rc" --pre --no-
 - GCC >= 9.4.0
 - GLIBC >= 2.27
 
-## 依赖
+### 依赖
 
-### 包版本依赖
-
-Python支持版本为:**py3.9-py3.11**, torch及torch_npu支持版本为:**2.6.0**。
-
-### 安装系统库依赖
+#### 安装系统库依赖
 
 安装zlib1g-dev/lld/clang，可选安装ccache包用于加速构建。
 
@@ -106,14 +102,13 @@ apt install zlib1g-dev clang-15 lld-15
 apt install ccache # optional
 ```
 
-### 安装python依赖
+#### 安装python依赖
 
 ```bash
 pip install ninja cmake wheel pybind11 # build-time dependencies
-pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6.0.0 pytest==8.3.2 pytest-xdist==3.6.1 pyyaml torch==2.6.0 torch-npu==2.6.0 # torch dependencies
 ```
 
-## 基于LLVM构建
+### 基于LLVM构建
 
 Triton 使用 LLVM20 为 GPU 和 CPU 生成代码。同样，昇腾的毕昇编译器也依赖 LLVM 生成 NPU 代码，因此需要编译 LLVM 源码才能使用。请关注依赖的 LLVM 特定版本。
 
@@ -193,13 +188,13 @@ Triton 使用 LLVM20 为 GPU 和 CPU 生成代码。同样，昇腾的毕昇编�
 - 注1：若在编译时出现错误`ld.lld: error: undefined symbol`，可在步骤2中加入设置`-DLLVM_ENABLE_LLD=ON`。
 - 注2：若环境上ccache已安装且正常运行，可设置`-DLLVM_CCACHE_BUILD=ON`加速构建, 否则请勿开启。
 
-### 克隆 Triton-Ascend
+#### 克隆 Triton-Ascend
 
 ```bash
 git clone https://gitcode.com/Ascend/triton-ascend.git && cd triton-ascend && git submodule update --init --depth 1
 ```
 
-### 构建 Triton-Ascend
+#### 构建 Triton-Ascend
 
 1. 源码安装
 

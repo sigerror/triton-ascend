@@ -9,8 +9,8 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 
 | 里程碑 | 重要特性更新情况 | 状态 |
 |------|------|------|
-| 2025.11.13 | triton-ascend 3.2.0rc4预发布版本上线 | ✅ |
-| 2025.09.30 | 完善Scan/Sort类Triton Python API，支持非连续访存，完成vLLM、sglang开源仓中重点Triton算子适配，提供FlashAttention等复杂融合算子高性能实现参考用例 | ✅ |
+| 2025.11.14 | triton-ascend 3.2.0rc4预发布版本上线 | ✅ |
+| 2025.09.30 | 完善Scan/Sort类Triton Python API，支持非连续访存，完成vLLM、sglang开源仓中重点Triton算子适配 | ✅ |
 | 2025.08.15 | 完善Atomic类Triton Python API支持，完成Flaggems开源仓重点Triton算子适配，提供Matmul等简单算子高性能实现参考用例 | ✅ |
 | 2025.06.30 | 支持85% Triton Python API，支持连续访存，覆盖基本使用场景需求 | ✅ |
 | 2025.05.20 | Triton Ascend开源，Gitcode代码仓Alive！ | ✅ |
