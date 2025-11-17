@@ -9,10 +9,11 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 
 | 里程碑 | 重要特性更新情况 | 状态 |
 |------|------|------|
-| 2025.05.20 | Triton Ascend开源，Gitcode代码仓Alive！ | ✅ |
-| 2025.06.30 | 支持85% Triton Python API，支持连续访存，覆盖基本使用场景需求 | ✅ |
-| 2025.08.15 | 完善Atomic类Triton Python API支持，完成Flaggems开源仓重点Triton算子适配，提供Matmul等简单算子高性能实现参考用例 | ✅ |
+| 2025.11.13 | triton-ascend 3.2.0rc4预发布版本上线 | ✅ |
 | 2025.09.30 | 完善Scan/Sort类Triton Python API，支持非连续访存，完成vLLM、sglang开源仓中重点Triton算子适配，提供FlashAttention等复杂融合算子高性能实现参考用例 | ✅ |
+| 2025.08.15 | 完善Atomic类Triton Python API支持，完成Flaggems开源仓重点Triton算子适配，提供Matmul等简单算子高性能实现参考用例 | ✅ |
+| 2025.06.30 | 支持85% Triton Python API，支持连续访存，覆盖基本使用场景需求 | ✅ |
+| 2025.05.20 | Triton Ascend开源，Gitcode代码仓Alive！ | ✅ |
 
 - #### 已支持平台
 
@@ -26,15 +27,8 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 
 欢迎广大开发者试用，但在您开始使用之前，建议您先根据您的开发需求浏览下列文档，希望能够帮助您快速上手！如果您在使用过程中遇到了问题，请您提交Issue反馈相关信息，我们将竭尽全力处理，感谢您的支持！
 
-- #### Triton Ascend 安装或编译
-Triton Ascend还在频繁更新。为能使用最新功能特性，建议您拉取代码进行源码安装。详细安装步骤请参考 [安装指南](./docs/sources/getting-started/installation.md) 。
-
-- #### Triton Ascend nightly包安装
-我们为用户提供了每日更新的nightly包，用户可以方便的使用以下命令来安装。3.2.0是当前Triton的大版本号，请用户根据实际修改。
-```shell
-pip install -i https://test.pypi.org/simple/ "triton-ascend<3.2.0rc" --pre --no-cache-dir
-```
-同时用户也能在 [历史列表](https://test.pypi.org/project/triton-ascend/#history) 中找到所有的nightly包。
+- #### Triton Ascend 安装
+详细安装步骤请参考 [安装指南](./docs/sources/getting-started/installation.md) 。
 
 - #### Triton Ascend Dockerfile开发环境
 我们为开发者提供了Dockerfile，帮助开发者快速构建开发环境。Dockerfile文件请参考[Dockerfile](./docker/Dockerfile) 。

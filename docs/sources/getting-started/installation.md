@@ -13,7 +13,7 @@
 
 您可以访问昇腾社区官网，根据其提供的软件安装指引完成 CANN 的安装配置。
 
-在安装过程中，CANN 版本“**{version}**”请选择 **8.3.RC1.alpha003**，并根据实际环境指定CPU架构 “**{arch}**”(aarch64/x86_64)、NPU硬件型号“**{chip_type}**”（910b等）对应的软件包。
+在安装过程中，CANN 版本“**{version}**”请选择 **8.3.RC1**，并根据实际环境指定CPU架构 “**{arch}**”(aarch64/x86_64)、NPU硬件型号“**{chip_type}**”（910b等）对应的软件包。
 
 建议下载安装:
 
@@ -31,7 +31,7 @@ https://www.hiascend.com/developer/download/community/result?module=cann
 社区安装指引链接：
 
 ```bash
-https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/82RC1alpha002/softwareinst/instg/instg_0001.html?Mode=PmIns&OS=Ubuntu&Software=cannToolKit
+https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/softwareinst/instg/instg_quick.html?Mode=PmIns&InstallType=local&OS=Ubuntu&Software=cannToolKit
 ```
 
 该文档提供了完整的安装流程说明与依赖项配置建议，适用于需要全面部署 CANN 环境的用户。
@@ -59,10 +59,27 @@ pip install attrs==24.2.0 numpy==1.26.4 scipy==1.13.1 decorator==5.1.1 psutil==6
 pip install torch_npu==2.6.0
 ```
 
+## 安装二级制发行版
+
+### 最新稳定版本
+您可以通过pip安装Triton-Ascend的最新稳定版本
+
+```shell
+pip install triton-ascend
+```
+
+### nightly build版本
+我们为用户提供了每日更新的nightly包，用户可以方便的使用以下命令来安装。
+```shell
+pip install -i https://test.pypi.org/simple/ "triton-ascend<3.2.0rc" --pre --no-cache-dir
+```
+同时用户也能在 [历史列表](https://test.pypi.org/project/triton-ascend/#history) 中找到所有的nightly build包。
+
+注意，如果您在执行`pip install`时遇到ssl相关问题，可追加`--trusted-host test.pypi.org --trusted-host test-files.pythonhosted.org`选项解决。
+
 ## 源代码安装 Triton-Ascend
 
-如果您需要对 triton-ascend 进行开发或自定义修改，则应采用源代码编译安装的方法。这种方式允许您根据项目需求调整源代码，并编译安装定制化的 
-triton-ascend 版本。
+如果您需要对 triton-ascend 进行开发或自定义修改，则应采用源代码编译安装的方法。这种方式允许您根据项目需求调整源代码，并编译安装定制化的triton-ascend 版本。
 
 ### 系统要求
 
