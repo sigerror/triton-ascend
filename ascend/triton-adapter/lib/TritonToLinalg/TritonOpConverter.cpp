@@ -1052,9 +1052,6 @@ LogicalResult ScanConverter::convertToTargetOpExtended(
     ConversionPatternRewriter &rewriter) const {
   auto loc = op.getLoc();
   bool reverse = op.getReverse();
-  if (reverse) {
-    return op.emitError("reverse=True is not yet supported for extended scan op");
-  }
 
   // 1. Extract all input tensors (supports multiple inputs)
   auto operands = op->getOperands();
@@ -1103,12 +1100,17 @@ LogicalResult ScanConverter::convertToTargetOpExtended(
   LogicalResult loopResult = success();
   auto processDimension = [&](ArrayRef<Value> baseIdxsArray) {
     llvm::SmallVector<Value> baseIdxs(baseIdxsArray.begin(), baseIdxsArray.end());
+    
+    auto startInd = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), 0);
+    if (reverse) {
+      startInd = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), baseShape[axis] - 1);
+    }
+    
     llvm::SmallVector<Value> firstIdx = baseIdxs;
-    // Insert start index (0) for the scan axis
     if (axis <= firstIdx.size()) {
-      firstIdx.insert(firstIdx.begin() + axis, rewriter.create<arith::ConstantIndexOp>(loc, 0));
+      firstIdx.insert(firstIdx.begin() + axis, startInd);
     } else {
-      firstIdx.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 0));
+      firstIdx.push_back(startInd);
     }
 
     // 5.1 Process the first element: directly copy multiple inputs to multiple outputs (initialize cumulative results)
@@ -1117,31 +1119,47 @@ LogicalResult ScanConverter::convertToTargetOpExtended(
       rewriter.create<memref::StoreOp>(loc, firstVal, outputMemRefs[i], firstIdx);
     }
 
-    // 5.2 Calculate the size of the scan axis; create a loop only if the axis size > 1
-    Value axisSize = rewriter.create<memref::DimOp>(loc, inputMemRefs[0], axis).getResult();
+    Value axisSize = rewriter.create<arith::ConstantIndexOp>(loc, baseShape[axis]);
     Value one = rewriter.create<arith::ConstantIndexOp>(loc, 1);
+
     Value cmp = rewriter.create<arith::CmpIOp>(loc, arith::CmpIPredicate::sgt, axisSize, one);
     auto ifOp = rewriter.create<scf::IfOp>(loc, cmp, false);
 
+    // Create a loop only when the axis size is greater than 1.
     rewriter.setInsertionPointToStart(ifOp.thenBlock());
-    // Loop variable k: ranges from 1 to axisSize-1
+
+    // Use a forward loop, but handle reverse indexing inside the loop.
     auto forOp = rewriter.create<scf::ForOp>(loc, one, axisSize, one);
     rewriter.setInsertionPointToStart(forOp.getBody());
-    Value k = forOp.getInductionVar();
 
-    // 5.3 Calculate current index (k) and previous index (k-1)
+    Value k = forOp.getInductionVar();
+    
+    if (reverse) {
+      // Reverse scanning: Convert the forward loop index to the actual reverse index. (axis_size - 1) - k
+      Value axisSizeVal = rewriter.create<arith::ConstantIndexOp>(loc, baseShape[axis]);
+      Value axisSizeMinusOne = rewriter.create<arith::SubIOp>(loc, axisSizeVal, one);
+      k = rewriter.create<arith::SubIOp>(loc, axisSizeMinusOne, k);
+    }
+
     llvm::SmallVector<Value> currIdx = baseIdxs;
     if (axis <= currIdx.size()) {
       currIdx.insert(currIdx.begin() + axis, k);
     } else {
       currIdx.push_back(k);
     }
-    Value km1 = rewriter.create<arith::SubIOp>(loc, k, one);
+
+    Value prevIndex;
+    if (reverse) {
+      prevIndex = rewriter.create<arith::AddIOp>(loc, k, one);
+    } else {
+      prevIndex = rewriter.create<arith::SubIOp>(loc, k, one);
+    }
+    
     llvm::SmallVector<Value> prevIdx = baseIdxs;
     if (axis <= prevIdx.size()) {
-      prevIdx.insert(prevIdx.begin() + axis, km1);
+      prevIdx.insert(prevIdx.begin() + axis, prevIndex);
     } else {
-      prevIdx.push_back(km1);
+      prevIdx.push_back(prevIndex);
     }
 
     // 5.4 Load current elements and previous cumulative results
