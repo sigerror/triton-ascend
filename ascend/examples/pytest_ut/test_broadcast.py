@@ -36,21 +36,23 @@ ZS : tl.constexpr = 8
 NUMEL : tl.constexpr = XS * ZS
 
 @triton.jit
-def fn_broadcast_to(output_ptr, input_ptr, length):
-    col_offsets = tl.arange(0, NUMEL)
-    input = tl.load(input_ptr + col_offsets)
-    result = input.reshape((XS, 1, ZS)).broadcast_to((XS, YS, ZS)).reshape((XS * YS * ZS))
-    brc_col_offsets = tl.arange(0, NUMEL * YS)
-    tl.store(output_ptr + brc_col_offsets, result)
+def fn_broadcast(in_ptr0, out_ptr0, L: tl.constexpr, M: tl.constexpr, N: tl.constexpr):
+    lblk_idx = tl.arange(0, L)
+    mblk_idx = tl.arange(0, M)
+    nblk_idx = tl.arange(0, N)
+    idx = tl.arange(0, 1)[:, None, None] * N * M + mblk_idx[None, :, None] * N + nblk_idx[None, None, :]
+    odx = lblk_idx[:, None, None] * N * M + mblk_idx[None, :, None] * N + nblk_idx[None, None, :]
+    x = tl.load(in_ptr0 + idx)
+    x1 = tl.load(out_ptr0 + odx)
+    ret = tl.broadcast(x, x1)
+    tl.store(out_ptr0 + odx, ret)
 
 
-
-
-@pytest.mark.parametrize('dtype', ["float32"])
-def test_broadcast_to(dtype):
-    length = NUMEL
-    dtype = eval(f"torch.{dtype}")
-    x = torch.randn((XS, 1, ZS), dtype=dtype).npu()
-    output = torch.randn((XS, YS, ZS), dtype=dtype).npu()
-    fn_broadcast_to[NBLOCKS,1,1](output, x, length, debug=True)
-    assert(torch.equal(output, x.repeat(1, YS, 1)))
+@pytest.mark.parametrize('dtype', ["bfloat16"])
+def test_broadcast_alltype(dtype):
+    input = test_common.generate_tensor((1, YS, ZS), dtype).npu()
+    ans = input.repeat(XS, 1, 1)
+    output = torch.zeros((XS, YS, ZS), dtype=eval('torch.' + dtype)).npu()
+    fn_broadcast[1, 1, 1](input, output, XS, YS, ZS)
+    test_common.validate_cmp(dtype, ans, output)
+    

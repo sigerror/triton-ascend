@@ -177,3 +177,36 @@ def test_interleave_4d_5d(shape, dtype):
     else:
         triton_interleave_5d[grid](output, x, y, *blocks, *blocks, *strides)
     test_common.validate_cmp(dtype, ans, output)
+
+
+@triton.jit
+def fn_npu_dtype(output_ptr, x_ptr, y_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr):
+    xidx = tl.arange(0, XB)
+    yidx = tl.arange(0, YB)
+    zidx = tl.arange(0, ZB)
+
+    idx = xidx[:, None, None] * YB * ZB + yidx[None, :, None] * ZB + zidx[None, None, :]
+
+    X = tl.load(x_ptr + idx)
+    Y = tl.load(y_ptr + idx)
+
+    ret = tl.interleave(X, Y)
+
+    oidx = xidx[:, None, None] * YB * ZB * 2 + yidx[None, :, None] * ZB * 2 + tl.arange(0, 2 * ZB)[None, None, :]
+
+    tl.store(output_ptr + oidx, ret)
+
+@pytest.mark.parametrize('para_type,data_type,XB,YB,ZB',
+                        [
+                           ('bfloat16',eval('torch.bfloat16'),8,8,4),
+                           ('uint8',eval('torch.uint8'),1,256,16),
+                           ('bool',eval('torch.bool'),1,1,2),
+                        ]
+                        )
+def test_interleave_u(para_type,data_type,XB,YB,ZB):
+    x = torch.full((XB,YB,ZB),100,dtype=data_type).npu()
+    y = torch.full((XB,YB,ZB),30,dtype=data_type).npu()
+    output = torch.randint(1, (XB,YB,ZB*2), dtype=data_type).npu()
+    ans = torch.stack((x,y),dim=-1).reshape(XB,YB,ZB*2)
+    fn_npu_dtype[1,1,1](output,x,y,XB,YB,ZB)
+    test_common.validate_cmp(para_type, ans, output)

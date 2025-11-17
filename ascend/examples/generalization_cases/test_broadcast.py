@@ -293,3 +293,27 @@ def test_broadcast_to_5d(shapes, dtype):
         triton_to_shape.append(None)
     fn_broadcast_multi_d[grid](y, x, *triton_from_shape, *triton_to_shape)
     assert(torch.equal(y, expected))
+
+
+@triton.jit
+def fn_broadcast(in_ptr0, out_ptr0, L: tl.constexpr, M: tl.constexpr, N: tl.constexpr):
+    lblk_idx = tl.arange(0, L)
+    mblk_idx = tl.arange(0, M)
+    nblk_idx = tl.arange(0, N)
+    idx = tl.arange(0, 1)[:, None, None] * N * M + mblk_idx[None, :, None] * N + nblk_idx[None, None, :]
+    odx = lblk_idx[:, None, None] * N * M + mblk_idx[None, :, None] * N + nblk_idx[None, None, :]
+    x = tl.load(in_ptr0 + idx)
+    x1 = tl.load(out_ptr0 + odx)
+    ret = tl.broadcast(x, x1)
+    tl.store(out_ptr0 + odx, ret)
+
+XS : tl.constexpr = 2
+YS : tl.constexpr = 4
+ZS : tl.constexpr = 8
+@pytest.mark.parametrize('dtype', ["uint8","int8","int16","int32", "int64", "float16", "float32", "bfloat16","bool"])
+def test_broadcast_alltype(dtype):
+    input = test_common.generate_tensor((1, YS, ZS), dtype).npu()
+    ans = input.repeat(XS, 1, 1)
+    output = torch.zeros((XS, YS, ZS), dtype=eval('torch.' + dtype)).npu()
+    fn_broadcast[1, 1, 1](input, output, XS, YS, ZS)
+    test_common.validate_cmp(dtype, ans, output)

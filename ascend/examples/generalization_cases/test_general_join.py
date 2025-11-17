@@ -191,3 +191,36 @@ def test_join_4d_5d(shape, dtype):
     else:
         triton_join_5d[grid](output, x, y, *blocks, *blocks, *strides)
     test_common.validate_cmp(dtype, ans, output)
+
+
+@triton.jit
+def fn_npu_dtype(output_ptr, x_ptr, y_ptr, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr):
+    xidx = tl.arange(0, XB)
+    yidx = tl.arange(0, YB)
+
+    idx = xidx[:, None] * YB + yidx[None, :]
+
+    X = tl.load(x_ptr + idx)
+    Y = tl.load(y_ptr + idx)
+
+    ret = tl.join(X, Y)
+
+    oidx = xidx[:, None, None] * YB * 2 + yidx[None, :, None] * 2 + tl.arange(0, 2)[None, None, :]
+
+    tl.store(output_ptr + oidx, ret)
+
+@pytest.mark.parametrize('para_type,data_type,XB,YB,ZB',
+                        [
+                           ('bfloat16',eval('torch.bfloat16'),8,8,4),
+                           ('uint8',eval('torch.uint8'),1,256,16),
+                           ('bool',eval('torch.bool'),1,1,2),
+                        ]
+                        )
+def test_join_u(para_type,data_type,XB,YB,ZB):
+    x = torch.full((XB,YB),100,dtype=data_type).npu()
+    y = torch.full((XB,YB),30,dtype=data_type).npu()
+
+    ans = torch.stack((x,y),dim=-1)
+    output = torch.randint(1, (XB,YB,2), dtype=data_type).npu()
+    fn_npu_dtype[1,1,1](output,x,y,XB, YB, ZB, debug = True)
+    test_common.validate_cmp(para_type, ans, output)

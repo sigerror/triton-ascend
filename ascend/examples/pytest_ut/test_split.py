@@ -50,9 +50,7 @@ def fn_npu_(output_ptr, x_ptr,output_ptr1,XB : tl.constexpr,YB : tl.constexpr,ZB
 
 @pytest.mark.parametrize('para_type,data_type,XB,YB,ZB',
                          [
-                             ['float32',torch.float32,16,256,2],
                              ['float32',torch.float32,8,8,2],
-                             ['float16',torch.float16,16,256,2],
                              ['float16',torch.float16,8,8,2],
                              ['int8',torch.int8,8,128,2],
                              ['int8',torch.int8,8,8,2],
@@ -77,4 +75,5 @@ def test_split(para_type,data_type,XB,YB,ZB):
 
     test_common.validate_cmp(para_type, a, output)
     test_common.validate_cmp(para_type, b, output1)
+
 

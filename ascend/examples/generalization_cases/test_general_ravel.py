@@ -164,3 +164,33 @@ def test_ravel_4d_5d(shape, dtype):
     triton_ravel_4d_5d[grid](output, x, *blocks, *blocks, *strides)
 
     test_common.validate_cmp(dtype, ans, output)
+
+@triton.jit
+def fn_npu_dtype(output_ptr, x_ptr,XB : tl.constexpr,YB : tl.constexpr,ZB : tl.constexpr):
+    xidx=tl.arange(0,XB)
+    yidx=tl.arange(0,YB)
+    zidx=tl.arange(0,ZB)
+
+    idx=xidx[:,None,None]*YB*ZB+yidx[None,:,None]*ZB+zidx[None,None,:]
+
+    X = tl.load(x_ptr+idx)
+
+    ret = tl.ravel(X)
+
+    oidx=tl.arange(0,XB*YB*ZB)
+    tl.store(output_ptr+oidx,ret)
+
+@pytest.mark.parametrize('sigtype, dtype, XB, YB, ZB',
+                        [
+                           ('bfloat16',torch.bfloat16,2,8,4),
+                           ('uint8',torch.uint8,1,256,16),
+                           ('bool',torch.bool,1,1,2),
+                        ]
+                        )
+def test_ravel_u(sigtype, dtype, XB, YB, ZB):
+    x = test_common.generate_tensor((XB,YB,ZB), sigtype).npu()
+    ans = torch.ravel(x)
+    output = test_common.generate_tensor((1,XB*YB*ZB), sigtype).npu()
+    output = output.reshape(-1)
+    fn_npu_dtype[1,1,1](output,x, XB, YB, ZB)
+    test_common.validate_cmp(sigtype,output,ans)

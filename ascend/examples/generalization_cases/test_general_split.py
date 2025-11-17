@@ -201,3 +201,40 @@ def test_split_4_8d(shape, dtype):
     test_common.validate_cmp(dtype, b, output1)
 
 
+@triton.jit
+def fn_npu_(output_ptr, x_ptr, output_ptr1, XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr):
+    xidx = tl.arange(0, XB)
+    yidx = tl.arange(0, YB)
+    zidx = tl.arange(0, ZB)
+
+    idx = xidx[:, None, None] * YB * ZB + yidx[None, :, None] * ZB + zidx[None, None, :]
+
+    X = tl.load(x_ptr + idx)
+
+    xx, yy = tl.split(X)
+
+    oidx = xidx[:, None] * YB + yidx[None, :]
+
+    tl.store(output_ptr + oidx, xx)
+    tl.store(output_ptr1 + oidx, yy)
+
+@pytest.mark.parametrize('para_type, data_type, XB, YB, ZB',
+                         [
+                             ('bfloat16', torch.bfloat16, 2, 8, 2),
+                             ('uint8', torch.uint8, 1, 256, 2),
+                             ('bool', torch.bool, 1, 1, 2),
+                         ])
+def test_split_u(para_type, data_type, XB, YB, ZB):
+    x = test_common.generate_tensor((XB, YB, ZB), para_type).npu()
+    a, b = torch.split(x, 1, dim=-1)
+    a = a.reshape(XB, YB)
+    b = b.reshape(XB, YB)
+
+    output = test_common.generate_tensor((XB, YB), para_type).npu()
+    output1 = test_common.generate_tensor((XB, YB), para_type).npu()
+    fn_npu_[1, 1, 1](output, x, output1, XB, YB, ZB, debug=True)
+
+    test_common.validate_cmp(para_type, a, output)
+    test_common.validate_cmp(para_type, b, output1)
+
+

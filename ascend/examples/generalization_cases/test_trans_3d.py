@@ -106,3 +106,35 @@ if __name__ == "__main__":
     for shape in [(1, 22, 39)]:
         for dtype in TestUtils.dtype_list:
             test_permute_3d(shape, dtype)
+
+
+@triton.jit
+def fn_npu_102(output_ptr, x_ptr, YB: tl.constexpr, ZB: tl.constexpr, KB: tl.constexpr):
+    yidx = tl.arange(0, YB)
+    zidx = tl.arange(0, ZB)
+    kidx = tl.arange(0, KB)
+    idx = yidx[:, None, None] * ZB * KB + zidx[None, :, None] * KB + kidx[None, None, :]
+
+    X = tl.load(x_ptr + idx)
+
+    ret = tl.trans(X, 1, 0, 2)
+
+    oidx = (
+        zidx[:, None, None] * YB * KB + yidx[None, :, None] * KB + kidx[None, None, :]
+    )
+
+    tl.store(output_ptr + oidx, ret)
+
+@pytest.mark.parametrize('sigtype, dtype, XB, YB, ZB',
+                        [
+                         ('bfloat16', torch.bfloat16,2,8,4),
+                         ('uint8', torch.uint8,1,256,16),
+                         ('bool', torch.bool, 1, 1, 2),
+                        ]
+                        )
+def test_permute_3d_u(sigtype, dtype, XB, YB, ZB):
+    x = test_common.generate_tensor((XB,YB,ZB), sigtype).npu()
+    triton_res = torch.empty((YB, XB, ZB), dtype=dtype).npu()
+    torch_res = torch.permute(x, (1, 0, 2))
+    fn_npu_102[1, 1, 1](triton_res, x, XB, YB, ZB )
+    test_common.validate_cmp(sigtype, triton_res, torch_res)
