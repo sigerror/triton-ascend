@@ -42,6 +42,8 @@ from triton.language.semantic import (
     _str_to_eviction_policy,
     _str_to_padding_option, 
     _canonicalize_boundary_check,
+    permute,
+    reshape,
 )
 import triton.language.math as math
 import triton.language.core as core
@@ -789,7 +791,8 @@ def _bitcast_to_fp_type(val: tl.tensor, float_format: str, builder: ir.builder):
 
 
 def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.tensor, rhs_scale: Optional[tl.tensor],
-               rhs_format: str, acc: Union[tl.tensor, None], out_dtype: tl.dtype, builder: ir.builder) -> tl.tensor:
+               rhs_format: str, acc: Union[tl.tensor, None], out_dtype: tl.dtype, lhs_k_pack, rhs_k_pack, 
+               builder: ir.builder) -> tl.tensor:
     assert lhs.type.is_block() and rhs.type.is_block()
     assert lhs.dtype == tl.bfloat16 or lhs.dtype == tl.float16, f"lhs matrix dtype must be bf16 or fp16"
     assert rhs.dtype == tl.bfloat16 or rhs.dtype == tl.float16, f"rhs matrix dtype must be bf16 or fp16"
@@ -812,6 +815,18 @@ def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.te
     lhs = _bitcast_to_fp_type(lhs, lhs_format, builder)
     rhs = _bitcast_to_fp_type(rhs, rhs_format, builder)
 
+    if lhs_k_pack == False:
+        dims = (1, 0)
+        dims = core._unwrap_iterable(dims)
+        tmp_lhs = permute(lhs, dims, builder)
+        lhs = reshape(tmp_lhs, (lhs.shape[0], lhs.shape[1]), True, builder)
+
+    if rhs_k_pack == False:
+        dims = (1, 0)
+        dims = core._unwrap_iterable(dims)
+        tmp_rhs = permute(rhs, dims, builder)
+        rhs = reshape(tmp_rhs, (rhs.shape[0], rhs.shape[1]), True, builder)
+        
     assert lhs.type.shape[-1] == rhs.type.shape[-2], (
         f"lhs last dimension (columns) {lhs.shape[-1]} "
         f"must equal rhs penultimate dimension (rows) {rhs.shape[-2]}"
