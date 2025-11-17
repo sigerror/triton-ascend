@@ -887,12 +887,6 @@ LogicalResult ScanConverter::convertToTargetOp(
     return rewriter.notifyMatchFailure(op, "No reduction op found in scan body");
   }
 
-  bool reverse = op.getReverse();
-  if (reverse) {
-    op.emitError("reverse=True is not yet supported for scan op");
-    return failure();
-  }
-
   llvm::SmallString<64> funcName;
   auto rop = reductionOps.front();
   if (this->isReductionOpSupported(reductionOps.front())) {
@@ -935,6 +929,8 @@ LogicalResult ScanConverter::convertToTargetOp(
     return success();
   } else {
     // This branch is the associative_scan op.
+    bool reverse = op.getReverse();
+
     auto loc = op.getLoc();
 
     Value scanInput = op.getOperand(0);
@@ -970,13 +966,17 @@ LogicalResult ScanConverter::convertToTargetOp(
     Value outputMemRef = rewriter.create<memref::AllocOp>(loc, memrefType);
 
     auto processDimension = [&](ArrayRef<Value> baseIdxsArray) {
+
+      auto startInd = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), 0);
+      if (reverse) {
+        startInd = rewriter.create<arith::ConstantIndexOp>(op.getLoc(), shape[axis] - 1);
+      }
       llvm::SmallVector<Value> baseIdxs(baseIdxsArray.begin(), baseIdxsArray.end());
       llvm::SmallVector<Value> firstIdx = baseIdxs;
       if (axis <= firstIdx.size()) {
-        firstIdx.insert(firstIdx.begin() + axis,
-                      rewriter.create<arith::ConstantIndexOp>(loc, 0));
+        firstIdx.insert(firstIdx.begin() + axis, startInd);
       } else {
-        firstIdx.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 0));
+        firstIdx.push_back(startInd);
       }
 
       Value firstVal = rewriter.create<memref::LoadOp>(loc, inputMemRef, firstIdx);
@@ -995,6 +995,13 @@ LogicalResult ScanConverter::convertToTargetOp(
       rewriter.setInsertionPointToStart(forOp.getBody());
 
       Value k = forOp.getInductionVar();
+      if (reverse) {
+        llvm::SmallVector<Value> fixInd;
+        fixInd.push_back(rewriter.create<arith::ConstantIndexOp>(op.getLoc(), shape[axis] - 1).getResult());
+        fixInd.push_back(k);
+        auto fixIndVal = rewriter.create<arith::SubIOp>(op.getLoc(), fixInd);
+        k = fixIndVal.getResult();
+      }
       llvm::SmallVector<Value> currIdx = baseIdxs;
       if (axis <= currIdx.size()) {
         currIdx.insert(currIdx.begin() + axis, k);
@@ -1003,6 +1010,9 @@ LogicalResult ScanConverter::convertToTargetOp(
       }
 
       Value km1 = rewriter.create<arith::SubIOp>(loc, k, one);
+      if (reverse) {
+        km1 = rewriter.create<arith::AddIOp>(loc, k, one);
+      }
       llvm::SmallVector<Value> prevIdx = baseIdxs;
       if (axis <= prevIdx.size()) {
         prevIdx.insert(prevIdx.begin() + axis, km1);

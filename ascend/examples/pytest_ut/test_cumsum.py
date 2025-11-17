@@ -32,6 +32,8 @@ def torch_func(x, dim, reverse):
     if reverse:
         x = torch.flip(x, [dim])
     res = torch.cumsum(x, dim=dim)
+    if reverse:
+        res = torch.flip(res, [dim])
     return res
 
 

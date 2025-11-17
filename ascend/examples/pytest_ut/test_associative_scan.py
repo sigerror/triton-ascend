@@ -178,7 +178,7 @@ def triton_func_scan(x, dim, reverse):
 @pytest.mark.parametrize("shape", [(128,), (8, 4), (128, 4, 16)])
 @pytest.mark.parametrize("dim", [0, 1, 2])
 @pytest.mark.parametrize("combine_fn", ['maximum', ])
-@pytest.mark.parametrize("reverse", [False])
+@pytest.mark.parametrize("reverse", [False, True])
 def test_scan(dtype, shape, dim, combine_fn, reverse):
     torch.manual_seed(0)
     x = test_common.generate_tensor(shape=shape, dtype=dtype)

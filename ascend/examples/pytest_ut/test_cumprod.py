@@ -37,6 +37,8 @@ def torch_func(x, dim, reverse):
     res = torch.cumprod(x, dim=dim)
     if is_bf16:
         res = res.to(torch.bfloat16)
+    if reverse:
+        res = torch.flip(res, [dim])
     return res
 
 
