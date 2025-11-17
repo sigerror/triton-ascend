@@ -298,15 +298,17 @@ void BlockData::divBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   assert(this->isEmpty() && lBlock.getRank() == rBlock.getRank());
 
   assert(!(lBlock.hasSource() && rBlock.hasSource()));
+  assert(lBlock.isScalar() && rBlock.isScalar());
 
-  for (const auto &[lOffset, rOffset] :
-       llvm::zip(lBlock.getOffsetsRef(), rBlock.getOffsetsRef())) {
-    this->offsets.push_back(divOpFoldResult(lOffset, rOffset, loc, rewriter));
+  auto rScalar = rBlock.getScalar();
+  this->scalar = divOpFoldResult(lBlock.getScalar(), rScalar, loc, rewriter);
+
+  for (auto lOffset : lBlock.getOffsetsRef()) {
+    this->offsets.push_back(divOpFoldResult(lOffset, rScalar, loc, rewriter));
   }
 
-  for (const auto &[lStride, rStride] :
-       llvm::zip(lBlock.getStridesRef(), rBlock.getStridesRef())) {
-    this->strides.push_back(divOpFoldResult(lStride, rStride, loc, rewriter));
+  for (auto lStride : lBlock.getStridesRef()) {
+    this->strides.push_back(divOpFoldResult(lStride, rScalar, loc, rewriter));
   }
 
   this->sizes = lBlock.getSizesRef();

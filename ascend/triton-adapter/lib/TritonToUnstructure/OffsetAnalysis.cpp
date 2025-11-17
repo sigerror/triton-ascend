@@ -752,15 +752,10 @@ void parseSelect(arith::SelectOp op, const Location &loc,
   // Set select offset map
   auto dst = op.getResult();
   offsetMap[dst] = PtrOffsetInfo();
-  offsetMap[dst].setScalarLike(conditionScalarLike && trueValueScalarLike &&
-                               falseValueScalarLike);
   auto dstType = dyn_cast<ShapedType>(dst.getType());
   if (!dstType)
     return;
-  if (offsetMap[dst].isScalarLike())
-    offsetMap[dst].setStructured(dstType.getRank());
-  else
-    offsetMap[dst].setUnstructured(dstType.getRank());
+  offsetMap[dst].setUnstructured(dstType.getRank());
 }
 
 void parseFPToSI(arith::FPToSIOp op, const Location &loc,
