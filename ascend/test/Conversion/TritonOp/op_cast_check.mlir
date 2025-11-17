@@ -265,3 +265,52 @@ module {
 // CHECK-SAME: %arg0: memref<?xi8>
 // CHECK-SAME: %arg1: memref<?xi8>
 // CHECK: %[[REV:.*]] = memref.alloc() : memref<1x1x2xi8>
+
+// -----
+// float8_e4m3fn
+module {
+  tt.func public @cast_to_u(%arg0: !tt.ptr<f8E4M3FN> , %arg1: !tt.ptr<f16> ) {
+    %cst = arith.constant dense<32> : tensor<2xi32>
+    %0 = tt.make_range {end = 2 : i32, start = 0 : i32} : tensor<2xi32>
+    %1 = arith.muli %0, %cst : tensor<2xi32>
+    %2 = tt.splat %arg1 : !tt.ptr<f16> -> tensor<2x!tt.ptr<f16>>
+    %3 = tt.addptr %2, %0 : tensor<2x!tt.ptr<f16>>, tensor<2xi32>
+    %4 = tt.load %3 : tensor<2x!tt.ptr<f16>>
+    %5 = tt.fp_to_fp %4, rounding = rtne : tensor<2xf16> -> tensor<2xf8E4M3FN>
+    tt.annotation %5 {overflow_mode = "saturate"} : tensor<2xf8E4M3FN>
+    %6 = tt.splat %arg0 : !tt.ptr<f8E4M3FN> -> tensor<2x!tt.ptr<f8E4M3FN>>
+    %7 = tt.addptr %6, %1 : tensor<2x!tt.ptr<f8E4M3FN>>, tensor<2xi32>
+    tt.store %7, %5 : tensor<2x!tt.ptr<f8E4M3FN>>
+    tt.return
+  }
+}
+
+// CHECK-LABEL:   func.func @cast_to_u
+// CHECK-SAME: %arg0: memref<?xf8E4M3FN>
+// CHECK-SAME: %arg1: memref<?xf16>
+// CHECK: %[[REV:.*]] = memref.reinterpret_cast %[[X:.*]] to offset: [0], sizes: [2], strides: [1] : memref<?xf16> to memref<2xf16, strided<[1]>>
+
+// -----
+// float8_e5m2
+module {
+  tt.func public @cast_to_u(%arg0: !tt.ptr<f8E5M2> , %arg1: !tt.ptr<f16> )  {
+    %cst = arith.constant dense<32> : tensor<2xi32>
+    %0 = tt.make_range {end = 2 : i32, start = 0 : i32} : tensor<2xi32>
+    %1 = arith.muli %0, %cst : tensor<2xi32>
+    %2 = tt.splat %arg1 : !tt.ptr<f16> -> tensor<2x!tt.ptr<f16>>
+    %3 = tt.addptr %2, %0 : tensor<2x!tt.ptr<f16>>, tensor<2xi32>
+    %4 = tt.load %3 : tensor<2x!tt.ptr<f16>>
+    %5 = tt.fp_to_fp %4, rounding = rtne : tensor<2xf16> -> tensor<2xf8E5M2>
+    tt.annotation %5 {overflow_mode = "saturate"} : tensor<2xf8E5M2>
+    %6 = tt.splat %arg0 : !tt.ptr<f8E5M2> -> tensor<2x!tt.ptr<f8E5M2>>
+    %7 = tt.addptr %6, %1 : tensor<2x!tt.ptr<f8E5M2>>, tensor<2xi32>
+    tt.store %7, %5 : tensor<2x!tt.ptr<f8E5M2>>
+    tt.return
+  }
+}
+
+
+// CHECK-LABEL:   func.func @cast_to_u
+// CHECK-SAME: %arg0: memref<?xf8E5M2>
+// CHECK-SAME: %arg1: memref<?xf16>
+// CHECK: %[[REV:.*]] = memref.reinterpret_cast %[[X:.*]] to offset: [0], sizes: [2], strides: [1] : memref<?xf16> to memref<2xf16, strided<[1]>>

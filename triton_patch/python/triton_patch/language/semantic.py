@@ -56,6 +56,11 @@ from .tensor_descriptor import (
     tensor_descriptor
 )
 
+try:
+    import acl
+    is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
+except Exception as e:
+    is_compile_on_910_95 = False
 
 def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
     if not isinstance(start, int) or not isinstance(end, int):
@@ -102,10 +107,10 @@ def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
         if fp_downcast_rounding is not None:
             raise ValueError("fp_downcast_rounding should be set only for truncating fp conversions. "
                              "Source scalar type is " + str(src_sca_ty) + " and destination type is " + str(dst_sca_ty))
-
-    if (src_sca_ty.is_fp8() or dst_sca_ty.is_fp8()) or (src_sca_ty.is_fp64() or dst_sca_ty.is_fp64()):
-        raise ValueError("[fp8, fp64] is unsupported on Ascend for now."
-                         "Source scalar type is " + str(src_sca_ty) + " and destination type is " + str(dst_sca_ty))
+    if not is_compile_on_910_95:
+       if (src_sca_ty.is_fp8() or dst_sca_ty.is_fp8()) or (src_sca_ty.is_fp64() or dst_sca_ty.is_fp64()):
+            raise ValueError("[fp8, fp64] is unsupported on Ascend for now."
+                           "Source scalar type is " + str(src_sca_ty) + " and destination type is " + str(dst_sca_ty))
     if (src_sca_ty.is_fp8e4b15() or dst_sca_ty.is_fp8e4b15()):
         assert builder.codegen_fns.get(
             "convert_custom_types") is not None, "target doesn't provide conversion for this type."

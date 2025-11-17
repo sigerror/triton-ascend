@@ -252,3 +252,86 @@ module {
 // CHECK-SAME: %arg0: memref<?xi8>
 // CHECK-SAME: %arg1: memref<?xi8>
 // CHECK: %[[REV:.*]]  = tensor.insert_slice %[[X:.*]] into %[[Y:.*]][0, 0, 1] [1, 1, 1] [1, 1, 2] : tensor<1x1xi8> into tensor<1x1x2xi8>
+
+// -----
+// f8E4M3FN
+module {
+  tt.func public @fn_npu_dtype(%arg0: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32} , %arg1: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32}, %arg2: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32} ) attributes {noinline = false} {
+    %cst = arith.constant dense<2> : tensor<1x8x1xi32>
+    %cst_0 = arith.constant dense<2> : tensor<8x1x1xi32>
+    %cst_1 = arith.constant dense<8> : tensor<8x1x1xi32>
+    %cst_2 = arith.constant dense<8> : tensor<8x1xi32>
+    %0 = tt.make_range {end = 8 : i32, start = 0 : i32} : tensor<8xi32>
+    %1 = tt.expand_dims %0 {axis = 1 : i32} : tensor<8xi32> -> tensor<8x1xi32>
+    %2 = arith.muli %1, %cst_2 : tensor<8x1xi32>
+    %3 = tt.expand_dims %0 {axis = 0 : i32} : tensor<8xi32> -> tensor<1x8xi32>
+    %4 = tt.broadcast %2 : tensor<8x1xi32> -> tensor<8x8xi32>
+    %5 = tt.broadcast %3 : tensor<1x8xi32> -> tensor<8x8xi32>
+    %6 = arith.addi %4, %5 : tensor<8x8xi32>
+    %7 = tt.splat %arg1 : !tt.ptr<f8E4M3FN> -> tensor<8x8x!tt.ptr<f8E4M3FN>>
+    %8 = tt.addptr %7, %6 : tensor<8x8x!tt.ptr<f8E4M3FN>>, tensor<8x8xi32>
+    %9 = tt.load %8 : tensor<8x8x!tt.ptr<f8E4M3FN>>
+    %10 = tt.splat %arg2 : !tt.ptr<f8E4M3FN> -> tensor<8x8x!tt.ptr<f8E4M3FN>>
+    %11 = tt.addptr %10, %6 : tensor<8x8x!tt.ptr<f8E4M3FN>>, tensor<8x8xi32>
+    %12 = tt.load %11 : tensor<8x8x!tt.ptr<f8E4M3FN>>
+    %13 = tt.join %9, %12 : tensor<8x8xf8E4M3FN> -> tensor<8x8x2xf8E4M3FN>
+    %14 = tt.expand_dims %1 {axis = 2 : i32} : tensor<8x1xi32> -> tensor<8x1x1xi32>
+    %15 = arith.muli %14, %cst_1 : tensor<8x1x1xi32>
+    %16 = arith.muli %15, %cst_0 : tensor<8x1x1xi32>
+    %17 = tt.expand_dims %3 {axis = 2 : i32} : tensor<1x8xi32> -> tensor<1x8x1xi32>
+    %18 = arith.muli %17, %cst : tensor<1x8x1xi32>
+    %19 = tt.broadcast %16 : tensor<8x1x1xi32> -> tensor<8x8x1xi32>
+    %20 = tt.broadcast %18 : tensor<1x8x1xi32> -> tensor<8x8x1xi32>
+    %21 = arith.addi %19, %20 : tensor<8x8x1xi32>
+    %22 = tt.make_range {end = 2 : i32, start = 0 : i32} : tensor<2xi32>
+    %23 = tt.expand_dims %22 {axis = 0 : i32} : tensor<2xi32> -> tensor<1x2xi32>
+    %24 = tt.expand_dims %23 {axis = 1 : i32} : tensor<1x2xi32> -> tensor<1x1x2xi32>
+    %25 = tt.broadcast %21 : tensor<8x8x1xi32> -> tensor<8x8x2xi32>
+    %26 = tt.broadcast %24 : tensor<1x1x2xi32> -> tensor<8x8x2xi32>
+    %27 = arith.addi %25, %26 : tensor<8x8x2xi32>
+    %28 = tt.splat %arg0 : !tt.ptr<f8E4M3FN> -> tensor<8x8x2x!tt.ptr<f8E4M3FN>>
+    %29 = tt.addptr %28, %27 : tensor<8x8x2x!tt.ptr<f8E4M3FN>>, tensor<8x8x2xi32>
+    tt.store %29, %13 : tensor<8x8x2x!tt.ptr<f8E4M3FN>>
+    tt.return
+  }
+}
+
+// CHECK-LABEL:   func.func @fn_npu_dtype
+// CHECK-SAME: %arg0: memref<?xf8E4M3FN>
+// CHECK-SAME: %arg1: memref<?xf8E4M3FN>
+// CHECK: %[[REV:.*]] = tensor.insert_slice %[[X:.*]] into %[[Y:.*]][0, 0, 0] [8, 8, 1] [1, 1, 2] : tensor<8x8xf8E4M3FN> into tensor<8x8x2xf8E4M3FN>
+
+// -----
+// f8E5M2
+
+module {
+  tt.func public @fn_npu_dtype(%arg0: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32} , %arg1: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32} , %arg2: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32} ) attributes {noinline = false} {
+    %cst = arith.constant dense<2> : tensor<1x256x1xi32>
+    %0 = tt.make_range {end = 256 : i32, start = 0 : i32} : tensor<256xi32>
+    %1 = tt.expand_dims %0 {axis = 0 : i32} : tensor<256xi32> -> tensor<1x256xi32>
+    %2 = tt.splat %arg1 : !tt.ptr<f8E5M2> -> tensor<1x256x!tt.ptr<f8E5M2>>
+    %3 = tt.addptr %2, %1 : tensor<1x256x!tt.ptr<f8E5M2>>, tensor<1x256xi32>
+    %4 = tt.load %3 : tensor<1x256x!tt.ptr<f8E5M2>>
+    %5 = tt.splat %arg2 : !tt.ptr<f8E5M2> -> tensor<1x256x!tt.ptr<f8E5M2>>
+    %6 = tt.addptr %5, %1 : tensor<1x256x!tt.ptr<f8E5M2>>, tensor<1x256xi32>
+    %7 = tt.load %6 : tensor<1x256x!tt.ptr<f8E5M2>>
+    %8 = tt.join %4, %7 : tensor<1x256xf8E5M2> -> tensor<1x256x2xf8E5M2>
+    %9 = tt.expand_dims %1 {axis = 2 : i32} : tensor<1x256xi32> -> tensor<1x256x1xi32>
+    %10 = arith.muli %9, %cst : tensor<1x256x1xi32>
+    %11 = tt.make_range {end = 2 : i32, start = 0 : i32} : tensor<2xi32>
+    %12 = tt.expand_dims %11 {axis = 0 : i32} : tensor<2xi32> -> tensor<1x2xi32>
+    %13 = tt.expand_dims %12 {axis = 1 : i32} : tensor<1x2xi32> -> tensor<1x1x2xi32>
+    %14 = tt.broadcast %10 : tensor<1x256x1xi32> -> tensor<1x256x2xi32>
+    %15 = tt.broadcast %13 : tensor<1x1x2xi32> -> tensor<1x256x2xi32>
+    %16 = arith.addi %14, %15 : tensor<1x256x2xi32>
+    %17 = tt.splat %arg0 : !tt.ptr<f8E5M2> -> tensor<1x256x2x!tt.ptr<f8E5M2>>
+    %18 = tt.addptr %17, %16 : tensor<1x256x2x!tt.ptr<f8E5M2>>, tensor<1x256x2xi32>
+    tt.store %18, %8 : tensor<1x256x2x!tt.ptr<f8E5M2>>
+    tt.return
+  }
+}
+
+// CHECK-LABEL:   func.func @fn_npu_dtype
+// CHECK-SAME: %arg0: memref<?xf8E5M2>
+// CHECK-SAME: %arg1: memref<?xf8E5M2>
+// CHECK: %[[REV:.*]] = tensor.insert_slice %[[X:.*]] into %[[Y:.*]][0, 0, 0] [1, 256, 1] [1, 1, 2] : tensor<1x256xf8E5M2> into tensor<1x256x2xf8E5M2>
