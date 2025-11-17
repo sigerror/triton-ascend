@@ -360,9 +360,10 @@ class NPUDriver(DriverBase):
         # TODO: use CANN API instead of torchnpu
         import torch
         import torch_npu
+        from torch_npu._C import _npu_getCurrentRawStream
         if device is None:
             device = self.get_current_device()
-        return torch.npu.current_stream(device).npu_stream
+        return _npu_getCurrentRawStream(device)
 
     def get_benchmarker(self):
         from triton.testing import do_bench
@@ -615,6 +616,8 @@ def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, loc
         "TRITON_DEVICE_PRINT", 'false').lower() in ('true', '1')
     enable_taskqueue = os.getenv(
         "TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
+    enable_grid_warn_print = os.getenv(
+        "TRITON_GRID_WARN_PRINT", 'false').lower() in ('true', '1')    
     enable_auto_map_parallel_blocks = _is_auto_map_parallel_blocks_enabled()
     npu_utils = NPUUtils()
     num_physical_blocks = npu_utils.get_aivector_core_num(
@@ -810,6 +813,7 @@ extern "C" {
 {precompile_headers}
 {extract_device_print_code_from_cann() if enable_device_print else ''}
 
+{'#define ENABLE_GRID_WARN_PRINT' if enable_grid_warn_print else ''}
 #define TENSOR_KIND_INPUT 0
 #define TENSOR_KIND_OUTPUT 1
 #define TENSOR_KIND_INPUT_OUTPUT 2
@@ -826,12 +830,14 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   name.append(kernelName);
   {'auto launch_call = [=]() -> rtError_t' if enable_taskqueue else ''} {{
     uint32_t blockNum = gridX * gridY * gridZ;
-      
-    static bool warned = false;
-    if (!warned && blockNum > (uint32_t){num_physical_blocks}) {{
-      std::cout << "WARNING: Grid " << blockNum << " > physical limit {num_physical_blocks}, performance maybe reduced." << std::endl;
-      warned = true;
+
+    #ifdef ENABLE_GRID_WARN_PRINT
+      static bool warned = false;
+      if (!warned && blockNum > (uint32_t){num_physical_blocks}) {{
+        printf("WARNING: Grid %u > physical limit {num_physical_blocks}, performance maybe reduced.\\n",blockNum); 
+        warned = true;
     }}
+    #endif  
 
     {'blockNum = std::min(blockNum, (uint32_t)' + str(num_physical_blocks) + ');' if enable_auto_map_parallel_blocks else ''}
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
