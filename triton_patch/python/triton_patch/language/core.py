@@ -36,7 +36,6 @@ from triton.language.core import (
     tensor,
     check_bit_width,
     _unwrap_if_constexpr,
-    range,
     add,
     sub,
     mul,
@@ -347,6 +346,74 @@ def __rshift__(self, other, _builder=None):
     else:
         return semantic.lshr(self, other, _builder)
 
+class range():
+    """
+    Iterator that counts upward forever.
+
+    .. highlight:: python
+    .. code-block:: python
+
+        @triton.jit
+        def kernel(...):
+            for i in tl.range(10, num_stages=3):
+                ...
+    :note: This is a special iterator used to implement similar semantics to Python's :code:`range` in the context of
+        :code:`triton.jit` functions. In addition, it allows user to pass extra attributes to the compiler.
+    :param arg1: the start value.
+    :param arg2: the end value.
+    :param step: the step value.
+    :param num_stages: pipeline the loop into this many stages (so there are
+        :code:`num_stages` iterations of the loop in flight at once).
+
+        Note this is subtly different than passing :code:`num_stages` as a
+        kernel argument.  The kernel argument only pipelines loads that feed
+        into :code:`dot` operations, while this attribute tries to pipeline most
+        (though not all) loads in this loop.
+    :param loop_unroll_factor: Tells the Triton IR level loop unroller how many
+        times to unroll a for loop that this range is used with. Less than 2 for
+        this value implies no unrolling.
+    :param disallow_acc_multi_buffer: If true, prevent the accumulator of the dot
+        operation in the loop to be multi-buffered, if applicable.
+    :param flatten: automatically flatten the loop nest starting at this loop to
+        create a single flattened loop. The compiler will try to pipeline the
+        flattened loop which can avoid stage stalling.
+    :param warp_specialize: Enable automatic warp specialization on the loop.
+        The compiler will attempt to partition memory, MMA, and vector
+        operations in the loop into separate async partitions. This will
+        increase the total number of warps required by the kernel.
+    :param disable_licm: Tells the compiler it shouldn't hoist loop invariant
+        code outside the loop. This is often useful to avoid creating long liveranges
+        within a loop.
+
+        Note that warp specialization is only supported on Blackwell GPUs and
+        only works on simple matmul loops. Support for arbitrary loops will be
+        expanded over time.
+    """
+
+    def __init__(self, arg1, arg2=None, step=None, num_stages=None, loop_unroll_factor=None,
+                 disallow_acc_multi_buffer=False, flatten=False, warp_specialize=False, disable_licm=False):
+        if step is None:
+            self.step = constexpr(1)
+        else:
+            self.step = step
+        if arg2 is None:
+            self.start = constexpr(0)
+            self.end = arg1
+        else:
+            self.start = arg1
+            self.end = arg2
+        self.num_stages = num_stages
+        self.loop_unroll_factor = loop_unroll_factor
+        self.disallow_acc_multi_buffer = disallow_acc_multi_buffer
+        self.flatten = flatten
+        self.warp_specialize = warp_specialize
+        self.disable_licm = disable_licm
+
+    def __iter__(self):
+        raise RuntimeError("tl.range can only be used in @triton.jit'd functions")
+
+    def __next__(self):
+        raise RuntimeError("tl.range can only be used in @triton.jit'd functions")
 
 class parallel(range):
     """

@@ -25,6 +25,7 @@ import os
 import subprocess
 import multiprocessing
 import sys
+import builtins
 from contextlib import contextmanager
 from typing import Any, Dict, List
 from . import language as tl
@@ -90,7 +91,7 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, quantiles=None, return_mod
         start_event = torch.cuda.Event(enable_timing=True)
         end_event = torch.cuda.Event(enable_timing=True)
         start_event.record()
-        for _ in range(5):
+        for _ in builtins.range(5):
             fn()
         end_event.record()
         torch.cuda.synchronize()
@@ -100,7 +101,7 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, quantiles=None, return_mod
         # host overhead
         g = torch.cuda.CUDAGraph()
         with torch.cuda.graph(g):
-            for _ in range(n_repeat):
+            for _ in builtins.range(n_repeat):
                 if grad_to_none is not None:
                     for x in grad_to_none:
                         x.grad = None
@@ -109,7 +110,7 @@ def do_bench_cudagraph(fn, rep=20, grad_to_none=None, quantiles=None, return_mod
         # measure time and return
         ret = []
         n_retries = 10
-        for _ in range(n_retries):
+        for _ in builtins.range(n_retries):
             start_event = torch.cuda.Event(enable_timing=True)
             end_event = torch.cuda.Event(enable_timing=True)
             start_event.record()
@@ -156,7 +157,7 @@ def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, return_m
     start_event = di.Event(enable_timing=True)
     end_event = di.Event(enable_timing=True)
     start_event.record()
-    for _ in range(5):
+    for _ in builtins.range(5):
         cache.zero_()
         fn()
     end_event.record()
@@ -166,13 +167,13 @@ def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, return_m
     # compute number of warmup and repeat
     n_warmup = max(1, int(warmup / estimate_ms))
     n_repeat = max(1, int(rep / estimate_ms))
-    start_event = [di.Event(enable_timing=True) for i in range(n_repeat)]
-    end_event = [di.Event(enable_timing=True) for i in range(n_repeat)]
+    start_event = [di.Event(enable_timing=True) for i in builtins.range(n_repeat)]
+    end_event = [di.Event(enable_timing=True) for i in builtins.range(n_repeat)]
     # Warm-up
-    for _ in range(n_warmup):
+    for _ in builtins.range(n_warmup):
         fn()
     # Benchmark
-    for i in range(n_repeat):
+    for i in builtins.range(n_repeat):
         # we don't want `fn` to accumulate gradient values
         # if it contains a backward pass. So we clear the
         # provided gradients
@@ -270,7 +271,7 @@ def do_bench_npu(fn, warmup=5, active=30, prof_dir=None, keep_res=False):
         with_modules=False,
         experimental_config=experimental_config,
     ) as prof:
-        for _ in range(total):
+        for _ in builtins.range(total):
             fn()
             prof.step()
             torch.npu.synchronize()
@@ -660,6 +661,7 @@ from .triton_patch.language.core import (
     __rmul__,
     __lshift__,
     __rshift__,
+    range,
     parallel,
     compile_hint,
     make_tensor_descriptor,
@@ -739,6 +741,7 @@ language.tensor.__rmul__ = __rmul__
 language.tensor.__lshift__ = __lshift__
 language.tensor.__rshift__ = __rshift__
 language.trans = trans
+language.range = range
 language.parallel = parallel
 language.compile_hint = compile_hint
 language.sort = sort
