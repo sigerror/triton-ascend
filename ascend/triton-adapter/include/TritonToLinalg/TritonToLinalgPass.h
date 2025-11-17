@@ -76,6 +76,11 @@ private:
   template <typename OpTy>
   void addTensorKindToArguments(OpTy op, triton::FuncOp func, TensorKind tensorKind);
 
+  template <TensorKind Kind, typename... Ops>
+  void walkAndMarkTensorKind(triton::FuncOp func);
+
+  void annotateTensorKindForModule(ModuleOp moduleOp);
+
   void convertTTFunc(triton::FuncOp func, const bool existDot, const bool existSIMTOp);
 
   LogicalResult convertMultipleBlockControlFlow(Operation *funcOp,

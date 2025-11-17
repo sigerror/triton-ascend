@@ -127,7 +127,7 @@ void TritonToLinalgPass::addProgramInfo(triton::FuncOp func,
 
   func.setFunctionType(newFuncType);
 
-  // 如果需要，给参数新增属性
+  // If argument attributes exist, extend attribute list.
   if (func.getAllArgAttrs()) {
     SmallVector<DictionaryAttr> newArgAttrs;
     func.getAllArgAttrs(newArgAttrs);
@@ -135,7 +135,7 @@ void TritonToLinalgPass::addProgramInfo(triton::FuncOp func,
     func.setAllArgAttrs(newArgAttrs);
   }
 
-  // 添加对应参数到函数体中
+  // Append the arguments to the entry block.
   for (unsigned i = 0; i < TRITON_PROGRAM_INFO_ARG_COUNT; i++) {
     func.getBody().front().addArgument(b.getI32Type(), func.getLoc());
   }
@@ -161,26 +161,58 @@ static void setBlockArgumentAttr(BlockArgument blockArg, triton::FuncOp func, Te
         finalVal = oldVal;
     }
 
+    LLVM_DEBUG(llvm::dbgs() << "Setting tensor_kind for argument " << argIdx << ": " << finalVal << "\n";);
+
     func.setArgAttr(argIdx, "tt.tensor_kind",
                     IntegerAttr::get(IntegerType::get(func.getContext(), INT_BIT_WIDTH), static_cast<int>(finalVal)));
+}
+
+template <typename T, typename = void> struct has_getPtr : std::false_type {};
+template <typename T>
+struct has_getPtr<T, std::void_t<decltype(std::declval<T>().getPtr())>> : std::true_type {};
+
+template <typename T, typename = void> struct has_getSrc : std::false_type {};
+template <typename T>
+struct has_getSrc<T, std::void_t<decltype(std::declval<T>().getSrc())>> : std::true_type {};
+
+template <typename T, typename = void> struct has_getBase : std::false_type {};
+template <typename T>
+struct has_getBase<T, std::void_t<decltype(std::declval<T>().getBase())>> : std::true_type {};
+
+template <typename OpTy>
+static Value extractPointer(OpTy op) {
+  if constexpr (has_getPtr<OpTy>::value)
+    return op.getPtr();
+  else if constexpr (has_getSrc<OpTy>::value)
+    return op.getSrc();
+  else if constexpr (has_getBase<OpTy>::value)
+    return op.getBase();
+  else {
+    Operation *raw = op.getOperation();
+    if (!raw || raw->getNumOperands() == 0)
+      return Value();
+    return raw->getOperand(0);
+  }
 }
 
 template <typename OpTy>
 void TritonToLinalgPass::addTensorKindToArguments(OpTy op, triton::FuncOp func, TensorKind tensorKind)
 {
-    Value ptr = op.getPtr();
+    Value ptr = extractPointer(op);
     if (!ptr)
         return;
 
+    LLVM_DEBUG(llvm::dbgs() << "Processing op: " << *op.getOperation() << "\n";);
+
     Value cur = ptr;
     llvm::SmallPtrSet<Value, SET_INIT_SIZE> visited;
-    // 回溯 def-use 链，找到起源 BlockArgument
+    // Walk back the def-use chain to find originating BlockArgument
     while (visited.insert(cur).second) {
-        // 如果是 BlockArgument，则尝试设置属性
+        // If reach a BlockArgument, set the attribute
         if (auto blockArg = dyn_cast<BlockArgument>(cur)) {
             if (blockArg.getOwner() == &func.getBody().front()) {
                 auto type = blockArg.getType();
-                // 检查是否是 triton::PointerType
+                // Check if it's a triton::PointerType
                 if (!isa<triton::PointerType>(type))
                     break;
                 setBlockArgumentAttr(blockArg, func, tensorKind);
@@ -321,7 +353,7 @@ void TritonToLinalgPass::convertTTFunc(triton::FuncOp func,
   func.getAllArgAttrs(argAttrs);
   func.getAllResultAttrs(resAttrs);
 
-  // bit-casted tt.ptr的特殊处理
+  // Special handling for bit-casted tt.ptr arguments
   SmallVector<Type> inputTypes{type.getInputs()};
   SmallVector<Type> retTypes{type.getResults()};
   if (func.getSymVisibility() == "public" && !func.isDeclaration()) {
@@ -432,7 +464,7 @@ void TritonToLinalgPass::addDynamicLegal(
   // add legal dialect on condition
   target.addLegalOp<ModuleOp>();
 
-  // 根据条件判断需要转换的OP
+  // decide which ops need conversion based on uses
   target.addDynamicallyLegalOp<mlir::UnrealizedConversionCastOp>(
       [](mlir::Operation *op) {
         if (op->use_empty()) {
@@ -626,16 +658,16 @@ void TritonToLinalgPass::getDependentDialects(DialectRegistry &registry) const {
 
 LogicalResult TritonToLinalgPass::processDescriptorOperations(ModuleOp moduleOp)
 {
-    // --- ConversionTarget: 动态合法性判断 ---
+    // --- ConversionTarget: dynamic legality checks ---
     mlir::ConversionTarget target(getContext());
 
-    // Dialect-level dynamic legality: 这些 dialect 在操作的 operand/result 中不包含 TensorDescType 时为合法
+    // Dialect-level dynamic legality: ops are legal if none of their operands/results use TensorDescType.
     target.addDynamicallyLegalDialect<mlir::arith::ArithDialect, mlir::scf::SCFDialect, triton::TritonDialect>(
         [](mlir::Operation *op) {
             return !DescriptorConverter::hasATensorDescriptorType(op->getOperandTypes()) &&
                    !DescriptorConverter::hasATensorDescriptorType(op->getResultTypes());
         });
-    // 函数签名合法性：triton::FuncOp 的输入/输出 不含 TensorDescType 则合法
+    // Function signature legality: Triton FuncOp is legal if its inputs/outputs contain no TensorDescType.
     target.addDynamicallyLegalOp<triton::FuncOp>([](triton::FuncOp funcOp) {
         return !DescriptorConverter::hasATensorDescriptorType(funcOp.getFunctionType().getInputs()) &&
                !DescriptorConverter::hasATensorDescriptorType(funcOp.getFunctionType().getResults());
@@ -656,6 +688,29 @@ LogicalResult TritonToLinalgPass::processDescriptorOperations(ModuleOp moduleOp)
     }
 
     return success();
+}
+
+template <TensorKind Kind, typename... Ops>
+void TritonToLinalgPass::walkAndMarkTensorKind(triton::FuncOp func) {
+  (func.walk([&](Ops op) { this->addTensorKindToArguments(op, func, Kind); }), ...);
+}
+
+void TritonToLinalgPass::annotateTensorKindForModule(ModuleOp moduleOp) {
+  moduleOp.walk([&](triton::FuncOp func) {
+    // INPUT tensors
+    this->walkAndMarkTensorKind<TensorKind::INPUT,
+                                triton::GatherLoadOp,
+                                triton::EmbeddingGatherOp,
+                                triton::IndirectLoadOp,
+                                triton::LoadOp>(func);
+    // OUTPUT tensors
+    this->walkAndMarkTensorKind<TensorKind::OUTPUT,
+                                triton::StoreOp>(func);
+    // INPUT_OUTPUT tensors
+    this->walkAndMarkTensorKind<TensorKind::INPUT_OUTPUT,
+                                triton::AtomicRMWOp,
+                                triton::AtomicCASOp>(func);
+  });
 }
 
 void TritonToLinalgPass::runOnOperation() {
@@ -689,23 +744,10 @@ void TritonToLinalgPass::runOnOperation() {
     signalPassFailure();
   }
 
-  // Traverse all the triton::FuncOp to add tensor_kind attribute
-  moduleOp.walk([&](triton::FuncOp func) {
-    func.walk([&](triton::LoadOp loadOp) {
-      addTensorKindToArguments(loadOp, func, TensorKind::INPUT);
-    });
-    func.walk([&](triton::StoreOp storeOp) {
-      addTensorKindToArguments(storeOp, func, TensorKind::OUTPUT);
-    });
-    func.walk([&](triton::AtomicRMWOp atomicOp) {
-      addTensorKindToArguments(atomicOp, func, TensorKind::INPUT_OUTPUT);
-    });
-    func.walk([&](triton::AtomicCASOp atomicOp) {
-      addTensorKindToArguments(atomicOp, func, TensorKind::INPUT_OUTPUT);
-    });
-  });
+  // 0. Annotate Memory-Related Triton FuncOps with tensor_kind (used by profiling).
+  annotateTensorKindForModule(moduleOp);
 
-  // 1.标准化 LoadStore ScalarStoreCanonicalizer
+  // 1. Canonicalize load/store related patterns.
   this->populateTritonToLinalgCanonicalizationPatterns(canonicalizerPatterns);
   if (failed(applyPatternsAndFoldGreedily(moduleOp,
                                           std::move(canonicalizerPatterns)))) {
@@ -713,7 +755,7 @@ void TritonToLinalgPass::runOnOperation() {
     signalPassFailure();
   }
 
-  // 2.使用分析
+  // 2. Perform use analysis on FuncOp.
   moduleOp.walk([this](triton::FuncOp op) {
     if (failed(runUseAnalysis(op))) {
       signalPassFailure();
@@ -724,10 +766,10 @@ void TritonToLinalgPass::runOnOperation() {
   ConversionTarget target(getContext());
   TritonTypeConverter tritonTypeConverter{};
 
-  // 3.标注合法方言
+  // 3. Mark legal dialects and operations.
   this->addDynamicLegal(target, tritonTypeConverter);
 
-  // 4：标记必须转换的op，包括tt.scan
+  // 4. Mark ops that must be converted explicitly (e.g. tt.scan).
   auto loopOpLegalFn = [](LoopLikeOpInterface op) {
     return !op.getOperation()->hasAttr("UnhandledLoopOp");
   };
@@ -736,11 +778,11 @@ void TritonToLinalgPass::runOnOperation() {
   target.addDynamicallyLegalOp<scf::ForOp>(loopOpLegalFn);
   target.addDynamicallyLegalOp<scf::WhileOp>(loopOpLegalFn);
 
-  // 5.对非法Op注册Converter
+  // 5. Register converters for all illegal Triton ops.
   this->populateTritonToLinalgConversionPatterns(tritonTypeConverter, patterns,
                                                  LAUNCH_GRID_RANK);
 
-  // 6.遍历kernel中的function，修改program id、number of programs参数
+  // 6. Inject program id / number of programs arguments into each Triton kernel function.
   for (auto func : getOperation().getOps<triton::FuncOp>()) {
     addProgramInfo(func, globalKernel);
   }
@@ -761,17 +803,17 @@ void TritonToLinalgPass::runOnOperation() {
     }
   });
 
-  // 7.做Op转换
+  // 7. Convert ops.
   if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
-    moduleOp->emitError("failed to apply Convertion Patterns");
+    moduleOp->emitError("failed to apply Conversion Patterns");
     signalPassFailure();
   }
 
-  // 8.函数头尾转换
+  // 8. Convert function prologue/epilogue.
   moduleOp.walk(
       [&](triton::FuncOp func) { this->convertTTFunc(func, existDot, existSIMTOp); });
 
-  // 9.清除无效代码，简化代码。
+  // 9. Clean up dead code and simplify IR.
   PassManager pm(&getContext(), moduleOp.getOperationName());
   pm.addPass(createCSEPass());
   pm.addPass(createCanonicalizerPass());
