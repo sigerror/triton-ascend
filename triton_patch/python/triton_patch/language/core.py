@@ -44,6 +44,12 @@ from typing import Optional
 from . import semantic
 from .tensor_descriptor import tensor_descriptor, tensor_descriptor_base
 
+try:
+    import acl
+    is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
+except Exception as e:
+    is_compile_on_910_95 = False
+
 
 @_tensor_member_fn
 @builtin
@@ -731,8 +737,9 @@ def gather_load(
 
 
 def dtype_to_ir(self, builder: ir.builder) -> ir.type:
-    if self.name.startswith("fp8"):
-        raise ValueError(f'unexpected type fp8.')
+    if not is_compile_on_910_95:
+        if self.name.startswith("fp8"):
+            raise ValueError(f'unexpected type fp8.')
 
     if self.name == 'void':
         return builder.get_void_ty()
