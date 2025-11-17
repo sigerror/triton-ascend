@@ -248,6 +248,8 @@ def _get_cxx_precompiled(header_path):
             cc_cmd += [gxx]
         else:
             raise RuntimeError("Failed to find C++ compiler")
+    else:
+        cc_cmd += [cxx]
     return cc_cmd
 
 def _precompile_npu_hash(header_src):
