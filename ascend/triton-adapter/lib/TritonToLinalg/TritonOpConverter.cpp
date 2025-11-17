@@ -53,25 +53,34 @@ LogicalResult
 BitcastConverter::matchAndRewrite(triton::BitcastOp op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const {
   Value result;
-  if (auto resPointerType = dyn_cast<triton::PointerType>(op.getType())) {
-    // TODO: use typeconverter
-    auto srcPointerType = cast<triton::PointerType>(op.getSrc().getType());
-    auto resType = MemRefType::get({ShapedType::kDynamic}, resPointerType.getPointeeType());
-    // Handling special case
-    // %0 = tt.bitcast %arg0 {MixUse} : !tt.ptr<i1> -> !tt.ptr<i8>
-    if (isa<BlockArgument>(adaptor.getSrc()) &&
-      srcPointerType.getPointeeType() == rewriter.getIntegerType(1) &&
-      resPointerType.getPointeeType() == rewriter.getIntegerType(8)) {
-      rewriter.modifyOpInPlace(op, [&]() {
-        op->setAttr("MetaUse", rewriter.getUnitAttr());
+  auto loc = op.getLoc();
+
+  if (auto dstPtrTy = dyn_cast<triton::PointerType>(op.getType())) {
+    auto srcPtrTy = cast<triton::PointerType>(op.getSrc().getType());
+    auto resType = MemRefType::get({ShapedType::kDynamic}, dstPtrTy.getPointeeType());
+
+    auto i1Ty = rewriter.getIntegerType(1);
+    auto i8Ty = rewriter.getIntegerType(8);
+    bool isI1toI8 = (srcPtrTy.getPointeeType() == i1Ty) &&
+                    (dstPtrTy.getPointeeType() == i8Ty);
+    // handling special case: ptr<i1> -> ptr<i8>, directly forward without arith.bitcast
+    if (isI1toI8) {
+      // TypeConverter has already converted i1 to i8 memref,
+      LLVM_DEBUG({
+        llvm::dbgs()
+            << "[BitcastConverter] Special i1->i8 pointer bitcast. Forward "
+               "without arith.bitcast. srcConvertedTy="
+            << adaptor.getSrc().getType() << "\n";
       });
+      rewriter.replaceOp(op, adaptor.getSrc());
       return success();
-    }
+    } 
     result = rewriter.create<arith::BitcastOp>(
-      op.getLoc(), resType, adaptor.getSrc());
+      loc, resType, adaptor.getSrc());
   } else {
+    // handling normal case: bitcast between tensors/memrefs
     result = rewriter.create<arith::BitcastOp>(
-      op.getLoc(), op.getType(), adaptor.getSrc());
+      loc, op.getType(), adaptor.getSrc());
   }
   rewriter.replaceOp(op, result);
   return success();

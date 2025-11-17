@@ -82,13 +82,32 @@ TritonTypeConverter::TritonTypeConverter() {
   addConversion([](Type type) { return type; });
 
   addConversion([](triton::PointerType ptrType) {
-    return MemRefType::get({ShapedType::kDynamic}, ptrType.getPointeeType());
+    Type elem = ptrType.getPointeeType();
+    // Handling special case: ptr<i1> -> memref<?x i8>
+    if (auto it = dyn_cast<IntegerType>(elem); it && it.getWidth() == 1) {
+      elem = IntegerType::get(ptrType.getContext(), 8);
+      LLVM_DEBUG({
+        llvm::dbgs() << "[TritonTypeConverter] Normalize i1 pointer to i8 "
+                        "memref. elemType="
+                     << elem << "\n";
+      });
+    }
+    return MemRefType::get({ShapedType::kDynamic}, elem);
   });
 
   addConversion([](TensorType tensorType) -> Type {
     auto elemType = tensorType.getElementType();
     if (auto ptrType = dyn_cast<triton::PointerType>(elemType)) {
       elemType = ptrType.getPointeeType();
+    }
+    // Handling special case: tensor<i1> -> memref<?x i8>
+    if (auto it = dyn_cast<IntegerType>(elemType); it && it.getWidth() == 1) {
+      elemType = IntegerType::get(tensorType.getContext(), 8);
+      LLVM_DEBUG({
+        llvm::dbgs() << "[TritonTypeConverter] Normalize i1 tensor to i8 "
+                        "memref. elemType="
+                     << elemType << "\n";
+      });
     }
     return MemRefType::get(tensorType.getShape(), elemType);
   });
