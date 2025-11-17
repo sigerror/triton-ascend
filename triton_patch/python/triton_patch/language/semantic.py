@@ -327,9 +327,9 @@ def xor_(input: tl.tensor, other: tl.tensor, builder: ir.builder) -> tl.tensor:
 
 def gather(src: tl.tensor, index: tl.tensor, axis: int, builder: ir.builder) -> tl.tensor:
     assert index.dtype.is_int(), "index must be an integer tensor"
-    if not src.dtype.is_floating():
-        raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {src.dtype}")
-    
+    if not (src.dtype.is_floating() or src.dtype.is_int8()):
+        raise ValueError(f"Expected dtype fp16/fp32/bf16/f8E5M2/f8E4M3FN/int8, but got {src.dtype}")
+
     rank = len(src.type.shape)
     assert len(index.type.shape) == rank, "source and index tensors must have the same rank"
 

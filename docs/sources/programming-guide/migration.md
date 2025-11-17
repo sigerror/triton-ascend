@@ -94,11 +94,10 @@ NPU的 `coreDim` 参数不能超过 `UINT16_MAX`（65535）。当处理大规模
 - 计算得到的 `coreDim = 524,288 > 65535`（超限）
 
 **解决思路1：**  
-昇腾编译器针对coreDim超限问题，有对应的解决方案，只需将环境变量'TRITON_ALL_BLOCKS_PARALLEL'和'ENABLE_UNPUBLISHED_FEATURE'设为1。设置命令如下：
+昇腾编译器针对coreDim超限问题，有对应的解决方案，只需将环境变量'TRITON_ALL_BLOCKS_PARALLEL'设为1。设置命令如下：
 
 ```bash
 export TRITON_ALL_BLOCKS_PARALLEL=1
-export ENABLE_UNPUBLISHED_FEATURE=1
 ```
 
 **解决思路2：**  

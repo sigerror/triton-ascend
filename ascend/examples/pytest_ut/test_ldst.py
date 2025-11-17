@@ -34,7 +34,7 @@ def test_ldst_indirect_00():
         pid = tl.program_id(0)
         offset1 = tl.load(in_ptr0 + OFFSET0)
         idx_in1 = offset1 + pid * XS + tl.arange(0, XS)
-        tmp0 = tl.load(in_ptr1 + idx_in1)
+        tmp0 = tl.load(in_ptr1 + idx_in1, cache_modifier = ".ca", eviction_policy = "evict_first", volatile = True)
         tmp1 = tl_math.exp(tmp0)
         idx_out0 = pid * XS + tl.arange(0, XS)
         tl.store(out_ptr0 + idx_out0, tmp1)
