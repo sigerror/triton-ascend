@@ -113,14 +113,6 @@ class NPULauncher(object):
         debug_mode = metadata.debug
 
         header_src = generate_npu_header_src()
-        precompile_hash = _precompile_npu_hash(header_src)
-        cache = get_cache_manager(precompile_hash)
-        header_path = cache.get_file("precompiled.h")
-        gch_path = cache.get_file("precompiled.h.gch")
-        # if one of .h and .h.gch file not exist, precompile header file
-        if header_path is None or gch_path is None:
-            header_path = cache.put(header_src, "precompiled.h", binary=False)
-            _precompile_npu_ext(header_path)
 
         workspace_size = int(metadata.workspace_size) \
                               if hasattr(metadata, 'workspace_size') else -1
@@ -387,10 +379,10 @@ def make_npu_launcher_stub(header_src, wrapper_src, debug=False):
     cache = get_cache_manager(precompile_hash)
     header_path = cache.get_file("precompiled.h")
     gch_path = cache.get_file("precompiled.h.gch")
-    if header_path is None or gch_path is None:
-        print("precompiled file not exist, compile launcher directly")
-        header_path = None
-        gch_path = None
+    # if precompile header file and its gch file not exist, do precompile
+    if header_path is None and gch_path is None:
+        header_path = cache.put(header_src, "precompiled.h", binary=False)
+        _precompile_npu_ext(header_path)
 
     # try to get cached file
     so_cache_key = hashlib.sha256(wrapper_src.encode("utf-8")).hexdigest()
@@ -423,7 +415,7 @@ def make_npu_launcher_stub(header_src, wrapper_src, debug=False):
         src_path = os.path.join(tmpdir, f"{name}.cxx")
         with open(src_path, "w") as f:
             f.write(wrapper_src)
-        so_path = _build_npu_ext(name, header_path, src_path, kernel_launcher=kernel_launcher_type)
+        so_path = _build_npu_ext(name, header_path, src_path, kernel_launcher=kernel_launcher_type, precompile=True)
         if debug:
             with open(so_path, "rb") as f:
                 dump_manager.put(f.read(), so_name, binary=True)
@@ -534,7 +526,6 @@ def generate_npu_header_src():
 #include <string>
 #include <sys/syscall.h>
 #include <vector>
-#define PY_SSIZE_T_CLEAN
 #include <Python.h>
 #include "experiment/runtime/runtime/rt.h"
 #include <ATen/ATen.h>
@@ -617,7 +608,7 @@ def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, loc
     enable_taskqueue = os.getenv(
         "TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
     enable_grid_warn_print = os.getenv(
-        "TRITON_GRID_WARN_PRINT", 'false').lower() in ('true', '1')    
+        "TRITON_GRID_WARN_PRINT", 'false').lower() in ('true', '1')
     enable_auto_map_parallel_blocks = _is_auto_map_parallel_blocks_enabled()
     npu_utils = NPUUtils()
     num_physical_blocks = npu_utils.get_aivector_core_num(
@@ -812,7 +803,7 @@ extern "C" {
     return f"""
 {precompile_headers}
 {extract_device_print_code_from_cann() if enable_device_print else ''}
-
+#define PY_SSIZE_T_CLEAN
 {'#define ENABLE_GRID_WARN_PRINT' if enable_grid_warn_print else ''}
 #define TENSOR_KIND_INPUT 0
 #define TENSOR_KIND_OUTPUT 1
