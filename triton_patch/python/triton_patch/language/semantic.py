@@ -256,7 +256,7 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
             raise ValueError("input_precision = 'hf32' must be used with f32 * f32 = f32 on Ascend")
 
     if max_num_imprecise_acc is not None:
-        tl.static_print("max_num_imprecise_acc is not supported on Ascend yet. Thus it is ignored.")
+        print("max_num_imprecise_acc in tl.dot is not supported on Ascend yet. Thus it is ignored.")
     max_num_imprecise_acc = 0
     return tl.tensor(builder.create_dot(lhs.handle, rhs.handle, acc_handle, input_precision, max_num_imprecise_acc),
                      ret_ty)
