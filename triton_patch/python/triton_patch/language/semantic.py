@@ -714,11 +714,11 @@ def sort(ptr: tl.tensor, dim: int, descending, builder: ir.builder):
         values: tl.tensor，排序后的值（类型与输入一致）
     """
 
-    allowed_types = {tl.int8, tl.int16, tl.bfloat16, tl.float16, tl.float32}
+    allowed_types = {tl.int8, tl.int16, tl.bfloat16, tl.float16, tl.float32, tl.int32, tl.int64, tl.float8e4nv, tl.float8e5}
     base_ty = ptr.type.scalar if hasattr(ptr.type, "scalar") else ptr.type
     if base_ty not in allowed_types:
         raise TypeError(
-            f"tt.sort only supports int8, int16, bfloat16, float16, float32, "
+            f"tt.sort only supports int8, int16, bfloat16, float16, float32, tl.int32, tl.int64, tl.float8e4nv, tl.float8e5"
             f"but got {ptr.type}"
         )
 
