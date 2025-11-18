@@ -111,27 +111,13 @@ class NPULauncher(object):
         self.enable_msprof_register_tensor = os.getenv("TRITON_REGISTER_TENSOR_MSPROF", 'false').lower() in ('true', '1')
         self.remote_run = is_remote_run(metadata.target.arch)
         debug_mode = metadata.debug
-
         header_src = generate_npu_header_src()
-
-        workspace_size = int(metadata.workspace_size) \
-                              if hasattr(metadata, 'workspace_size') else -1
-        lock_init_value = int(metadata.lock_init_value) \
-                              if hasattr(metadata, 'lock_init_value') else 0
-        lock_num = int(metadata.lock_num) \
-                              if hasattr(metadata, 'lock_num') else -1
         constants = src.constants if hasattr(src, "constants") else dict()
         cst_key = lambda i: src.fn.arg_names.index(i) if isinstance(i, str) else i
         constants = {cst_key(key): value for key, value in constants.items()}
         signature = {cst_key(key): value for key, value in src.signature.items()}
-        mix_mode = metadata.mix_mode
-        # TODO: this can be adapted when we support mix-parallel mode
-        wrapper_src = generate_npu_wrapper_src(constants, signature, \
-                                               workspace_size, mix_mode, \
-                                               lock_num, lock_init_value, \
-                                               metadata.compile_on_910_95, \
-                                               metadata.parallel_mode)
-        so_launcher_path = make_npu_launcher_stub(header_src, wrapper_src, debug_mode)
+        wrapper_src = generate_npu_wrapper_src(constants, signature, metadata)
+        so_launcher_path = make_npu_launcher_stub(header_src, wrapper_src, metadata.debug)
         # setup for remote run
         # TODO: use a var to pack all vars required to run on a remote machine
         self.mix_mode = metadata.mix_mode
@@ -537,8 +523,18 @@ def generate_npu_header_src():
 """
 
 # the template is from triton-adapter HEAD. Wrapping the generated kernel binary into a python module
-def generate_npu_wrapper_src(constants, signature, workspace_size, mix_mode, lock_num, lock_ini_val, compile_on_910_95, parallel_mode):
+def generate_npu_wrapper_src(constants, signature, metadata):
     import os
+    workspace_size = int(metadata.workspace_size) \
+                          if hasattr(metadata, 'workspace_size') else -1
+    lock_init_value = int(metadata.lock_init_value) \
+                          if hasattr(metadata, 'lock_init_value') else 0
+    lock_num = int(metadata.lock_num) \
+                          if hasattr(metadata, 'lock_num') else -1
+    mix_mode = metadata.mix_mode
+    compile_on_910_95 = metadata.compile_on_910_95
+    parallel_mode = metadata.parallel_mode
+    enable_simt = ("simt" in parallel_mode) or metadata.force_simt_only
 
     def _ty_to_cpp(ty):
         if ty[0] == '*':
@@ -785,13 +781,13 @@ extern "C" {
     cpp_kernel_launch = f"""
     ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
 """
-    if compile_on_910_95 and ("simt" in parallel_mode):
+    if compile_on_910_95 and enable_simt:
         cpp_kernel_launch = """
     rtArgsEx_t argsInfo = {};
     argsInfo.args = static_cast<void*>(&args);
     argsInfo.argsSize = sizeof(args);
-    // TODO: localMemorySize should be specified by user
     rtTaskCfgInfo_t cfgInfo = {};
+    // TODO: localMemorySize should be specified by user
     cfgInfo.localMemorySize = 216 * 1024;
     ret = rtKernelLaunchWithFlagV2(func, blockNum, &argsInfo, NULL, stream, 0, &cfgInfo);
 """
@@ -846,7 +842,7 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     if (!syncBlockLock_ptr) {{
       {alloc_success_code if enable_taskqueue else sync_lock_fail_code}
     }}
-    std::vector<int64_t> lockInitData({lock_num}, {lock_ini_val});
+    std::vector<int64_t> lockInitData({lock_num}, {lock_init_value});
     ret = rtMemcpy(
         syncBlockLock_ptr, syncBlockLockSize,
         reinterpret_cast<void *>(lockInitData.data()), syncBlockLockSize,
@@ -867,11 +863,11 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     {'if (ret != RT_ERROR_NONE) return ret;' if (workspace_size > 0 and enable_taskqueue) else 'if (ret != RT_ERROR_NONE) return;' if (workspace_size > 0 and not enable_taskqueue) else ''}
     struct __attribute__((packed)) {{
       {'void* ffts_addr __attribute__((aligned(8)));' if target_support_ffts else ''}
-      void* syncBlockLock __attribute__((aligned(8)));
-      void* workspace_addr __attribute__((aligned(8)));
+      {'void* syncBlockLock __attribute__((aligned(8)));' if not enable_simt else ''}
+      {'void* workspace_addr __attribute__((aligned(8)));' if not enable_simt else ''}
       {' '.join(f'{_ty_to_cpp(ty)} arg{i} __attribute__((aligned({4 if ty[0] != "*" and ty[-2:] != "64" else 8})));' for i, ty in signature.items() if i not in constants)}
       {' '.join(f'{_ty_to_cpp(ty)} grid{mark} __attribute__((aligned(4)));' for mark, ty in grid_info.items())}
-      {('void* DTData __attribute__((aligned(8)));' if enable_device_print else '')}
+      {'void* DTData __attribute__((aligned(8)));' if enable_device_print else ''}
     }} args = {{
       {'static_cast<void*>(ffts_addr),' if target_support_ffts else ''}
       {'static_cast<void*>(syncBlockLock_ptr)' if lock_num > 0 else 'nullptr'},
