@@ -885,6 +885,11 @@ LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter
         {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::ugt}, {"min_with_index", "false"}},
         {{arith::CmpIPredicate::ugt, arith::CmpIPredicate::eq, arith::CmpIPredicate::ult}, {"max_with_index", "true"}},
         {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::ult}, {"min_with_index", "true"}},
+
+        {{arith::CmpIPredicate::ugt, arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt}, {"max_with_index", "false"}},
+        {{arith::CmpIPredicate::ugt, arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}, {"max_with_index", "true"}},
+        {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt}, {"min_with_index", "false"}},
+        {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}, {"min_with_index", "true"}},
     };
 
     std::vector<arith::CmpIPredicate> preds;
