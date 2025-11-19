@@ -959,6 +959,8 @@ def gather_load(
         f"gather_dim={gather_dim} must be in range [0, {ndim})"
     assert len(gather_indices.shape) == 1, \
         f"gather_indices must be 1D tensor, got {len(gather_indices.shape)}D"
+    assert gather_dim < ndim - 1, \
+        f"gather_load cannot support trailing dimension as gather_dim={gather_dim}, ndim={ndim}"
     
     newsrc_shape = [o.handle for o in src_shape]
     newsrc_offset = [o.handle for o in src_offset]

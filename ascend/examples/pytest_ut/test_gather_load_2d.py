@@ -20,6 +20,7 @@
 
 import triton
 import triton.language as tl
+import triton.language.extra.ascend.libdevice as libdevice
 import torch
 import torch_npu
 import pytest
@@ -72,7 +73,7 @@ def test_gather_load_2d(src_shape, dim, indice_shape, dtype):
                 # tmp_buf = tl.zeros((g_block_sub, other_block), in_ptr.dtype.element_ty)
                 other_idx = tl.arange(0, other_block) + other_offset
                 other_mask = other_idx < g_stride
-                tmp_buf = tl.gather_load(
+                tmp_buf = libdevice.gather_load(
                     src=in_ptr,
                     gather_dim=dim,
                     gather_indices=indices,
@@ -80,9 +81,26 @@ def test_gather_load_2d(src_shape, dim, indice_shape, dtype):
                     src_offset=(-1, 0),
                     read_shape=(-1, other_block)
                 )
-                tl.store(out_ptr + g_idx[:,None] * g_stride + other_idx[None,:], tmp_buf, g_mask[:,None] & other_mask[None,:])
+                tl.store(out_ptr + g_idx[:, None] * g_stride + other_idx[None, :], tmp_buf, g_mask[:, None] & other_mask[None, :])
 
-    def triton_func(x0, dim, indices):
+    @triton.jit
+    def auto_gather_load(in_ptr, indices_ptr, out_ptr, dim: tl.constexpr,
+        other_numel: tl.constexpr,
+        g_stride: tl.constexpr, indice_length: tl.constexpr,
+        g_block: tl.constexpr, g_block_sub: tl.constexpr, other_block: tl.constexpr):
+        g_begin = tl.program_id(0) * g_block
+        for goffs in range(0, g_block, g_block_sub):
+            g_idx = tl.arange(0, g_block_sub) + g_begin + goffs
+            g_mask = g_idx < indice_length
+            indices = tl.load(indices_ptr + g_idx, g_mask, other=0)
+            for other_offset in range(0, g_stride, other_block):
+                other_idx = tl.arange(0, other_block) + other_offset
+                other_mask = other_idx < g_stride
+                src_offsets = indices[:, None] * g_stride + other_idx[None, :]
+                tmp_buf = tl.load(in_ptr + src_offsets)
+                tl.store(out_ptr + g_idx[:, None] * g_stride + other_idx[None, :], tmp_buf, g_mask[:, None] & other_mask[None, :])
+
+    def triton_func(x0, dim, indices, use_auto_gather_load=True):
         sz = list(x0.shape)
         sz[dim]=len(indices)
         out = torch.empty(tuple(sz), dtype=x0.dtype).npu()
@@ -98,8 +116,12 @@ def test_gather_load_2d(src_shape, dim, indice_shape, dtype):
         else:
             other_block = available_ub_space
             g_block_sub = 1
-        basic_gather_load[num_vec_core, 1, 1](x0, indices, out, dim, other_numel = sz[0], g_stride = g_stride, indice_length=indice_length, 
-        g_block = g_block, g_block_sub = g_block_sub, other_block = other_block)
+        if use_auto_gather_load:
+            auto_gather_load[num_vec_core, 1, 1](x0, indices, out, dim, other_numel=sz[0], g_stride=g_stride, indice_length=indice_length, 
+                g_block=g_block, g_block_sub=g_block_sub, other_block=other_block)
+        else:
+            basic_gather_load[num_vec_core, 1, 1](x0, indices, out, dim, other_numel=sz[0], g_stride=g_stride, indice_length=indice_length, 
+                g_block=g_block, g_block_sub=g_block_sub, other_block=other_block)
         return out
 
     x0 = test_common.generate_tensor(shape=src_shape, dtype=dtype).npu()
@@ -108,5 +130,8 @@ def test_gather_load_2d(src_shape, dim, indice_shape, dtype):
     torch_ref = torch_func(x0, dim, indices)
     triton_cal = triton_func(x0, dim, indices)
     test_common.validate_cmp(dtype, triton_cal, torch_ref)
+    
+    triton_cal_libdevice = triton_func(x0, dim, indices, use_auto_gather_load=False)
+    test_common.validate_cmp(dtype, triton_cal_libdevice, torch_ref)
 
 test_gather_load_2d((500000, 37), 0, (324344,), "float32")
