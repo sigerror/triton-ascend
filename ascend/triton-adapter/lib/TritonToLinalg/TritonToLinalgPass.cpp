@@ -78,6 +78,14 @@ int nd2nzFlag = 0;
 bool compileOn91095Flag = false;
 bool existDotFlag = false;
 
+inline bool isSIMTOp(Operation *op)
+{
+  return isa<
+      triton::EmbeddingGatherOp,
+      triton::IndirectLoadOp
+      >(op);
+}
+
 TritonTypeConverter::TritonTypeConverter() {
   addConversion([](Type type) { return type; });
 
@@ -732,9 +740,18 @@ void TritonToLinalgPass::runOnOperation() {
   existDotFlag = existDot;
 
   bool existSIMTOp = false;
-  moduleOp.walk([&](triton::EmbeddingGatherOp op) {
-    existSIMTOp = true;
-    return WalkResult::interrupt();
+  moduleOp.walk([&](Operation *op) {
+    if (isSIMTOp(op)) {
+      existSIMTOp = true;
+      LLVM_DEBUG({
+        auto &os = llvm::dbgs();
+        os << "Found SIMT op in function: ";
+        os << op->getName();
+        os << "\n";
+      });
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
   });
 
   RewritePatternSet canonicalizerPatterns(&getContext());
