@@ -192,13 +192,17 @@ void LoadConverter::fillTensorWithOtherForMaskScenario(
     fillFlag = rewriter.create<arith::OrIOp>(loc, fillFlag, curCmp.getResult())
                    .getResult();
   }
-
-  rewriter.create<scf::IfOp>(
-      loc, fillFlag, [&](OpBuilder &builder, Location loc) {
-        builder.create<linalg::FillOp>(loc, ValueRange{other},
+  auto ifOp = rewriter.create<scf::IfOp>(loc, fillFlag);
+  {
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointToStart(&ifOp.getThenRegion().front());
+    rewriter.create<linalg::FillOp>(loc, ValueRange{other},
                                        ValueRange{localMem});
-        builder.create<scf::YieldOp>(loc);
-      });
+  }
+  ifOp->setAttr(
+    rewriter.getStringAttr("hivm.unlikely_condition"),
+    UnitAttr::get(rewriter.getContext())
+  );
 }
 
 LoadConverter::LoadConverter(MLIRContext *context)
