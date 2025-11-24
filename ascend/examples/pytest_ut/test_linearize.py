@@ -123,9 +123,12 @@ def triton_foo(a, d ,shape, dtype) :
     print(f"XBLOCK={XBLOCK},YBLOCK={YBLOCK}, block_dim={((x + XBLOCK -1 )//XBLOCK) * (((y*z) + YBLOCK -1 ) // YBLOCK)}")
     grid = ((x + XBLOCK -1 )//XBLOCK, ((y*z) + YBLOCK -1 ) // YBLOCK, 1) 
     
-    triton_gpu_revised[grid](a, d, out, y*z, x, 
-                             SHAPE0=z,SHAPE1=y,SHAPE2=x,
-                             YBLOCK=YBLOCK, XBLOCK = XBLOCK)
+    triton_gpu_revised[grid](
+        a, d, out, y * z, x,
+        SHAPE0=z, SHAPE1=y, SHAPE2=x,
+        YBLOCK=YBLOCK, XBLOCK=XBLOCK,
+        enable_linearize=True
+    )
     return out 
 
 
@@ -248,6 +251,7 @@ def test_linearize_offset_handling(dtype, sigtype):
         BLOCK_SIZE_M=BLOCK_SIZE_M,
         BLOCK_SIZE_N=BLOCK_SIZE_N,
         GROUP_SIZE_M=GROUP_SIZE_M,
+        enable_linearize=True
     )
     
     # Compute reference result
@@ -308,7 +312,10 @@ def test_expand_dims_and_add(batch_size, buffer_len, dtype, sigtype):
     cache_ref = torch.zeros(batch_size, 1, cache_len, dtype=dtype).npu()
     numel = batch_size * buffer_len * 2
     torch_expand_dims_and_add(buffer, cache_ref, buffer_len, block, numel)
-    expand_dims_and_add[block, cache_len](buffer, cache, buffer_len, block, numel)
+    expand_dims_and_add[block, cache_len](
+        buffer, cache, buffer_len, block, numel,
+        enable_linearize=True
+    )
 
     test_common.validate_cmp(sigtype, cache, cache_ref)
 
@@ -599,7 +606,10 @@ def test_linearize_jump_load(batch_size, buffer_len, dtype, sigtype):
     cache2 = cache2_ref.npu()
 
     torch_save_cache_to_buffer(buffer_ref, cache1_ref, cache2_ref, buffer_len, cache_len, block)
-    save_cache_to_buffer[(batch_size, 1, 1)](buffer, cache1, cache2, buffer_len, block)
+    save_cache_to_buffer[(batch_size, 1, 1)](
+        buffer, cache1, cache2, buffer_len, block,
+        enable_linearize=True
+    )
     test_common.validate_cmp(sigtype, buffer, buffer_ref)
 
 
@@ -616,7 +626,10 @@ def test_linearize_jump_load_with_offset(batch_size, buffer_len, dtype, sigtype)
     cache2 = cache2_ref.npu()
 
     torch_save_cache_to_buffer_with_offset(buffer_ref, cache1_ref, cache2_ref, buffer_len, cache_len, block)
-    save_cache_to_buffer_with_offset[(batch_size, 1, 1)](buffer, cache1, cache2, buffer_len, block)
+    save_cache_to_buffer_with_offset[(batch_size, 1, 1)](
+        buffer, cache1, cache2, buffer_len, block,
+        enable_linearize=True
+    )
     test_common.validate_cmp(sigtype, buffer, buffer_ref)
 
 
@@ -634,7 +647,10 @@ def test_linearize_rearrange(batch_size, buffer_len, dtype, sigtype):
     cache = cache_ref.npu()
 
     torch_rearrange_and_combine_two_buffer(buffer1_ref, buffer2_ref, cache_ref, buffer_len, num_block, block)
-    rearrange_and_combine_two_buffer[(batch_size, 1, 1)](buffer1, buffer2, cache, buffer_len, num_block, block)
+    rearrange_and_combine_two_buffer[(batch_size, 1, 1)](
+        buffer1, buffer2, cache, buffer_len, num_block, block,
+        enable_linearize=True
+    )
     test_common.validate_cmp(sigtype, cache, cache_ref)
 
 
@@ -654,7 +670,10 @@ def test_linearize_jump_load_with_mask(batch_size, buffer_len, dtype, sigtype):
     mask = mask_ref.npu()
     mask_num = 16
     torch_save_cache_to_buffer_with_mask(buffer_ref, cache1_ref, cache2_ref, mask_ref, buffer_len, cache_len, block, mask_num)
-    save_cache_to_buffer_with_mask[(batch_size, 1, 1)](buffer, cache1, cache2, mask, buffer_len, block, mask_num)
+    save_cache_to_buffer_with_mask[(batch_size, 1, 1)](
+        buffer, cache1, cache2, mask, buffer_len, block, mask_num,
+        enable_linearize=True
+    )
     test_common.validate_cmp(sigtype, buffer, buffer_ref)
 
 
@@ -670,5 +689,8 @@ def test_linearize_rearrange_with_mask(batch_size, buffer_len, dtype, sigtype):
     cache2 = cache2_ref.npu()
 
     torch_rearrange_cache_with_mask(cache1_ref, cache2_ref, 2, buffer_len, num_block, block)
-    rearrange_cache_with_mask[(batch_size, 1, 1)](cache1, cache2, 2, buffer_len, num_block, block)
+    rearrange_cache_with_mask[(batch_size, 1, 1)](
+        cache1, cache2, 2, buffer_len, num_block, block, 
+        enable_linearize=True
+    )
     test_common.validate_cmp(sigtype, cache2, cache2_ref)

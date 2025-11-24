@@ -338,6 +338,7 @@ class Config:
         maxnreg=None,
         pre_hook=None,
         force_simt_template=False,
+        enable_linearize=False,
         **bishengir_options
     ):
         self.kwargs = kwargs
@@ -351,6 +352,7 @@ class Config:
         self.maxnreg = maxnreg
         self.pre_hook = pre_hook
         self.force_simt_template = force_simt_template
+        self.enable_linearize = enable_linearize
 
 
         # BiShengIR Options allowed for autotune
@@ -378,6 +380,7 @@ class Config:
                     ("reg_inc_consumer", self.reg_inc_consumer),
                     ("maxnreg", self.maxnreg),
                     ("force_simt_template", self.force_simt_template),
+                    ("enable_linearize", self.enable_linearize),
 
                     ("multibuffer", self.multibuffer),
                     ("enable_hivm_auto_cv_balance", self.enable_hivm_auto_cv_balance),
