@@ -1726,9 +1726,9 @@ void init_triton_ir(py::module &&m) {
               std::vector<int32_t> &tensorShape, bool isSignedInteger) -> Value {
                 return self.create<MakeTensorDescOp>(base, shape, strides, tensorShape, isSignedInteger);
            })
-      // Gather load operation
-      .def("create_gather_load",
-           [](TritonOpBuilder &self, Value &src, Value &gatherIndices, int32_t gatherDim,
+      // Index select SIMD operation
+      .def("create_index_select_simd",
+           [](TritonOpBuilder &self, Value &src, Value &index, int32_t dim,
               std::vector<Value> &srcShape, std::vector<Value> &srcOffset,
               std::vector<int32_t> &readShape, std::vector<int32_t> &returnShape) -> Value {
                 auto &builder = self.getBuilder();
@@ -1739,7 +1739,7 @@ void init_triton_ir(py::module &&m) {
                 if (auto ptrTy = dyn_cast<triton::PointerType>(src.getType())) {
                   elemType = ptrTy.getPointeeType();
                 } else {
-                  llvm::report_fatal_error("gather_load: src must be pointer type");
+                  llvm::report_fatal_error("index_select_simd: src must be pointer type");
                 }
 
                 // Create return tensor type
@@ -1767,24 +1767,24 @@ void init_triton_ir(py::module &&m) {
                 }
 
                 // Create attributes
-                auto gatherDimAttr = builder.getI32IntegerAttr(gatherDim);
+                auto dimAttr = builder.getI32IntegerAttr(dim);
                 auto readShapeAttr = builder.getDenseI32ArrayAttr(readShape);
 
-                // Create the GatherLoadOp
+                // Create the IndexSelectSimdOp
                 // Parameter order must match TritonOps.td definition:
-                // src, gather_indices, gather_dim, src_shape, src_offset, read_shape
-                auto gatherLoadOp = builder.create<triton::GatherLoadOp>(
+                // src, index, dim, src_shape, src_offset, read_shape
+                auto indexSelectSimdOp = builder.create<triton::IndexSelectSimdOp>(
                     loc,
                     retTensorType,        // result type
                     src,                  // src pointer
-                    gatherIndices,        // gather_indices tensor
-                    gatherDimAttr,        // gather_dim attribute
+                    index,                // index tensor
+                    dimAttr,              // dim attribute
                     srcShapeIndex,        // src_shape (variadic, index type)
                     srcOffsetIndex,       // src_offset (variadic, index type)
                     readShapeAttr         // read_shape attribute
                 );
 
-                return gatherLoadOp.getResult();
+                return indexSelectSimdOp.getResult();
            })
       // Add an annotation
       .def("create_annotation",

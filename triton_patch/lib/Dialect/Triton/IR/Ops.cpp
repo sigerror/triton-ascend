@@ -1214,14 +1214,14 @@ LogicalResult GatherOp::inferReturnTypes(
   return success();
 }
 
-//-- GatherLoadOp --
-LogicalResult GatherLoadOp::inferReturnTypes(
+//-- IndexSelectSimdOp --
+LogicalResult IndexSelectSimdOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location, ValueRange operands,
     DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
     SmallVectorImpl<Type> &inferredReturnTypes) {
   
   // Get operands using adaptor
-  GatherLoadOpAdaptor adaptor(operands, attributes, properties, regions);
+  IndexSelectSimdOpAdaptor adaptor(operands, attributes, properties, regions);
   
   // Get element type from src pointer
   Type elemType;
@@ -1231,20 +1231,20 @@ LogicalResult GatherLoadOp::inferReturnTypes(
     return failure();
   }
   
-  // Get gather_indices shape to determine the size of gather_dim
-  auto indicesType = dyn_cast<RankedTensorType>(adaptor.getGatherIndices().getType());
+  // Get index shape to determine the size of dim
+  auto indicesType = dyn_cast<RankedTensorType>(adaptor.getIndex().getType());
   if (!indicesType)
     return failure();
   int64_t numIndices = indicesType.getShape()[0];
   
   // Use adaptor to get attributes - this is the compatible way
-  int32_t gatherDim = adaptor.getGatherDim();
+  int32_t dim = adaptor.getDim();
   auto readShapeAttr = adaptor.getReadShape();
   
-  // Build result shape: read_shape but with gather_dim replaced by numIndices
+  // Build result shape: read_shape but with dim replaced by numIndices
   SmallVector<int64_t> resultShape;
   for (size_t i = 0; i < readShapeAttr.size(); ++i) {
-    if (i == static_cast<size_t>(gatherDim)) {
+    if (i == static_cast<size_t>(dim)) {
       resultShape.push_back(numIndices);
     } else {
       resultShape.push_back(readShapeAttr[i]);

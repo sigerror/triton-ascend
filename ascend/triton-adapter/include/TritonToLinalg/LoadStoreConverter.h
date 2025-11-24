@@ -249,15 +249,5 @@ class AtomicMaxMinCanonicalizer : public OpRewritePattern<triton::AtomicRMWOp> {
                                 PatternRewriter &rewriter) const override;
 };
 
-class GatherLoadConverter : public OpConversionPattern<triton::GatherLoadOp> {
-public:
-  explicit GatherLoadConverter(MLIRContext *context);
-  using OpConversionPattern<triton::GatherLoadOp>::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(triton::GatherLoadOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override;
-};
-
 } // namespace LoadStoreConverter
 #endif

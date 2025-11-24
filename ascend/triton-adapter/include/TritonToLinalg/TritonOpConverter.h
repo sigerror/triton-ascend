@@ -586,6 +586,16 @@ private:
   static constexpr llvm::StringRef funcNameBase = "triton_indirect_load";
 };
 
+class IndexSelectSimdConverter : public OpConversionPattern<triton::IndexSelectSimdOp> {
+public:
+  explicit IndexSelectSimdConverter(MLIRContext *context);
+  using OpConversionPattern<triton::IndexSelectSimdOp>::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(triton::IndexSelectSimdOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+};
+
 } // end of namespace TTOpConverters
 
 #endif

@@ -658,7 +658,6 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::LoopConverter<scf::WhileOp>>(patterns.getContext());
   patterns.add<TTOpConverters::YieldConverter>(patterns.getContext());
   patterns.add<TTOpConverters::GatherConverter>(patterns.getContext());
-  patterns.add<LoadStoreConverter::GatherLoadConverter>(patterns.getContext());
   patterns.add<TTOpConverters::EmbeddingGatherConverter>(patterns.getContext());
 
   patterns.add<TTOpConverters::DeviceAssertConverter>(patterns.getContext());
@@ -668,6 +667,7 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::DotScaledConverter>(patterns.getContext());
   patterns.add<TTOpConverters::PtrToIntConverter>(patterns.getContext());
   patterns.add<TTOpConverters::IndirectLoadConverter>(patterns.getContext());
+  patterns.add<TTOpConverters::IndexSelectSimdConverter>(patterns.getContext());
 
   if (!this->namedOps) {
     linalg::populateElementwiseToLinalgConversionPatterns(patterns);
@@ -724,7 +724,7 @@ void TritonToLinalgPass::annotateTensorKindForModule(ModuleOp moduleOp) {
   moduleOp.walk([&](triton::FuncOp func) {
     // INPUT tensors
     this->walkAndMarkTensorKind<TensorKind::INPUT,
-                                triton::GatherLoadOp,
+                                triton::IndexSelectSimdOp,
                                 triton::EmbeddingGatherOp,
                                 triton::IndirectLoadOp,
                                 triton::LoadOp>(func);

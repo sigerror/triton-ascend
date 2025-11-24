@@ -636,27 +636,27 @@ def index_select(src: tensor, idx: tensor, bound, lstdim_blksiz, offsets, numels
     return semantic.embedding_gather(src, idx, bound, lstdim_blksiz, offsets, numels, _builder)
 
 @builtin
-def gather_load(
+def index_select_simd(
     src,
-    gather_dim,
-    gather_indices,
+    dim,
+    index,
     src_shape,
     src_offset,
     read_shape,
     _builder=None
 ) -> tensor:
     """
-    Parallel gather load operation from Global Memory to Unified Buffer.
+    Parallel index_select operation from Global Memory to Unified Buffer (SIMD version).
 
-    Gathers data from multiple indices along a specified dimension and loads
+    Selects data from multiple indices along a specified dimension and loads
     them as tiles from GM directly to UB with zero-copy semantics.
 
     :param src: Source tensor pointer (in GM)
     :type src: tensor (pointer type)
-    :param gather_dim: The dimension along which to gather
-    :type gather_dim: int or constexpr
-    :param gather_indices: 1D tensor of indices to gather (in UB)
-    :type gather_indices: tensor
+    :param dim: The dimension along which to select indices
+    :type dim: int or constexpr
+    :param index: 1D tensor of indices to select (in UB)
+    :type index: tensor
     :param src_shape: Complete shape of the source tensor (can be int or tensor)
     :type src_shape: List[Union[int, tensor]]
     :param src_offset: Starting offset for reading (can be int or tensor)
@@ -666,11 +666,11 @@ def gather_load(
 
     **Constraints:**
 
-    - ``read_shape[gather_dim]`` must be ``-1``
-    - ``src_offset[gather_dim]`` can be ``-1`` (will be ignored)
+    - ``read_shape[dim]`` must be ``-1``
+    - ``src_offset[dim]`` can be ``-1`` (will be ignored)
     - Boundary handling: ``src_offset + read_shape > src_shape`` automatically
       truncates to ``src_shape`` boundary
-    - Does not check if ``gather_indices`` contains out-of-bounds values
+    - Does not check if ``index`` contains out-of-bounds values
 
     **Example:**
 
@@ -682,13 +682,13 @@ def gather_load(
             indices = tl.load(indices_ptr + tl.arange(0, 4))
 
             # Example 1: Static shapes (constants)
-            # Gather load from dimension 1
-            # src: [8, 100, 256], gather at dim=1
+            # Index select from dimension 1
+            # src: [8, 100, 256], index_select at dim=1
             # Read: [4, ?, 128] starting from [4, ?, 128]
-            result = tl.gather_load(
+            result = libdevice.index_select_simd(
                 src_ptr,
-                gather_dim=1,
-                gather_indices=indices,
+                dim=1,
+                index=indices,
                 src_shape=[8, 100, 256],
                 src_offset=[4, -1, 128],
                 read_shape=[4, -1, 128]
@@ -696,10 +696,10 @@ def gather_load(
             # result shape: [4, 4, 128]
 
             # Example 2: Dynamic shapes (variables)
-            result2 = tl.gather_load(
+            result2 = libdevice.index_select_simd(
                 src_ptr,
-                gather_dim=1,
-                gather_indices=indices,
+                dim=1,
+                index=indices,
                 src_shape=[M, N, D],
                 src_offset=[4, -1, 128],
                 read_shape=[4, -1, 128]
@@ -707,11 +707,11 @@ def gather_load(
 
             tl.store(output_ptr + ..., result)
 
-    :return: Result tensor in UB with shape where ``gather_dim`` is replaced
-        by the length of ``gather_indices``
+    :return: Result tensor in UB with shape where ``dim`` is replaced
+        by the length of ``index``
     :rtype: tensor
     """
-    gather_dim = _constexpr_to_value(gather_dim)
+    dim = _constexpr_to_value(dim)
 
     # Process shape parameters: convert constexpr to values, keep tensors as-is
     def process_param(val):
@@ -729,10 +729,10 @@ def gather_load(
         real_semantic.to_tensor(o, _builder) if isinstance(o, constexpr) else o
         for o in src_offset
     ]
-    assert len(gather_indices.shape) == 1, "gather_indices must be a 1D tensor"
+    assert len(index.shape) == 1, "index must be a 1D tensor"
 
-    return semantic.gather_load(
-        src, gather_dim, gather_indices, newsrc_shape, newsrc_offset, read_shape, _builder
+    return semantic.index_select_simd(
+        src, dim, index, newsrc_shape, newsrc_offset, read_shape, _builder
     )
 
 

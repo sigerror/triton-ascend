@@ -392,36 +392,36 @@ def TT_EmbeddingGatherOp : TT_Op<"embedding_gather", [
     // let hasCanonicalizer = 1;
 }
 
-def TT_GatherLoadOp : TT_Op<"gather_load", [
+def TT_IndexSelectSimdOp : TT_Op<"index_select_simd", [
   MemoryEffects<[MemRead<GlobalMemory>]>,
   DeclareOpInterfaceMethods<InferTypeOpInterface>,
   AttrSizedOperandSegments
 ]> {
-    let summary = "Gather load operation from global memory";
+    let summary = "Index select SIMD operation from global memory";
     
     let description = [{
-        Gather load operation that loads data from multiple indices along a 
-        specified dimension. The operation gathers data from GM and loads them 
+        Index select operation (SIMD version) that loads data from multiple indices along a 
+        specified dimension. The operation selects data from GM and loads them 
         as tiles directly to UB with zero-copy semantics.
         
         The operation takes:
         - src: Source pointer (in GM)
-        - gather_indices: 1D tensor of indices to gather (already in UB)
-        - gather_dim: The dimension along which to gather
+        - index: 1D tensor of indices to select (already in UB)
+        - dim: The dimension along which to select
         - src_shape: Complete shape of the source tensor
         - src_offset: Starting offset for reading
         - read_shape: Size to read (tile shape)
         
         Constraints:
-        - read_shape[gather_dim] must be -1
-        - src_offset[gather_dim] can be -1 (will be ignored)
+        - read_shape[dim] must be -1
+        - src_offset[dim] can be -1 (will be ignored)
     }];
 
     let arguments = (
       ins
       TT_PtrLike:$src,
-      TT_IntTensor:$gather_indices,
-      I32Attr:$gather_dim,
+      TT_IntTensor:$index,
+      I32Attr:$dim,
       Variadic<Index>:$src_shape,
       Variadic<Index>:$src_offset,
       DenseI32ArrayAttr:$read_shape
@@ -430,11 +430,11 @@ def TT_GatherLoadOp : TT_Op<"gather_load", [
     let results = (outs TT_Tensor:$result);
 
     let assemblyFormat = [{
-      $src `,` $gather_indices `,` $gather_dim `,`
+      $src `,` $index `,` $dim `,`
       `[` $src_shape `]` `,`
       `[` $src_offset `]` `,`
       $read_shape
-      attr-dict `:` type($src) `,` type($gather_indices) `->` type($result)
+      attr-dict `:` type($src) `,` type($index) `->` type($result)
     }];
 }
 

@@ -922,32 +922,34 @@ def make_tensor_descriptor(
     return tensor_descriptor(handle, shape, strides, desc_block_type)
 
 
-def gather_load(
+def index_select_simd(
     src: tl.tensor,
-    gather_dim: int,
-    gather_indices: tl.tensor,
-    src_shape: List[tl.tensor],  # Can be int or tl.tensor
-    src_offset: List[tl.tensor],  # Can be int or tl.tensor
-    read_shape: List[int],  # Can be int or tl.tensor
+    dim: int,
+    index: tl.tensor,
+    src_shape: List[Union[int, tl.tensor]],
+    src_offset: List[Union[int, tl.tensor]],
+    read_shape: List[Union[int, tl.tensor]],
     builder: ir.builder
 ) -> tl.tensor:
     """
-    Gather load operation that loads data from multiple indices along a dimension.
+    Index select operation (SIMD version) that loads data from multiple indices along a dimension.
+    
     Args:
         src: Source tensor pointer (in GM)
-        gather_dim: Dimension along which to gather
-        gather_indices: 1D tensor of indices to gather (in UB)
-        src_shape: Complete shape of source tensor (can be int or tensor)
-        src_offset: Starting offset for reading (can be int or tensor)
-        read_shape: Size to read (tile shape, can be int or tensor)
+        dim: Dimension along which to select indices
+        index: 1D tensor of indices to select (in UB)
+        src_shape: Complete shape of source tensor. Each element can be int or tensor.
+        src_offset: Starting offset for reading. Each element can be int or tensor.
+        read_shape: Size to read (tile shape). Each element can be int or tensor.
         builder: IR builder
 
     Returns:
         Result tensor in UB
 
     Constraints:
-        - read_shape[gather_dim] must be -1
-        - src_offset[gather_dim] can be -1 (ignored)
+        - read_shape[dim] must be -1
+        - src_offset[dim] can be -1 (ignored)
+        - All list parameters must have the same length (ndim)
     """
     # Validate inputs
     ndim = len(src_shape)
@@ -955,23 +957,23 @@ def gather_load(
         f"src_offset length {len(src_offset)} must match src_shape length {ndim}"
     assert len(read_shape) == ndim, \
         f"read_shape length {len(read_shape)} must match src_shape length {ndim}"
-    assert 0 <= gather_dim < ndim, \
-        f"gather_dim={gather_dim} must be in range [0, {ndim})"
-    assert len(gather_indices.shape) == 1, \
-        f"gather_indices must be 1D tensor, got {len(gather_indices.shape)}D"
-    assert gather_dim < ndim - 1, \
-        f"gather_load cannot support trailing dimension as gather_dim={gather_dim}, ndim={ndim}"
+    assert 0 <= dim < ndim, \
+        f"dim={dim} must be in range [0, {ndim})"
+    assert len(index.shape) == 1, \
+        f"index must be 1D tensor, got {len(index.shape)}D"
+    assert dim < ndim - 1, \
+        f"index_select_simd cannot support trailing dimension as dim={dim}, ndim={ndim}"
     
     newsrc_shape = [o.handle for o in src_shape]
     newsrc_offset = [o.handle for o in src_offset]
     # Create output type
     return_shape = [
-        gather_indices.shape[0] if i == gather_dim else read_shape[i] 
+        index.shape[0] if i == dim else read_shape[i] 
         for i in range(ndim)
     ]
     element_ty = src.type.element_ty
     output_ty = tl.block_type(element_ty, return_shape)
-    out = builder.create_gather_load(src.handle, gather_indices.handle, gather_dim, newsrc_shape, newsrc_offset, read_shape, return_shape)
+    out = builder.create_index_select_simd(src.handle, index.handle, dim, newsrc_shape, newsrc_offset, read_shape, return_shape)
     return tl.tensor(out, output_ty)
 
 def embedding_gather(src: tl.tensor, idx: tl.tensor, bound: int, blksiz: int, offsets: Tuple, numels: Tuple, builder: ir.builder) -> tl.tensor:
