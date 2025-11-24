@@ -247,22 +247,29 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
   SmallVector<Block *> eraseBlocks;
   for (Block &block : dyn_cast<func::FuncOp>(funcOp).getBody()) {
     auto curTerminator = block.getTerminator();
-    if (isa<cf::CondBranchOp>(curTerminator))
+    if (isa<cf::CondBranchOp>(curTerminator)) {
       candidate.push_back(curTerminator);
-    else if (isa<triton::ReturnOp>(curTerminator)){
-      if(candidate.empty()){
-        curTerminator->emitError("funcOp has more than one Block but got a early 'tt.return' Op.");
+    } else if (isa<triton::ReturnOp>(curTerminator)) {
+      if (candidate.empty()) {
+        curTerminator->emitError("funcOp has more than one Block but got an early 'tt.return' Op.");
         return failure();
       }
-    }
-    else
+    } else if (!isa<cf::BranchOp>(curTerminator)) {
+      funcOp->emitError("funcOp has more than one Block but found unsupported Terminator: ")
+          << *curTerminator;
       return failure();
+    }
 
     if (!block.isEntryBlock())
       eraseBlocks.push_back(&block);
   }
 
-  if(candidate.empty()){
+  LLVM_DEBUG({
+    llvm::dbgs() << "Found " << candidate.size()
+                 << " candidate cond_branch operations to convert.\n";
+  });
+
+  if (candidate.empty()) {
     funcOp->emitError("funcOp has more than one Block but no candidate Terminator was found!");
     return failure();
   }
@@ -297,12 +304,14 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
           }
 
           auto blockTerm = condBranchOp.getTrueDest()->getTerminator();
-          if (isa<cf::CondBranchOp>(blockTerm)) {
+          if (auto nextCond = dyn_cast<cf::CondBranchOp>(blockTerm)) {
             if (movedOps.empty()) {
-              blockTerm->emitError("movedOps can not be empty before entering convertToSCF!");
+              blockTerm->emitError("movedOps can not be empty before entering convertToSCF (then)!");
               return;
             }
-            convertToSCF(blockTerm, movedOps.back());
+            convertToSCF(nextCond, movedOps.back());
+          } else if (!isa<cf::BranchOp, triton::ReturnOp>(blockTerm)) {
+            blockTerm->emitError("Unsupported terminator in then branch after structuring");
           }
 
           builder.create<scf::YieldOp>(loc);
@@ -318,24 +327,32 @@ TritonToLinalgPass::convertMultipleBlockControlFlow(Operation *funcOp,
           }
 
           auto blockTerm = condBranchOp.getFalseDest()->getTerminator();
-          if (isa<cf::CondBranchOp>(blockTerm)) {
+          if (auto nextCond = dyn_cast<cf::CondBranchOp>(blockTerm)) {
             if (movedOps.empty()) {
-              blockTerm->emitError("movedOps can not be empty before entering convertToSCF!");
+              blockTerm->emitError("movedOps can not be empty before entering convertToSCF (else)!");
               return;
             }
-            convertToSCF(blockTerm, movedOps.back());
+            convertToSCF(nextCond, movedOps.back());
+          } else if (!isa<cf::BranchOp, triton::ReturnOp>(blockTerm)) {
+            blockTerm->emitError("Unsupported terminator in else branch after structuring");
           }
-
           builder.create<scf::YieldOp>(loc);
         });
   };
 
   Block::iterator insertOp(candidate.front());
-  --insertOp;
-  convertToSCF(candidate.front(), &(*insertOp));
+  if (insertOp == candidate.front()->getBlock()->begin()) {
+    // if the first operation is a cond_branch, we need to insert before it
+    convertToSCF(candidate.front(), candidate.front());
+  } else {
+    --insertOp;
+    convertToSCF(candidate.front(), &(*insertOp));
+  }
 
-  if (!visitFlag.all())
+  if (!visitFlag.all()) {
+    funcOp->emitError("Not all cf.cond_br converted!");
     return failure();
+  }
 
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPoint(candidate.front());
