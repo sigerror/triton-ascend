@@ -60,7 +60,7 @@ def _check_dtype(dtypes: List[str]) -> T:
 
 
 @core.builtin
-@_check_dtype(dtypes=["int32", "uint32", "int64"])
+@_check_dtype(dtypes=["int32", "uint32"])
 @_add_math_2arg_docstr("most significant N bits of the 2N-bit product")
 def umulhi(x, y, _builder=None):
     x = semantic.to_tensor(x, _builder)
