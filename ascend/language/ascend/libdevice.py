@@ -667,10 +667,17 @@ def gamma(arg0, _builder=None):
         semantic.equal(math.floor(arg0, _builder=_builder), arg0, _builder),
         semantic.less_than(arg0, 0, _builder), _builder
     )
-    inf_tensor = semantic.full(arg0.shape, float('inf'), arg0_scalar_ty, _builder)
+    pos_inf_tensor = semantic.full(arg0.shape, float('inf'), arg0_scalar_ty, _builder)
+    neg_inf_tensor = semantic.full(arg0.shape, float('-inf'), arg0_scalar_ty, _builder)
     gamma_res_reflect = semantic.where(
-        is_neg_int, inf_tensor, core.tensor(gamma_res_reflect, arg0.type), _builder)
-    return semantic.where(condition, gamma_res_reflect, core.tensor(gamma_res, arg0.type), _builder)
+        is_neg_int, pos_inf_tensor, core.tensor(gamma_res_reflect, arg0.type), _builder)
+    
+    res = semantic.where(condition, gamma_res_reflect, core.tensor(gamma_res, arg0.type), _builder)
+    is_pos_inf_input = semantic.equal(arg0, pos_inf_tensor, _builder)
+    is_neg_inf_input = semantic.equal(arg0, neg_inf_tensor, _builder)
+
+    return semantic.where(is_pos_inf_input, pos_inf_tensor, semantic.where(
+            is_neg_inf_input, neg_inf_tensor, res, _builder), _builder) 
 
 
 # Note: 
@@ -684,9 +691,17 @@ def gamma(arg0, _builder=None):
 @core.extern
 @math._check_dtype(dtypes=["fp32"])
 def lgamma(arg0, _builder=None):
+    arg0_scalar_ty = arg0.type.scalar
     arg0 = semantic.to_tensor(arg0, _builder)
+
+    inf_tensor = semantic.full(arg0.shape, float('inf'), arg0_scalar_ty, _builder)
+    is_inf = semantic.equal(
+        core.tensor(_builder.create_fabs(arg0.handle), arg0.type), inf_tensor, _builder
+    )
     gamma_res = _builder.create_fabs(gamma(arg0, _builder=_builder).handle)
-    return core.tensor(_builder.create_log(gamma_res), arg0.type)
+    lgamma_res = _builder.create_log(gamma_res)
+
+    return semantic.where(is_inf, inf_tensor, core.tensor(lgamma_res, arg0.type), _builder)
 
 
 @core.builtin
