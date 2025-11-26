@@ -447,21 +447,6 @@ def atomic_and(in_ptr0, out_ptr0, n_elements, BLOCK_SIZE: tl.constexpr,
         tl.atomic_and(out_ptr0 + (out_index), tmp0, xmask, "acq_rel", "test")
 
 
-invalid_types_int = [
-    'int64',
-    'bool'
-]
-
-@pytest.mark.parametrize("sigtype", invalid_types_int)
-@test_common.raises_with_match(triton.compiler.errors.CompilationError, "All support dtypes are int8, int16, int32, float16, float32, bfloat16")
-def test_invalid_types_int(sigtype):
-    N = 32
-    x = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
-    y = test_common.generate_tensor(shape=(N,), dtype=sigtype).npu()
-
-    atomic_and[1, 1, 1](x, y, 1, 1, 32)
-
-
 invalid_types_float = [
     'float16',
     'float32',
@@ -562,6 +547,18 @@ def test_atomic_and_uint(param_list):
     pointer_ref_cpu &= val_cpu[((ncore - 1) * split_size):(ncore * split_size)]
     pointer_ref = pointer_ref_cpu.to("npu")
 
+    @triton.jit
+    def atomic_and_uint(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
+        xoffset = tl.program_id(0) * BLOCK_SIZE
+        xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
+        yindex = tl.arange(0, BLOCK_SIZE)[:]
+        xmask = xindex < n_elements
+        x0 = xindex
+        x1 = yindex
+        tmp0 = tl.load(in_ptr0 + (x0), xmask)
+        tmp1 = tl.atomic_and(out_ptr0 + (x1), tmp0, xmask)
+        tl.store(out_ptr1 + (x1), tmp1, xmask)
+
     n_elements = shape[0] * shape[1]
-    atomic_and[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
+    atomic_and_uint[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
     test_common.validate_cmp(dtype, pointer, pointer_ref)

@@ -404,9 +404,21 @@ def test_atomic_xchg_uint(param_list):
     pointer_ref = val[((ncore - 1) * split_size):(ncore * split_size)].clone()
     pointer_old_ref[0:split_size] = pointer
     pointer_old_ref[split_size:((ncore - 1) * split_size)] = val[0:(ncore - 2) * split_size]
-    
+
+    @triton.jit
+    def atomic_xchg_uint(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
+        xoffset = tl.program_id(0) * BLOCK_SIZE
+        xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
+        yindex = tl.arange(0, BLOCK_SIZE)[:]
+        xmask = xindex < n_elements
+        x0 = xindex
+        x1 = yindex
+        tmp0 = tl.load(in_ptr0 + (x0), xmask)
+        tmp1 = tl.atomic_xchg(out_ptr0 + (x1), tmp0, xmask)
+        tl.store(out_ptr1 + (x0), tmp1, xmask)
+
     n_elements = shape[0] * shape[1]
-    atomic_xchg[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
+    atomic_xchg_uint[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
 
     pointer_cpu = pointer.cpu()
     pointer_ref_cpu = pointer_ref.cpu()

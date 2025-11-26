@@ -557,6 +557,18 @@ def test_atomic_add_uint(param_list):
     x1_ref = torch.from_numpy(x1_ref_np).npu()
     y_ref = torch.from_numpy(y_ref_np).npu()
 
+    @triton.jit
+    def atomic_add_uint(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
+        xoffset = tl.program_id(0) * BLOCK_SIZE
+        xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
+        yindex = tl.arange(0, BLOCK_SIZE)[:]
+        xmask = xindex < n_elements
+        x0 = xindex
+        x1 = yindex
+        tmp0 = tl.load(in_ptr0 + (x0), xmask)
+        tmp1 = tl.atomic_add(out_ptr0 + (x1), tmp0, xmask)
+        tl.store(out_ptr1 + (x1), tmp1, xmask)
+    
     n_elements = shape[0] * shape[1]
-    atomic_add[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=split_size * shape[1])
+    atomic_add_uint[ncore, 1, 1](x0, x1, y, n_elements, BLOCK_SIZE=split_size * shape[1])
     test_common.validate_cmp(dtype, x1, x1_ref)

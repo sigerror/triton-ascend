@@ -457,6 +457,19 @@ def test_atomic_cas_uint(param_list):
     pointer_ref_cpu = torch.from_numpy(pointer_ref_np)
     pointer_ref = pointer_ref_cpu.to("npu")
 
+    @triton.jit
+    def atomic_cas_uint(in_ptr0, in_ptr1, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
+        xoffset = tl.program_id(0) * BLOCK_SIZE
+        xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
+        yindex = tl.arange(0, BLOCK_SIZE)[:]
+        xmask = xindex < n_elements
+        x0 = xindex
+        x1 = yindex
+        val = tl.load(in_ptr0 + (x0), xmask)
+        cmp = tl.load(in_ptr1 + (x0), xmask)
+        tmp1 = tl.atomic_cas(out_ptr0 + (x1), cmp, val)
+        tl.store(out_ptr1 + (x1), tmp1, xmask)
+
     n_elements = shape[0] * shape[1]
-    atomic_cas[ncore, 1, 1](val, cmp, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
+    atomic_cas_uint[ncore, 1, 1](val, cmp, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
     test_common.validate_cmp(dtype, pointer, pointer_ref)

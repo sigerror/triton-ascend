@@ -410,6 +410,18 @@ def test_atomic_xor_uint(param_list):
     pointer_ref_cpu = torch.full_like(pointer_cpu, pointer_result).cpu()
     pointer_ref = pointer_ref_cpu.to("npu")
 
+    @triton.jit
+    def atomic_xor_uint(in_ptr0, out_ptr0, out_ptr1, n_elements, BLOCK_SIZE: tl.constexpr):
+        xoffset = tl.program_id(0) * BLOCK_SIZE
+        xindex = xoffset + tl.arange(0, BLOCK_SIZE)[:]
+        yindex = tl.arange(0, BLOCK_SIZE)[:]
+        xmask = xindex < n_elements
+        x0 = xindex
+        x1 = yindex
+        tmp0 = tl.load(in_ptr0 + (x0), xmask)
+        tmp1 = tl.atomic_xor(out_ptr0 + (x1), tmp0, xmask)
+        tl.store(out_ptr1 + (x1), tmp1, xmask)
+
     n_elements = shape[0] * shape[1]
-    atomic_xor[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
+    atomic_xor_uint[ncore, 1, 1](val, pointer, pointer_old, n_elements, BLOCK_SIZE=split_size * shape[1])
     test_common.validate_cmp(dtype, pointer, pointer_ref)
