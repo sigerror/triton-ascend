@@ -89,21 +89,21 @@
 |       Scan/Sort Ops      | associative_scan       | ✓    | ✓     | ✓     | ✓      | ✓     | ✓    | ✓    | ×    | ✓    |
 |                          | cumprod                | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
 |                          | cumsum                 | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ✓    | ✓    |
-|                          | histogram              | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
+|                          | histogram              | ×    | ×     | ✓      | ✓       | ✓      | ×    | ×    | ×    | ×    |
 |                          | sort                   | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
 |                          | gather                 | ×    | ×     | ×     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|        Atomic Ops        | atomic_add             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|                          | atomic_and             | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
-|                          | atomic_cas             | ×    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ×    |
+|        Atomic Ops        | atomic_add             | ✓    | ✓     | ✓     | ✓       | ×     | ✓    | ✓    | ✓    | ×    |
+|                          | atomic_and             | ✓    | ✓     | ✓     | ✓       | ✓     | ×    | ×    | ×    | ×    |
+|                          | atomic_cas             | ×    | ✓     | ✓     | ✓       | ✓     | ✓    | ✓    | ×    | ×    |
 |                          | atomic_max             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
 |                          | atomic_min             | ✓    | ✓     | ✓     | ×      | ×     | ✓    | ✓    | ✓    | ×    |
-|                          | atomic_or              | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
-|                          | atomic_xchg            | ✓    | ✓     | ✓     | ×      | ✓     | ✓    | ✓    | ×    | ×    |
-|                          | atomic_xor             | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
-| Random Number Generation | randint4x              | ×    | ×     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | randint                | ×    | ×     | ✓     | ×      | ×     | ×    | ×    | ×    | ×    |
-|                          | rand                   | ×    | ×     | ×     | ×      | ×     | ×    | ✓    | ×    | ×    |
-|                          | randn                  | ×    | ×     | ×     | ×      | ×     | ×    | ✓    | ×    | ×    |
+|                          | atomic_or              | ✓    | ✓     | ✓     | ✓       | ✓     | ×    | ×    | ×    | ×    |
+|                          | atomic_xchg            | ✓    | ✓     | ✓     | ✓       | ✓     | ✓    | ✓    | ×    | ×    |
+|                          | atomic_xor             | ✓    | ✓     | ✓     | ✓       | ✓     | ×    | ×    | ×    | ×    |
+| Random Number Generation | randint4x              | ✓     | ✓      | ✓     | ✓       | ×     | ×    | ×    | ×    | ✓     |
+|                          | randint                | ✓     | ✓      | ✓     | ✓       | ×     | ×    | ×    | ×    | ✓     |
+|                          | rand                   | ×    | ×     | ×     | ×      | ×     | ✓     | ✓    | ✓     | ✓     |
+|                          | randn                  | ×    | ×     | ×     | ×      | ×     | ✓     | ✓    | ✓     | ✓     |
 |         Iterators        | range                  | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
 |                          | static_range           | ✓    | ✓     | ✓     | ×      | ✓     | ×    | ×    | ×    | ×    |
 |      Inline Assembly     | inline_asm_elementwise | ×    | ×     | ×     | ×      | ×     | ×    | ×    | ×    | ×    |
