@@ -381,7 +381,7 @@ def _build_npu_ext(obj_name: str, header_path, src_path, *, kernel_launcher="tor
             # only for clang++, when precompile invalid, fallback to normal compile
             return _build_npu_ext(obj_name, header_path, src_path, precompile=False)
         else:
-            raise RuntimeError("Failed to compile " + src_path)
+            raise RuntimeError(f"Failed to compile {src_path}, error: {result.stderr}")
 
 
 def _get_kernel_target(metadata: dict):
