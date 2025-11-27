@@ -279,7 +279,7 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Example: mix_mode = "aiv" -> aiv
     MIX_MODE_REGEX = r'mix_mode\s*=\s*"([^"]+)"'
 
-    # Example: mix_mode = "aiv" -> aiv
+    # Example: parallel_mode = "mix_simd_simt" -> mix_simd_simt
     PARALLEL_MODE_REGEX = r'parallel_mode\s*=\s*"([^"]+)"'
 
     # Example: func.func @gather_sorted_kernel(%arg0: ...) -> gather_sorted_kernel
@@ -575,7 +575,6 @@ class NPUOptions:
     reg_inc_consumer: int = 0
 
     compile_on_910_95: bool = is_compile_on_910_95
-    force_simt_template: bool = False
     enable_linearize: bool = False
     enable_warp_specialization: bool = False
     enable_nd2nz_on_vector: bool = False
@@ -603,6 +602,22 @@ class NPUOptions:
     stream: int = None
     parallel_mode: str = "simd"
     force_simt_only: bool = False
+    force_simt_template: bool = False
+    # compile_mode: "simd" (default), "unstructured_in_simt", "simt_only"
+    # When compile_mode is provided, it automatically sets other fields
+    compile_mode: str = "simd"
+
+    def __post_init__(self):
+        # Parse compile_mode and set related fields
+        if self.compile_mode == "simd":
+            object.__setattr__(self, "parallel_mode", "simd")
+        elif self.compile_mode == "unstructured_in_simt":
+            # For historical compatibility reasons, force_simt_template will still be used.
+            object.__setattr__(self, "force_simt_template", True)
+        elif self.compile_mode == "simt_only":
+            object.__setattr__(self, "force_simt_only", True)
+            object.__setattr__(self, "parallel_mode", "simt")
+
     def hash(self):
         key = "_".join([f"{name}-{val}" for name, val in self.__dict__.items()])
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
