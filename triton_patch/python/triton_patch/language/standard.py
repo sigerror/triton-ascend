@@ -182,7 +182,6 @@ def max(input, axis=None, return_indices=False, return_indices_tie_break_left=Tr
                 input = input.to(core.float32)
             else:
                 assert input.dtype.is_int(), "Expecting input to be integer type"
-                input = input.to(core.int32)
         return core.reduce(input, axis, _elementwise_max, keep_dims=keep_dims)
 
 
