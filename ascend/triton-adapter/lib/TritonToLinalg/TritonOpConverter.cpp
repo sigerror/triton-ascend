@@ -1473,7 +1473,7 @@ GatherConverter::matchAndRewrite(triton::GatherOp op, OpAdaptor adaptor,
   rewriter.setInsertionPoint(moduleOp.getBody(),
                              std::prev(moduleOp.getBody()->end()));
 
-  llvm::SmallString<128> funcName = gatherFuncNameBase;
+  llvm::SmallString<kFuncNameCap> funcName = gatherFuncNameBase;
   int uniqueId = 0;
   while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
     funcName = gatherFuncNameBase;
@@ -2070,7 +2070,7 @@ EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdapto
   rewriter.setInsertionPoint(moduleOp.getBody(),
                              std::prev(moduleOp.getBody()->end()));
 
-  llvm::SmallString<128> funcName = funcNameBase;
+  llvm::SmallString<kFuncNameCap> funcName = funcNameBase;
   int uniqueId = 0;
   while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
     funcName = funcNameBase;
@@ -2087,7 +2087,10 @@ EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdapto
   auto resTy = res.getType();
 
   // convert !tt.ptr<f32> to memref<?xf32>
-  auto srcTy = cast<MemRefType>(src.getType());
+  auto srcTy = dyn_cast<MemRefType>(src.getType());
+  if (!srcTy) {
+      return rewriter.notifyMatchFailure(op, "expected MemRefType for src");
+  }
   SmallVector<Type> inputTypes({srcTy, idx.getType(), bound.getType(),
                                 blksiz.getType()});
   inputTypes.append(offsets.getTypes().begin(), offsets.getTypes().end());
@@ -2108,17 +2111,17 @@ EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdapto
   return success();
 }
 
-
 LogicalResult
 IndirectLoadConverter::matchAndRewrite(triton::IndirectLoadOp op, OpAdaptor adaptor,
-                                 ConversionPatternRewriter &rewriter) const {
+                                       ConversionPatternRewriter &rewriter) const
+{
   auto loc = op.getLoc();
 
   auto moduleOp = op->getParentOfType<ModuleOp>();
   rewriter.setInsertionPoint(moduleOp.getBody(),
                              std::prev(moduleOp.getBody()->end()));
 
-  llvm::SmallString<128> funcName = funcNameBase;
+  llvm::SmallString<kFuncNameCap> funcName = funcNameBase;
   int uniqueId = 0;
   while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
     funcName = funcNameBase;
@@ -2133,7 +2136,10 @@ IndirectLoadConverter::matchAndRewrite(triton::IndirectLoadOp op, OpAdaptor adap
   auto resTy = res.getType();
 
   // convert !tt.ptr<f32> to memref<?xf32>
-  auto srcTy = cast<MemRefType>(src.getType());
+  auto srcTy = dyn_cast<MemRefType>(src.getType());
+  if (!srcTy) {
+      return rewriter.notifyMatchFailure(op, "expected MemRefType for src");
+  }
   SmallVector<Type> inputTypes({srcTy, offsets.getType()});
   if (mask) inputTypes.push_back(mask.getType());
   if (other) inputTypes.push_back(other.getType());
@@ -2149,6 +2155,49 @@ IndirectLoadConverter::matchAndRewrite(triton::IndirectLoadOp op, OpAdaptor adap
                                               TypeRange({resTy}),
                                               inputVals);
   rewriter.replaceOp(op, callOp);
+  return success();
+}
+
+
+LogicalResult
+IndirectStoreConverter::matchAndRewrite(triton::IndirectStoreOp op, OpAdaptor adaptor,
+                                        ConversionPatternRewriter &rewriter) const
+{
+  auto loc = op.getLoc();
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+
+  llvm::SmallString<kFuncNameCap> funcName = funcNameBase;
+  int uniqueId = 0;
+  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
+    funcName = funcNameBase;
+    funcName += ("_" + std::to_string(uniqueId++));
+  }
+
+  auto src = adaptor.getSrc();
+  auto offsets = op.getOffsets();
+  auto value = op.getValue();
+  auto mask = op.getMask();
+
+  // convert !tt.ptr<f32> to memref<?xf32>
+  auto srcTy = dyn_cast<MemRefType>(src.getType());
+  if (!srcTy) {
+      return rewriter.notifyMatchFailure(op, "expected MemRefType for src");
+  }
+  SmallVector<Type> inputTypes({srcTy, offsets.getType(), value.getType()});
+  if (mask) inputTypes.push_back(mask.getType());
+
+  auto libFnType = rewriter.getFunctionType(inputTypes, {});
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+
+  rewriter.setInsertionPoint(op);
+  SmallVector<Value> inputVals({src, offsets, value});
+  if (mask) inputVals.push_back(mask);
+  rewriter.create<func::CallOp>(loc, funcOp, inputVals);
+  rewriter.eraseOp(op);
   return success();
 }
 

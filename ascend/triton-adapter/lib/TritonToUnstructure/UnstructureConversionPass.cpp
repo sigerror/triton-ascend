@@ -339,16 +339,34 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   if (sizeInByte % 32 != 0)
     ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
   
-  // Fast path on A5: rewrite tl.load to tt.indirect_load directly.
-  if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
-    if (compileOn91095Flag && forceSimtTemplateFlag && ptrOffsetInfo.isUnstructured()) {
-      assert(!isa<RankedTensorType>(srcPtr.getType()) && "src must be ptr type");
+  // Fast path on A5: rewrite tt.load/store to tt.indirect_load/store directly.
+  if (compileOn91095Flag && forceSimtTemplateFlag && ptrOffsetInfo.isUnstructured()) {
+    if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
+      assert(isa<triton::PointerType>(srcPtr.getType()) && "src must be ptr type");
       Value mask = op.getMask();
       Value other = op.getOther();
       auto resultType = op.getType();
       auto indirect = rewriter.create<triton::IndirectLoadOp>(
           loc, resultType, srcPtr, ptrOffset, mask, other);
       rewriter.replaceOp(op, indirect.getResult());
+      LLVM_DEBUG({
+        auto &os = llvm::dbgs();
+        os << "Rewriting tt.load to tt.indirect_load\n";
+        os << indirect << "\n";
+      });
+      return success();
+    } else if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
+      assert(isa<triton::PointerType>(srcPtr.getType()) && "src must be ptr type");
+      Value value = op.getValue();
+      Value mask = op.getMask();
+      auto indirect = rewriter.create<triton::IndirectStoreOp>(
+          loc, srcPtr, ptrOffset, value, mask);
+      rewriter.eraseOp(op);
+      LLVM_DEBUG({
+        auto &os = llvm::dbgs();
+        os << "Rewriting tt.store to tt.indirect_store\n";
+        os << indirect << "\n";
+      });
       return success();
     }
   }

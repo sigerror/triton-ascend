@@ -44,6 +44,8 @@ namespace TTOpConverters {
 using namespace mlir;
 using namespace triton;
 
+static constexpr unsigned kFuncNameCap = 128;
+
 /*
 Convert `tt.precise_div` operation to `arith.divf` operation.
 tensor_x / tensor_y
@@ -584,6 +586,16 @@ public:
                   ConversionPatternRewriter &rewriter) const override;
 private:
   static constexpr llvm::StringRef funcNameBase = "triton_indirect_load";
+};
+
+class IndirectStoreConverter : public OpConversionPattern<triton::IndirectStoreOp> {
+public:
+  using OpConversionPattern<triton::IndirectStoreOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(triton::IndirectStoreOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+private:
+  static constexpr llvm::StringRef funcNameBase = "triton_indirect_store";
 };
 
 class IndexSelectSimdConverter : public OpConversionPattern<triton::IndexSelectSimdOp> {
