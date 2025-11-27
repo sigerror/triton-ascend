@@ -150,9 +150,9 @@ def flip(arg0, arg1=None, _builder=None):
         }, is_pure=True, _builder=_builder)
 
 @core.extern
-def atan2(arg0, _builder=None):
-    core.static_print("tl.atan2 is unsupported for now. Use libdevice.atan2 instead.")
-    core.static_assert(False)
+def atan2(arg0, arg1, _builder=None):
+    core.static_print("The func atan2 is supported in math.atan2 lowlevel. So use math.atan2 instead.")
+    return math.atan2(arg1, arg0)
 
 @core.extern
 def div_rz(arg0, arg1, _builder=None):
