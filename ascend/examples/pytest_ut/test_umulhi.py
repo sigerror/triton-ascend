@@ -54,8 +54,8 @@ def test_umulhi():
     z_tri = torch.zeros(size=(N,), dtype=torch.int32).npu()
     umulhi_kernel[(1,)](xx, yy, z_tri, N=N)
 
-    xxx = x.numpy()
-    yyy = y.numpy()
+    xxx = x.cpu().numpy()
+    yyy = y.cpu().numpy()
     z_ref = umulhi32(xxx, yyy)
     z_ref1 = torch.from_numpy(z_ref).npu()
     torch.equal(z_tri, z_ref1)

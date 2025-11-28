@@ -48,7 +48,7 @@ def triton_gamma(in_ptr0, out_ptr0, xnumel, XBLOCK: tl.constexpr, XBLOCK_SUB: tl
 def test_gamma_case(param_list):
     dtype, shape, ncore, xblock, xblock_sub = param_list
     x = torch.abs(test_common.generate_tensor(shape, dtype))
-    x_np = x.numpy()
+    x_np = x.cpu().numpy()
     x = x.npu()
     y_ref = torch.from_numpy(gamma(x_np)).to(x.device).to(x.dtype).npu()
     y_cal = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
@@ -65,7 +65,7 @@ def test_all_blocks_parallel(param_list, monkeypatch):
     monkeypatch.setenv("TRITON_ALL_BLOCKS_PARALLEL", "1")
     dtype, shape, ncore, xblock, xblock_sub = param_list
     x = torch.abs(test_common.generate_tensor(shape, dtype))
-    x_np = x.numpy()
+    x_np = x.cpu().numpy()
     x = x.npu()
     y_ref = torch.from_numpy(gamma(x_np)).to(x.device).to(x.dtype).npu()
     y_cal = torch.zeros(shape, dtype=eval('torch.' + dtype)).npu()
