@@ -83,7 +83,7 @@ test_gelu((32, 32768), 32*32768)
 
 拓展API的功能说明如下：
 
- **triton.language.multibuffer(tensor, buffer_num)** : 控制编译器针对tensor数据开启buffer_num个缓冲存储区，使能数据搬运与数据计算并行；使用该API能够提升性能，但同时内存使用量为未使用时的buffer_num倍。[参考样例代码](./ascend/examples/pytest_ut/test_compile_hint.py) 
+ **triton.language.multibuffer(tensor, buffer_num)** : 控制编译器针对tensor数据开启buffer_num个缓冲存储区，使能数据搬运与数据计算并行；使用该API能够提升性能，但同时内存使用量为未使用时的buffer_num倍。[参考样例代码](./../ascend/examples/pytest_ut/test_compile_hint.py) 
 
 
 ### 4. 查阅编译过程产生的临时文件
