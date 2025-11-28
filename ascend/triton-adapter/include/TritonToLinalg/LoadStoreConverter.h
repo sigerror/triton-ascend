@@ -56,7 +56,7 @@ class LoadConverter : public OpConversionPattern<triton::LoadOp> {
 private:
   LogicalResult toTensorAndReplace(triton::LoadOp &op,
                                    RankedTensorType &tensorType,
-                                   memref::AllocOp &allocOp,
+                                   Value localMem,
                                    bool mayImplicitTransposeWithLastAxis,
                                    const Location &loc,
                                    ConversionPatternRewriter &rewriter) const;
@@ -68,7 +68,7 @@ private:
                                     ConversionPatternRewriter &rewriter) const;
 
   void
-  fillTensorWithOtherForMaskScenario(Value other, memref::AllocOp localMem,
+  fillTensorWithOtherForMaskScenario(Value other, Value localMem,
                                      ArrayRef<OpFoldResult> maskDim,
                                      ConversionPatternRewriter &rewriter) const;
 

@@ -298,8 +298,20 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
   }
 
+  std::function<bool(Value)> isFromTensorArg = [&](Value v) {
+    auto *defOp = v.getDefiningOp();
+    if (defOp) {
+      for (auto opr : defOp->getOperands()) {
+        if (isFromTensorArg(opr))
+          return true;
+      }
+      return false;
+    }
+    return isa<RankedTensorType>(v.getType());
+  };
+
   if (forceScalarizeMode || ptrOffsetInfo.isScalarLike() ||
-      op->template getParentOfType<LoopLikeOpInterface>()) {
+      isFromTensorArg(ptr)) {
     ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
   }
 

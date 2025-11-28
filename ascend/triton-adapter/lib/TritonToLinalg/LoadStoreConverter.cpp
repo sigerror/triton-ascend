@@ -80,11 +80,11 @@ AddPtrConverter::matchAndRewrite(triton::AddPtrOp op, OpAdaptor adaptor,
 }
 
 LogicalResult LoadConverter::toTensorAndReplace(
-    triton::LoadOp &op, RankedTensorType &tensorType, memref::AllocOp &allocOp,
+    triton::LoadOp &op, RankedTensorType &tensorType, Value localMem,
     bool mayImplicitTransposeWithLastAxis, const Location &loc, ConversionPatternRewriter &rewriter) const {
   
   Value loadedTensor = rewriter.create<bufferization::ToTensorOp>(
-      loc, tensorType, allocOp, true, true);
+      loc, tensorType, localMem, true, true);
   if(mayImplicitTransposeWithLastAxis){
     auto markOp = rewriter.create<annotation::MarkOp>(loc, loadedTensor);
     markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
@@ -162,10 +162,10 @@ LogicalResult LoadConverter::continueModifyFromAddPtrConverter(
 }
 
 void LoadConverter::fillTensorWithOtherForMaskScenario(
-    Value other, memref::AllocOp localMem, ArrayRef<OpFoldResult> maskDim,
+    Value other, Value localMem, ArrayRef<OpFoldResult> maskDim,
     ConversionPatternRewriter &rewriter) const {
-  auto loc = localMem->getLoc();
-  MemRefType originalType = localMem.getType();
+  auto loc = localMem.getLoc();
+  MemRefType originalType = cast<MemRefType>(localMem.getType());
   assert(originalType.hasStaticShape() && "only support static shape");
   assert(originalType.getRank() == maskDim.size() &&
          "shape and mask must have same rank");
@@ -277,8 +277,47 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
   auto memRefShape = memRefType.getShape();
   auto memRefElementType = memRefType.getElementType();
 
-  auto allocOp = rewriter.create<memref::AllocOp>(
-      loc, MemRefType::get(memRefShape, memRefElementType));
+  Value allocOp;
+  if (op->hasAttr(ConverterUtils::discreteAttrName)) {
+    Operation *loop = op->getParentOp();
+    for (auto parentOp = loop->getParentOp();
+         parentOp->hasAttr("ExtractedLoadOrStore");
+         parentOp = parentOp->getParentOp())
+      loop = parentOp;
+    rewriter.setInsertionPoint(loop);
+    auto loopOp = cast<scf::ForOp>(loop);
+    auto fullMemRefShape =
+        cast<RankedTensorType>(loopOp.getInitArgs()[0].getType()).getShape();
+    auto fullMemRefType = MemRefType::get(fullMemRefShape, memRefElementType);
+    if (fullMemRefShape.size() == 2u)
+      loopOp->setAttr("hivm.parallel_loop", rewriter.getUnitAttr());
+    allocOp = rewriter.create<memref::AllocOp>(loc, fullMemRefType);
+    rewriter.setInsertionPointAfter(loop);
+    auto toTensorOp = rewriter.create<bufferization::ToTensorOp>(
+        loc, RankedTensorType::get(fullMemRefShape, memRefElementType), allocOp, true, true);
+    rewriter.replaceAllUsesWith(loopOp->getResult(0), toTensorOp->getResult(0));
+    tensor::InsertSliceOp insertSliceOp = nullptr;
+    for (auto *user : op->getUsers()) {
+      if (auto targetOp = dyn_cast<tensor::InsertSliceOp>(user)) {
+        insertSliceOp = targetOp;
+        break;
+      }
+    }
+    auto offsets = insertSliceOp.getMixedOffsets();
+    auto sizes = insertSliceOp.getMixedSizes();
+    auto strides = insertSliceOp.getMixedStrides();
+    auto allocType = memref::SubViewOp::inferResultType(fullMemRefType, offsets,
+                                                        sizes, strides);
+    rewriter.setInsertionPoint(op);
+    allocOp = rewriter.create<memref::SubViewOp>(
+        loc, cast<MemRefType>(allocType), allocOp, offsets, sizes, strides);
+    rewriter.replaceAllUsesExcept(insertSliceOp.getResult(),
+                                  insertSliceOp.getDest(), insertSliceOp);
+    rewriter.eraseOp(insertSliceOp);
+  } else {
+    allocOp = rewriter.create<memref::AllocOp>(
+        loc, MemRefType::get(memRefShape, memRefElementType));
+  }
 
   auto tensorType = RankedTensorType::get(memRefShape, memRefElementType);
   // boundary check
