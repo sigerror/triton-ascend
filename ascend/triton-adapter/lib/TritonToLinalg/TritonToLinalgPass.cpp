@@ -82,6 +82,7 @@ inline bool isSIMTOp(Operation *op)
 {
   return isa<
       triton::EmbeddingGatherOp,
+      triton::GatherOutToUbOp,
       triton::IndirectLoadOp,
       triton::IndirectStoreOp
       >(op);
@@ -674,6 +675,7 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::PtrToIntConverter>(patterns.getContext());
   patterns.add<TTOpConverters::IndirectLoadConverter>(patterns.getContext());
   patterns.add<TTOpConverters::IndirectStoreConverter>(patterns.getContext());
+  patterns.add<TTOpConverters::GatherOutToUbConverter>(patterns.getContext());
   patterns.add<TTOpConverters::IndexSelectSimdConverter>(patterns.getContext());
 
   if (!this->namedOps) {
@@ -728,6 +730,7 @@ void TritonToLinalgPass::annotateTensorKindForModule(ModuleOp moduleOp) {
     this->walkAndMarkTensorKind<TensorKind::INPUT,
                                 triton::IndexSelectSimdOp,
                                 triton::EmbeddingGatherOp,
+                                triton::GatherOutToUbOp,
                                 triton::IndirectLoadOp,
                                 triton::LoadOp>(func);
     // OUTPUT tensors

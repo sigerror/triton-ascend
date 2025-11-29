@@ -635,6 +635,102 @@ def index_select(src: tensor, idx: tensor, bound, lstdim_blksiz, offsets, numels
     lstdim_blksiz = _constexpr_to_value(lstdim_blksiz)
     return semantic.embedding_gather(src, idx, bound, lstdim_blksiz, offsets, numels, _builder)
 
+
+@builtin
+def gather_out_to_ub(
+    src: tensor,
+    index_tile: tensor,
+    index_boundary: int,
+    dim: int,
+    src_stride: tuple,
+    index_shape: tuple,
+    offsets: tuple,
+    other=None,
+    _builder=None
+):
+    """
+    Gather from a source tensor in Global Memory (GM) to Unified Buffer (UB)
+    along a specified dimension with out-of-bound handling.
+
+    Gather operation for different tensor ranks:
+    1. 1D index gather:
+        out[i] = src[index[i]]
+    2. 2D index gather (dim=0 gathers along rows):
+        out[i][j] = src[index[i][j]][j] if dim == 0
+        out[i][j] = src[i][index[i][j]] if dim == 1
+    3. 3D index gather (dim=0 gathers along the 0th dimension):
+        out[i][j][k] = src[index[i][j][k]][j][k] if dim == 0
+        out[i][j][k] = src[i][index[i][j][k]][k] if dim == 1
+        out[i][j][k] = src[i][j][index[i][j][k]] if dim == 2
+
+    :param src: pointer type, the source tensor pointer (in GM)
+    :param index_tile: tensor, a tile of origin index to gather (in UB)
+    :param index_boundary: int, the upper boundary for index values
+    :param dim: int, the dimension to gather along
+    :param src_stride: tuple of int, the stride of each dimension of src tensor
+    :param index_shape: tuple of int, the shape of origin index tensor
+    :param offsets: tuple of int, the offsets of each dimension for index tensor
+    :param other(Optional): scalar value, the default value when index is out of boundary (in UB)
+    :return: tensor, with the same shape as `index_tile.shape` (in UB)
+
+    Constraints
+    ***********
+    - `src` and `index_tile` must have the same rank.
+    - `src.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+    - `index_tile` must be an integer tensor, with rank between 1 and 5.
+    - `dim` must be valid (0 <= dim < rank(index_tile)).
+    - `other` must be a scalar value.
+    - For every dimension `i` not equal to `dim`, `index.size[i]` <= `src.size[i]`.
+    - The output shape is the same as `index.shape`. If `index` is None, \
+        the output tensor will be an empty tensor with the same shape as `index_tile`.
+
+    Example
+    *******
+    .. code-block:: python
+
+        import torch
+        import triton
+        import triton.language as tl
+        from triton.language.extra.ascend.libdevice import gather_out_to_ub
+
+        @triton.jit
+        def simple_gather_kernel(src_ptr, index_ptr, out_ptr):
+            # index tile shape: [2,2]
+            y0_local = tl.arange(0, 2)[:, None]  # [0,1] rows
+            x1_local = tl.arange(0, 2)[None, :]  # [0,1] cols
+            mask = (y0_local < 2) & (x1_local < 2)
+
+            # Load index tile to UB
+            index_tile = tl.load(index_ptr + y0_local*2 + x1_local, mask)
+
+            # Call gather_out_to_ub: gather values from src along dim=0
+            gathered = gather_out_to_ub(
+                src=src_ptr,
+                index_tile=index_tile,
+                index_boundary=4,
+                dim=0,
+                src_stride=(2, 1),
+                index_shape=(2, 2),
+                offsets=(0, 0)
+            )
+            
+            tl.store(out_ptr + y0_local*2 + x1_local, gathered, mask)
+
+        src = torch.tensor([[1.,2.], [3.,4.], [5.,6.], [7.,8.]], device='npu')
+        index = torch.tensor([[0,1], [2,3]], device='npu')
+        out = torch.empty((2,2), device='npu', dtype=torch.float32)
+
+        simple_gather_kernel[(1,)](src, index, out)
+        print("Gather result:", out)  # ref: [[1.,4.], [5.,8.]]
+    """
+    dim = _constexpr_to_value(dim)
+    index_boundary = _constexpr_to_value(index_boundary)
+    return semantic.gather_out_to_ub(
+        src, index_tile, index_boundary, dim, 
+        src_stride, index_shape, offsets, other, _builder
+    )
+
+
 @builtin
 def index_select_simd(
     src,

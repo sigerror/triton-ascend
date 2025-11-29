@@ -392,6 +392,66 @@ def TT_EmbeddingGatherOp : TT_Op<"embedding_gather", [
     // let hasCanonicalizer = 1;
 }
 
+//
+// GatherOutToUb Op
+//
+def TT_GatherOutToUbOp : TT_Op<"gather_out_to_ub", [
+  DeclareOpInterfaceMethods<MemoryEffectsOpInterface>,
+  AttrSizedOperandSegments,
+]> {
+    let summary = "Gather load from a tensor pointer with the embedding semantics";
+
+    let description = [{
+        Gather from a source tensor in Global Memory (GM) to Unified Buffer (UB)
+        along a specified dimension with out-of-bound handling.
+
+        The operation takes:
+        - src: pointer type, the source tensor pointer (in GM)
+        - index_tile: tensor, a tile of origin index to gather (in UB)
+        - index_boundary: int, the upper boundary for index values
+        - dim: int, the dimension to gather along
+        - src_stride: tuple of int, the stride of each dimension of src tensor
+        - index_stride: tuple of int, the stride of each dimension of origin index tensor
+        - index_shape: tuple of int, the shape of origin index tensor
+        - offsets: tuple of int, the offsets of each dimension for index tensor
+        - other(Optional): scalar value, the default value when index is out of boundary (in UB)
+        
+        Returns:
+          a tensor, with the same shape as `index_tile.shape` (in UB)
+
+        Constraints:
+        - `src` and `index_tile` must have the same rank.
+        - `src.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+        - `index_tile` must be an integer tensor, with rank between 1 and 5.
+        - `dim` must be valid (0 <= dim < rank(index_tile)).
+        - `other` must be a scalar value.
+        - For every dimension `i` not equal to `dim`, `index.size[i]` <= `src.size[i]`.
+        - The output shape is the same as `index.shape`. If `index` is None, \
+            the output tensor will be an empty tensor with the same shape as `index_tile`.
+    }];
+
+    let arguments = (
+      ins TT_Ptr:$src,
+          TT_Tensor:$indexTile,
+          TT_Int:$indexBoundary,
+          TT_Int:$dim,
+          Variadic<AnyTypeOf<[I32, I64]>>:$srcStride,
+          Variadic<AnyTypeOf<[I32, I64]>>:$indexShape,
+          Variadic<AnyTypeOf<[I32, I64]>>:$offsets,
+          Optional<TT_Type>:$other
+    );
+
+    let results = (outs TT_Tensor:$result);
+
+    let assemblyFormat = [{
+      $src `:` type($src) `,` $indexTile `:` type($indexTile) `,`
+      $indexBoundary `:` type($indexBoundary) `,` $dim `:` type($dim) `,`
+     `[` $srcStride `:` type($srcStride) `]` `,` `[` $indexShape `:` type($indexShape) `]` `,` 
+     `[` $offsets `:` type($offsets) `]` (`,` $other^ `:` type($other))?
+      attr-dict `->` type($result)
+    }];
+}
+
 def TT_IndexSelectSimdOp : TT_Op<"index_select_simd", [
   MemoryEffects<[MemRead<GlobalMemory>]>,
   DeclareOpInterfaceMethods<InferTypeOpInterface>,

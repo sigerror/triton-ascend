@@ -976,6 +976,28 @@ def index_select_simd(
     out = builder.create_index_select_simd(src.handle, index.handle, dim, newsrc_shape, newsrc_offset, read_shape, return_shape)
     return tl.tensor(out, output_ty)
 
+
+def _convert_elem_to_ir_value(builder, elem, require_i64):
+    if isinstance(elem, int):
+        elem = tl.constexpr(elem)
+    if isinstance(elem, tl.constexpr):
+        if require_i64:
+            assert -2**63 <= elem.value < 2**63, f"Block pointers only support 64 bit `shape/strides`, " \
+                f"got a value {elem.value} which is out of the range"
+            return builder.get_int64(elem.value)
+        else:
+            assert -2**31 <= elem.value < 2**31, f"Block pointers only support 32 bit `offsets/block_shape`, " \
+                f"got a value {elem.value} which is out of the range"
+            return builder.get_int32(elem.value)
+    elif isinstance(elem, tl.tensor):
+        if require_i64:
+            return builder.create_int_cast(elem.handle, builder.get_int64_ty(), elem.dtype.is_int_signed())
+        else:
+            return elem.handle
+    else:
+        assert False, f"Unsupported element type in shape/strides/offsets: {type(elem)}"
+
+
 def embedding_gather(src: tl.tensor, idx: tl.tensor, bound: int, blksiz: int, offsets: Tuple, numels: Tuple, builder: ir.builder) -> tl.tensor:
     """
     Embedding
@@ -986,26 +1008,6 @@ def embedding_gather(src: tl.tensor, idx: tl.tensor, bound: int, blksiz: int, of
     if not src.dtype.element_ty.is_floating():
         raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {src.dtype.element_ty}")
     
-    def _convert_elem_to_ir_value(builder, elem, require_i64):
-        if isinstance(elem, int):
-            elem = tl.constexpr(elem)
-        if isinstance(elem, tl.constexpr):
-            if require_i64:
-                assert -2**63 <= elem.value < 2**63, f"Block pointers only support 64 bit `shape/strides`, " \
-                    f"got a value {elem.value} which is out of the range"
-                return builder.get_int64(elem.value)
-            else:
-                assert -2**31 <= elem.value < 2**31, f"Block pointers only support 32 bit `offsets/block_shape`, " \
-                    f"got a value {elem.value} which is out of the range"
-                return builder.get_int32(elem.value)
-        elif isinstance(elem, tl.tensor):
-            if require_i64:
-                return builder.create_int_cast(elem.handle, builder.get_int64_ty(), elem.dtype.is_int_signed())
-            else:
-                return elem.handle
-        else:
-            assert False, f"Unsupported element type in shape/strides/offsets: {type(elem)}"
-
     require_i64 = idx.dtype.is_int64()
     # require_i64 = True
     offsets = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in offsets]
@@ -1013,4 +1015,79 @@ def embedding_gather(src: tl.tensor, idx: tl.tensor, bound: int, blksiz: int, of
     ret = builder.create_embedding_gather(src.handle, idx.handle, bound, blksiz, offsets, numels)
     ret_shape = [_unwrap_if_constexpr(s) for s in idx.shape]
     ret_shape.append(blksiz)
+    return wrap_tensor(ret, src.dtype.element_ty, ret_shape)
+
+
+def gather_out_to_ub(
+    src: tl.tensor,
+    index_tile: tl.tensor,
+    index_boundary: int,
+    dim: int,
+    src_stride: Tuple,
+    index_shape: Tuple,
+    offsets: Tuple,
+    other: Optional[numbers.Number] = None,
+    _builder: ir.builder = None
+):
+    """
+    Gather from a source tensor in Global Memory (GM) to Unified Buffer (UB)
+    along a specified dimension with out-of-bound handling.
+
+    Args:
+    - src: pointer type, the source tensor pointer (in GM)
+    - index_tile: tensor, a tile of origin index to gather (in UB)
+    - index_boundary: int, the upper boundary for index values
+    - dim: int, the dimension to gather along
+    - src_stride: tuple of int, the stride of each dimension of src tensor
+    - index_stride: tuple of int, the stride of each dimension of origin index tensor
+    - index_shape: tuple of int, the shape of origin index tensor
+    - offsets: tuple of int, the offsets of each dimension for index tensor
+    - other(Optional): scalar value, the default value when index is out of boundary (in UB)
+
+    Returns:
+        a tensor, with the same shape as `index_tile.shape` (in UB)
+
+    Constraints:
+    - `src` and `index_tile` must have the same rank.
+    - `src.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+    - `index_tile` must be an integer tensor, with rank between 1 and 5.
+    - `dim` must be valid (0 <= dim < rank(index_tile)).
+    - `other` must be a scalar value.
+    - For every dimension `i` not equal to `dim`, `index_tile.size[i]` <= `src.size[i]`.
+    - The output shape is the same as `index_tile.shape`. If `index_tile` is None, \
+        the output tensor will be an empty tensor with the same shape as `index_tile`.
+    """
+    assert index_tile.dtype.is_int(), "index_tile must be an integer tensor"
+    if not src.dtype.element_ty.is_floating():
+        raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {src.dtype.element_ty}")
+
+    idx_rank = len(index_tile.shape)
+    if idx_rank < 1 or idx_rank > 5:
+        raise ValueError(f"index_tile rank must be in [1, 5], got rank={idx_rank}")
+    if dim < 0 or dim >= idx_rank:
+        raise ValueError(f"dim must satisfy 0<=dim<index_tile.rank (index_tile.rank={idx_rank}), got dim={dim}")
+    if len(src_stride) != idx_rank or len(index_shape) != idx_rank or len(offsets) != idx_rank:
+        raise ValueError(f"len(src_stride)==len(index_shape)==len(offsets)==index_tile.rank required, "
+                         f"got {len(src_stride)}, {len(index_shape)}, {len(offsets)}, {idx_rank}")
+
+    if other is not None:
+        other = cast(other, src.dtype.element_ty, _builder)
+
+    require_i64 = index_tile.dtype.is_int64()
+    src_stride = [_convert_elem_to_ir_value(_builder, elem, require_i64) for elem in src_stride]
+    # index shape and offsets are always i32
+    index_shape = [_convert_elem_to_ir_value(_builder, elem, False) for elem in index_shape]
+    offsets = [_convert_elem_to_ir_value(_builder, elem, False) for elem in offsets]
+
+    ret = _builder.create_gather_out_to_ub(
+        src.handle,
+        index_tile.handle,
+        index_boundary,
+        dim,
+        src_stride,
+        index_shape,
+        offsets,
+        other if other else None
+    )
+    ret_shape = [_unwrap_if_constexpr(s) for s in index_tile.shape]
     return wrap_tensor(ret, src.dtype.element_ty, ret_shape)

@@ -2119,6 +2119,59 @@ EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdapto
 }
 
 LogicalResult
+GatherOutToUbConverter::matchAndRewrite(triton::GatherOutToUbOp op, OpAdaptor adaptor,
+                                        ConversionPatternRewriter &rewriter) const
+{
+  auto loc = op.getLoc();
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+
+  auto funcName = generateUniqueFuncName(moduleOp, funcNameBase);
+
+  auto src = adaptor.getSrc();
+  auto indexTile = op.getIndexTile();
+  auto indexBoundary = op.getIndexBoundary();
+  auto dim = op.getDim();
+  auto srcStride = op.getSrcStride();
+  auto indexShape = op.getIndexShape();
+  auto offsets = op.getOffsets();
+  auto other = op.getOther();
+
+  auto res = op.getResult();
+  auto resTy = res.getType();
+
+  // convert !tt.ptr<f32> to memref<?xf32>
+  auto srcTy = dyn_cast<MemRefType>(src.getType());
+  if (!srcTy) {
+      return rewriter.notifyMatchFailure(op, "expected MemRefType for src");
+  }
+
+  SmallVector<Type> inputTypes({srcTy, indexTile.getType(), indexBoundary.getType(), dim.getType()});
+  inputTypes.append(srcStride.getTypes().begin(), srcStride.getTypes().end());
+  inputTypes.append(indexShape.getTypes().begin(), indexShape.getTypes().end());
+  inputTypes.append(offsets.getTypes().begin(), offsets.getTypes().end());
+  if (other) inputTypes.push_back(other.getType());
+
+  auto libFnType = rewriter.getFunctionType(inputTypes, {resTy});
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+
+  rewriter.setInsertionPoint(op);
+  SmallVector<Value> inputVals({src, indexTile, indexBoundary, dim});
+  inputVals.append(srcStride.begin(), srcStride.end());
+  inputVals.append(indexShape.begin(), indexShape.end());
+  inputVals.append(offsets.begin(), offsets.end());
+  if (other) inputVals.push_back(other);
+  auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
+                                              TypeRange({resTy}),
+                                              inputVals);
+  rewriter.replaceOp(op, callOp);
+  return success();
+}
+
+LogicalResult
 IndirectLoadConverter::matchAndRewrite(triton::IndirectLoadOp op, OpAdaptor adaptor,
                                        ConversionPatternRewriter &rewriter) const
 {

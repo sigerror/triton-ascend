@@ -578,6 +578,16 @@ private:
   static constexpr llvm::StringRef funcNameBase = "triton_embedding_gather";
 };
 
+class GatherOutToUbConverter : public OpConversionPattern<triton::GatherOutToUbOp> {
+public:
+  using OpConversionPattern<triton::GatherOutToUbOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(triton::GatherOutToUbOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+private:
+  static constexpr llvm::StringRef funcNameBase = "triton__gather_out_to_ub";
+};
+
 class IndirectLoadConverter : public OpConversionPattern<triton::IndirectLoadOp> {
 public:
   using OpConversionPattern<triton::IndirectLoadOp>::OpConversionPattern;

@@ -1811,6 +1811,24 @@ void init_triton_ir(py::module &&m) {
                 return self.create<EmbeddingGatherOp>(
                           resType, src, idx, bound_val, blksiz_val, offsets, numels);
             })
+      .def("create_gather_out_to_ub",
+           [](TritonOpBuilder &self, Value &src, Value &indexTile, const int64_t indexBoundary,
+              const int32_t dim, std::vector<Value> &srcStride, std::vector<Value> &indexShape,
+              std::vector<Value> &offsets, std::optional<Value> &other) -> Value {
+                auto elemTy = cast<PointerType>(src.getType()).getPointeeType();
+                auto idxTy = cast<RankedTensorType>(indexTile.getType());
+                auto idxShape = idxTy.getShape();
+                std::vector<int64_t> retShape(idxShape.begin(), idxShape.end());
+                auto resType = RankedTensorType::get(retShape, elemTy);
+
+                auto idxBitWidth = idxTy.getElementType().getIntOrFloatBitWidth();
+                auto bound_val = self.create<arith::ConstantIntOp>(indexBoundary, idxBitWidth);
+                // dim need to be i32 type
+                auto dimI32Ty = self.getBuilder().getI32Type();
+                auto dim_val = self.create<arith::ConstantIntOp>(dim, dimI32Ty);
+                return self.create<GatherOutToUbOp>(resType, src, indexTile, bound_val, dim_val,
+                                                    srcStride, indexShape, offsets, other.value_or(Value()));
+            })
       // Add sort
       .def("create_sort",
            [](TritonOpBuilder &self, Value src, int64_t dim, bool descending) -> Value {

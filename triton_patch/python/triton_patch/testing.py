@@ -651,6 +651,7 @@ from .triton_patch.language.core import (
     insert_slice,
     index_select_simd,
     index_select,
+    gather_out_to_ub,
     extract_slice,
     trans,
     __add__,
@@ -852,3 +853,4 @@ language.extra.ascend.libdevice.fdiv = language.math.fdiv
 language.extra.ascend.libdevice.fma = language.math.fma
 language.extra.ascend.libdevice.abs = language.math.abs
 language.extra.ascend.libdevice.index_select_simd = index_select_simd
+language.extra.ascend.libdevice.gather_out_to_ub = gather_out_to_ub
