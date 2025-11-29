@@ -351,6 +351,14 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   if (sizeInByte % 32 != 0)
     ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
   
+  LLVM_DEBUG({
+    auto &os = llvm::dbgs();
+    os << "Unsturcture Flag check:\n";
+    os << "ptrOffsetInfo.sUnstructured: " << ptrOffsetInfo.isUnstructured() << "\n";
+    os << "compileOn91095Flag: " << compileOn91095Flag << "\n";
+    os << "forceSimtTemplateFlag: " << forceSimtTemplateFlag << "\n";
+  });
+  
   // Fast path on A5: rewrite tt.load/store to tt.indirect_load/store directly.
   if (compileOn91095Flag && forceSimtTemplateFlag && ptrOffsetInfo.isUnstructured()) {
     if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {

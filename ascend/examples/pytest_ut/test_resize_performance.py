@@ -115,4 +115,4 @@ def test_nearest_resize():
     BLOCK_SIZE = 32
     # best performance
     nearest_resize_kernel_col_tile[(4, 32, 1)](img_src, img_dst_npu, h, w, dst_rows, dst_cols, RR_H, RR_W, stride_in_h, stride_in_w, stride_in_c, stride_out_h, stride_out_w, stride_out_c, BLOCK_SIZE)
-    assert torch.equal(img_dst_cpu, img_dst_npu.cpu())
+    assert torch.equal(img_dst_cpu.cpu(), img_dst_npu.cpu())

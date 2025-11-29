@@ -83,6 +83,19 @@ void triton::UseAnalysis::visitOperation(Operation *op,
           propagateUse(operands[2], UseType::MetaUse);
         }
       })
+      .Case<triton::IndirectLoadOp>([&](auto indirectload) {
+        propagateUse(operands[0], UseType::MetaUse);
+        propagateUse(operands[1], UseType::MetaUse);
+        auto mask = indirectload.getMask();
+        auto other = indirectload.getOther();
+        if (mask) {
+          assert(mask != other && "mask and other cannot be the same");
+          propagateUse(operands[2], UseType::MetaUse);
+        }
+        if (other) {
+          propagateUse(operands[3], UseType::MetaUse);
+        }
+      })
       .Case<triton::AssertOp>(
           [&](auto assert) { propagateUse(operands[0], UseType::DataUse); })
       .Case<triton::StoreOp>([&](auto store) {
@@ -93,6 +106,17 @@ void triton::UseAnalysis::visitOperation(Operation *op,
         if (mask) {
           assert(mask != value && "mask and data cannot be the same");
           propagateUse(operands[2], UseType::MetaUse);
+        }
+      })
+      .Case<triton::IndirectStoreOp>([&](auto store) {
+        propagateUse(operands[0], UseType::MetaUse);
+        propagateUse(operands[1], UseType::MetaUse);
+        propagateUse(operands[2], UseType::DataUse);
+        auto value = store.getValue();
+        auto mask = store.getMask();
+        if (mask) {
+          assert(mask != value && "mask and data cannot be the same");
+          propagateUse(operands[3], UseType::MetaUse);
         }
       })
       // Consider triton::AtomicRMWOp as store operation
@@ -316,6 +340,25 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
                 metaUsers.insert(user);
               }
             })
+            .Case<triton::IndirectLoadOp>([&](auto indirectload) {
+              auto src = indirectload.getSrc();
+              auto offset = indirectload.getOffsets();
+              auto mask = indirectload.getMask();
+              auto other = indirectload.getOther();
+              if (result == src || result == offset ||
+                  result == mask || result == other) {
+                metaUsers.insert(user);
+              }
+            })
+            .Case<triton::IndirectStoreOp>([&](auto indirectstore) {
+              auto src = indirectstore.getSrc();
+              auto offset = indirectstore.getOffsets();
+              auto mask = indirectstore.getMask();
+              if (result == src || result == offset ||
+                  result == mask) {
+                metaUsers.insert(user);
+              }
+            })
             .Case<triton::AtomicRMWOp>([&](auto atomicOp) {
               auto ptr = atomicOp.getPtr();
               auto mask = atomicOp.getMask();
@@ -418,7 +461,8 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
             // We need to ensure the intermediate ops are marked MixUse
             // so that they will be replaced instead of be erased without
             // conversion.
-            return (isa<triton::LoadOp>(curOp) || isa<triton::StoreOp>(curOp)) && 
+            return (isa<triton::LoadOp>(curOp) || isa<triton::StoreOp>(curOp) ||
+                   isa<triton::IndirectStoreOp>(curOp) || isa<triton::IndirectLoadOp>(curOp)) &&
                    !isMetaUse(curOp);
           },
           /*actionFn*/

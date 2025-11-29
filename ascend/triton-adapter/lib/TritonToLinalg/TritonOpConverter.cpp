@@ -50,6 +50,18 @@ namespace TTOpConverters {
 using namespace mlir;
 using namespace triton;
 
+static llvm::SmallString<kFuncNameCap> generateUniqueFuncName(
+    ModuleOp moduleOp, llvm::StringRef funcNameBase)
+{
+  llvm::SmallString<kFuncNameCap> funcName = funcNameBase;
+  int uniqueId = 0;
+  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
+    funcName = funcNameBase;
+    funcName += ("_" + std::to_string(uniqueId++));
+  }
+  return funcName;
+}
+
 LogicalResult
 BitcastConverter::matchAndRewrite(triton::BitcastOp op, OpAdaptor adaptor,
                                   ConversionPatternRewriter &rewriter) const {
@@ -2070,12 +2082,7 @@ EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdapto
   rewriter.setInsertionPoint(moduleOp.getBody(),
                              std::prev(moduleOp.getBody()->end()));
 
-  llvm::SmallString<kFuncNameCap> funcName = funcNameBase;
-  int uniqueId = 0;
-  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
-    funcName = funcNameBase;
-    funcName += ("_" + std::to_string(uniqueId++));
-  }
+  auto funcName = generateUniqueFuncName(moduleOp, funcNameBase);
 
   auto src = adaptor.getSrc();
   auto idx = op.getIdx();
@@ -2121,12 +2128,7 @@ IndirectLoadConverter::matchAndRewrite(triton::IndirectLoadOp op, OpAdaptor adap
   rewriter.setInsertionPoint(moduleOp.getBody(),
                              std::prev(moduleOp.getBody()->end()));
 
-  llvm::SmallString<kFuncNameCap> funcName = funcNameBase;
-  int uniqueId = 0;
-  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
-    funcName = funcNameBase;
-    funcName += ("_" + std::to_string(uniqueId++));
-  }
+  auto funcName = generateUniqueFuncName(moduleOp, funcNameBase);
 
   auto src = adaptor.getSrc();
   auto offsets = op.getOffsets();
@@ -2169,12 +2171,7 @@ IndirectStoreConverter::matchAndRewrite(triton::IndirectStoreOp op, OpAdaptor ad
   rewriter.setInsertionPoint(moduleOp.getBody(),
                              std::prev(moduleOp.getBody()->end()));
 
-  llvm::SmallString<kFuncNameCap> funcName = funcNameBase;
-  int uniqueId = 0;
-  while (SymbolTable::lookupSymbolIn(moduleOp, funcName)) {
-    funcName = funcNameBase;
-    funcName += ("_" + std::to_string(uniqueId++));
-  }
+  auto funcName = generateUniqueFuncName(moduleOp, funcNameBase);
 
   auto src = adaptor.getSrc();
   auto offsets = op.getOffsets();
@@ -2196,7 +2193,8 @@ IndirectStoreConverter::matchAndRewrite(triton::IndirectStoreOp op, OpAdaptor ad
   rewriter.setInsertionPoint(op);
   SmallVector<Value> inputVals({src, offsets, value});
   if (mask) inputVals.push_back(mask);
-  rewriter.create<func::CallOp>(loc, funcOp, inputVals);
+  rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
+                                TypeRange({}), inputVals);
   rewriter.eraseOp(op);
   return success();
 }
