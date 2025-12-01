@@ -25,22 +25,7 @@ from triton.language import core, math
 from triton.language import float32, int1, int32
 from triton.language.standard import max, sum
 from triton.runtime.jit import jit
-from triton.language.extra.ascend.libdevice import flip as ascend_flip
 
-
-
-@core._tensor_member_fn
-@jit
-def flip(x, dim=None):
-    """
-    Flips a tensor `x` along the dimension `dim`.
-
-    :param x: the first input tensor
-    :type x: Block
-    :param dim: the dimension to flip along (currently only final dimension supported)
-    :type dim: int
-    """
-    return ascend_flip(x, dim)
 
 @core._tensor_member_fn
 @jit

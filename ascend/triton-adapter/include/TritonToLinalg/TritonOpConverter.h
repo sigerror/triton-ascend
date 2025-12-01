@@ -543,6 +543,14 @@ struct MatmulConverter : public OpConversionPattern<triton::DotOp> {
                   ConversionPatternRewriter &rewriter) const override;
 };
 
+struct FlipOpConverter : public OpConversionPattern<triton::FlipOp> {
+    using OpConversionPattern<triton::FlipOp>::OpConversionPattern;
+
+    LogicalResult matchAndRewrite(triton::FlipOp op, OpAdaptor adaptor,
+                                  ConversionPatternRewriter &rewriter) const override;
+
+    static constexpr StringRef baseFuncName = "triton_flip";
+};
 
 struct SortOpConverter : public OpConversionPattern<triton::SortOp> {
     using OpConversionPattern<triton::SortOp>::OpConversionPattern;

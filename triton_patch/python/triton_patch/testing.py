@@ -675,9 +675,10 @@ from .triton_patch.language.core import (
     dtype_to_ir,
     sort,
     load,
+    flip
 )
 from .triton_patch.language.core import dot_scaled as core_dot_scaled
-from .triton_patch.language.standard import flip, sigmoid, softmax, isfinited, finitef, rint, atan2, argmax, argmin
+from .triton_patch.language.standard import sigmoid, softmax, isfinited, finitef, rint, atan2, argmax, argmin
 from .triton_patch.language.math import (
     umulhi,
     exp,
@@ -717,7 +718,7 @@ from .triton_patch.language.semantic import (
     or_,
     xor_,
     minus,
-    dot_scaled,
+    dot_scaled
 )
 from . import language
 
@@ -824,7 +825,7 @@ language.math.tanh = language.extra.ascend.libdevice.tanh
 language.math.ilogb = language.extra.ascend.libdevice.ilogb
 language.math.ldexp = language.extra.ascend.libdevice.ldexp
 language.math.pow = language.extra.ascend.libdevice.pow
-language.math.flip = language.extra.ascend.libdevice.flip
+language.math.flip = language.flip
 language.math.atan2 = language.extra.ascend.libdevice.atan2
 language.math.div_rz = language.extra.ascend.libdevice.div_rz
 language.math.fmod = language.extra.ascend.libdevice.fmod

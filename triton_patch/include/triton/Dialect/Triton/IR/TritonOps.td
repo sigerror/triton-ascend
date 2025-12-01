@@ -688,6 +688,29 @@ def TT_SplitOp : TT_Op<"split", [
     let assemblyFormat = "$src attr-dict `:` type($src) `->` type($outLHS)";
 }
 
+def TT_FlipOp : TT_Op<"flip", [
+  NoMemoryEffect,
+  DeclareOpInterfaceMethods<InferTypeOpInterface>
+]> {
+  let summary = "Reverse a tensor along a given dimension";
+  let description = [{
+    Reverses the elements of the input tensor along the specified dimension.
+    The output tensor has the same shape and element type as the input.
+  }];
+
+  let arguments = (ins
+    TT_Tensor:$src,   // Input tensor
+    I64Attr:$dim      // Dimension to flip along
+  );
+
+  let results = (outs
+    TT_Tensor:$flipped  // Flipped values
+  );
+
+  let assemblyFormat =
+    "$src `,` $dim attr-dict `:` type($src) `->` type($flipped)";
+}
+
 def TT_SortOp : TT_Op<"sort", [
   NoMemoryEffect,
   DeclareOpInterfaceMethods<InferTypeOpInterface>

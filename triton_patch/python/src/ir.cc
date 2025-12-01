@@ -1841,6 +1841,18 @@ void init_triton_ir(py::module &&m) {
                auto op = builder.create<triton::SortOp>(loc, src, dimAttr, descendingAttr);
 
                return op->getResult(0);
+            })
+      // Add flip
+      .def("create_flip",
+     	    [](TritonOpBuilder &self, Value src, int64_t dim) -> Value {
+               auto &builder = self.getBuilder();
+               auto loc = self.getLastLoc();
+
+               auto dimAttr = builder.getI64IntegerAttr(dim);
+
+               auto op = builder.create<triton::FlipOp>(loc, src, dimAttr);
+
+               return op->getResult(0);
             });
 
   py::class_<PassManager>(m, "pass_manager", py::module_local())

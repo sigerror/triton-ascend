@@ -763,6 +763,49 @@ def sort(ptr: tl.tensor, dim: int, descending, builder: ir.builder):
     return values
 
 
+def flip(ptr: tl.tensor, dim: int, builder: ir.builder):
+    """
+    Triton flip operation
+
+    Args:
+        ptr: tl.tensor, input tensor
+        dim: int, dimension to flip (can be negative, normalized here)
+        builder: ir.builder, underlying IR builder
+    Returns:
+        flipped: tl.tensor, same type and shape as input
+    """
+
+    shape = getattr(ptr, "shape", None)
+    if shape is None or shape == ():
+        shape = getattr(getattr(ptr, "type", None), "shape", None)
+
+    rank = None
+    if shape is not None:
+        try:
+            rank = len(shape)
+        except Exception:
+            rank = len(list(shape))
+
+    if rank is not None:
+        if rank < 1:
+            raise ValueError("tt.flip requires tensor rank >= 1")
+        norm_dim = dim if dim >= 0 else dim + rank
+        if not (0 <= norm_dim < rank):
+            raise ValueError(
+                f"tt.flip got invalid dim={dim} for shape {tuple(shape)}"
+            )
+        dim = norm_dim
+    else:
+        if dim < 0:
+            raise ValueError(
+                "tt.flip with unknown rank requires non-negative dim"
+            )
+
+    flipped_vals = builder.create_flip(ptr.handle, dim)
+    flipped = tl.tensor(flipped_vals, type=ptr.type)
+    return flipped
+
+
 def _str_to_fp_type(float_format: Optional[str]):
     if float_format == 'e4m3':
         return ir.F8F6F4TY.E4M3

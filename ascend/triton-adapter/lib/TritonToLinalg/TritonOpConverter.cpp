@@ -29,6 +29,7 @@
 #include "triton/Dialect/Triton/IR/Dialect.h"
 
 #include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/LogicalResult.h"
@@ -1668,6 +1669,57 @@ MatmulConverter::matchAndRewrite(triton::DotOp op, OpAdaptor adaptor,
   return success();
 }
 
+LogicalResult FlipOpConverter::matchAndRewrite(triton::FlipOp op, OpAdaptor adaptor,
+                                               ConversionPatternRewriter &rewriter) const
+{
+    Value src = adaptor.getSrc();
+    auto rankedSrcTy = cast<RankedTensorType>(src.getType());
+
+    MLIRContext *ctx = rewriter.getContext();
+
+    Type valuesTy = src.getType();
+    Location loc = op.getLoc();
+
+    auto dimAttr = op->getAttrOfType<IntegerAttr>("dim");
+    if (!dimAttr) {
+        op->emitError("missing 'dim' attribute");
+        return failure();
+    }
+
+    auto moduleOp = op->getParentOfType<ModuleOp>();
+    if (!moduleOp) {
+        op->emitError("must be inside a module");
+        return failure();
+    }
+
+    // Unique callee name: triton_flip, triton_flip_1, …
+    std::string funcName = baseFuncName.str();
+    int uniqueId = 0;
+    while (SymbolTable::lookupSymbolIn(moduleOp, funcName))
+        funcName = (baseFuncName + Twine("_") + Twine(uniqueId++)).str();
+
+    auto i64Ty = IntegerType::get(ctx, 64);
+    auto libFnType = rewriter.getFunctionType({rankedSrcTy, i64Ty}, {rankedSrcTy});
+
+    // Declare the callee
+    auto moduleIP = rewriter.saveInsertionPoint();
+    rewriter.setInsertionPointToEnd(moduleOp.getBody());
+    auto funcOp = rewriter.create<func::FuncOp>(loc, funcName, libFnType);
+    SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+    rewriter.restoreInsertionPoint(moduleIP);
+
+    // dim constant
+    Value dimVal = rewriter.create<arith::ConstantIntOp>(loc, dimAttr.getInt(), 64);
+
+    // Call the backend function
+    auto callee = SymbolRefAttr::get(ctx, funcOp.getSymName());
+    auto callOp = rewriter.create<func::CallOp>(loc, TypeRange({rankedSrcTy}), callee, ValueRange({src, dimVal}));
+
+    Value finalValues = callOp.getResult(0);
+
+    rewriter.replaceOp(op, {finalValues});
+    return success();
+}
 
 LogicalResult SortOpConverter::matchAndRewrite(
     triton::SortOp op, OpAdaptor adaptor,

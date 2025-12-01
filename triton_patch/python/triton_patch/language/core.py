@@ -38,7 +38,7 @@ from triton.language.core import (
     _unwrap_if_constexpr,
     add,
     sub,
-    mul,
+    mul
 )
 from typing import Optional
 from . import semantic
@@ -473,6 +473,15 @@ def compile_hint(ptr, hint_name, hint_val=None, _builder=None):
     hint_val = _unwrap_if_constexpr(hint_val) if hint_val else hint_val
     semantic.compile_hint(ptr, hint_name, hint_val, _builder)
 
+@builtin
+def flip(ptr, dim=-1, _builder=None):
+    try:
+        dim = int(dim.value) if hasattr(dim, "value") else int(dim)
+    except Exception as e:
+        raise TypeError(f"dim must be an integer (or tl.constexpr int), got {dim!r}") from e
+
+    dim = len(ptr.shape) - 1 if dim == -1 else dim
+    return semantic.flip(ptr, dim, _builder)
 
 @builtin
 def sort(ptr, dim=-1, descending=False, _builder=None):

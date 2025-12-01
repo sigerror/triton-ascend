@@ -280,6 +280,21 @@ LogicalResult TransOp::inferReturnTypes(
   return success();
 }
 
+// FlipOp
+LogicalResult FlipOp::inferReturnTypes(MLIRContext *context, std::optional<Location> location, ValueRange operands,
+                                       DictionaryAttr attributes, OpaqueProperties properties, RegionRange regions,
+                                       SmallVectorImpl<Type> &inferredReturnTypes)
+{
+    auto inputTy = dyn_cast<RankedTensorType>(operands[0].getType());
+    if (!inputTy) {
+        if (location)
+            return emitOptionalError(location, "expected ranked tensor for flip input");
+        return failure();
+    }
+    inferredReturnTypes.push_back(inputTy);
+    return success();
+}
+
 //-- SortOp --
 LogicalResult SortOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> location, ValueRange operands,
