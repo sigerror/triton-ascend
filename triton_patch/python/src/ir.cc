@@ -1829,6 +1829,20 @@ void init_triton_ir(py::module &&m) {
                 return self.create<GatherOutToUbOp>(resType, src, indexTile, bound_val, dim_val,
                                                     srcStride, indexShape, offsets, other.value_or(Value()));
             })
+      // Add mod
+      .def("create_mod",
+           [](TritonOpBuilder &self, Value &lhs, Value &rhs) -> Value {
+              auto type = dyn_cast<RankedTensorType>(lhs.getType());
+              if (!type) {
+                type = RankedTensorType::get({1}, lhs.getType());
+                auto tensorFromLhs = self.create<tensor::FromElementsOp>(type, lhs);
+                auto tensorFromRhs = self.create<tensor::FromElementsOp>(type, rhs);
+                auto resultTensor = self.create<triton::ModOp>(type, tensorFromLhs, tensorFromRhs);
+                SmallVector<Value> indices {self.create<arith::ConstantIndexOp>(0)};
+                return self.create<tensor::ExtractOp>(resultTensor, indices);
+              }
+              return self.create<triton::ModOp>(type, lhs, rhs);
+           })
       // Add sort
       .def("create_sort",
            [](TritonOpBuilder &self, Value src, int64_t dim, bool descending) -> Value {

@@ -1064,6 +1064,21 @@ def TT_HistogramOp : TT_Op<"histogram", [Pure]> {
 }
 
 //
+// Mod Op
+//
+def TT_ModOp : TT_Op<"mod", [Pure]> {
+  let summary = "Mod operation (%) of input tensors.";
+  let description = [{
+    Performs element-wise division with remainder of input tensors.
+  }];
+
+  let arguments = (ins TT_Tensor:$lhs, TT_Tensor:$rhs);
+  let results = (outs TT_Tensor:$result);
+
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs) type($rhs) `->` type($result)";
+}
+
+//
 // Gather Op
 //
 def TT_GatherOp : TT_Op<"gather", [Pure,

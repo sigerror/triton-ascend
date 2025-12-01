@@ -662,6 +662,7 @@ from .triton_patch.language.core import (
     __rmul__,
     __lshift__,
     __rshift__,
+    __mod__,
     range,
     parallel,
     compile_hint,
@@ -743,6 +744,7 @@ language.tensor.__mul__ = __mul__
 language.tensor.__rmul__ = __rmul__
 language.tensor.__lshift__ = __lshift__
 language.tensor.__rshift__ = __rshift__
+language.tensor.__mod__ = __mod__
 language.trans = trans
 language.range = range
 language.parallel = parallel

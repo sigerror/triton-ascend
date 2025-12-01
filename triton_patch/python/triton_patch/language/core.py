@@ -354,6 +354,11 @@ def __mul__(self, other, _builder=None):
 def __rmul__(self, other, _builder=None):
     return mul(other, self, sanitize_overflow=False, _builder=_builder)
 
+@builtin
+def __mod__(self, other, _builder=None):
+    other = _unwrap_if_constexpr(other)
+    return semantic.mod(self, other, _builder)
+
 
 @builtin
 def __lshift__(self, other, _builder=None):
@@ -877,4 +882,3 @@ def dtype_to_ir(self, builder: ir.builder) -> ir.type:
     elif self.name == 'fp64':
         return builder.get_double_ty()
     raise ValueError(f'fail to convert {self} to ir type')
-    

@@ -6,6 +6,7 @@
 #include "TritonToHFusion/Passes.h"
 
 #include "bishengir/Dialect/HFusion/IR/HFusion.h"
+#include "bishengir/Dialect/HFusion/IR/HFusionImpl.h"
 #include "bishengir/Dialect/Tensor/IR/TensorImpl.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/Attributes.h"
@@ -27,6 +28,32 @@ using namespace mlir;
 using namespace hfusion;
 
 namespace {
+  struct TritonModToHFusionConversion
+    : OpRewritePattern<triton::ModOp> {
+    using OpRewritePattern<triton::ModOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(triton::ModOp op,
+                                  PatternRewriter &rewriter) const final {
+      auto lhsType = dyn_cast<RankedTensorType>(op.getLhs().getType());
+      auto rhsType = dyn_cast<RankedTensorType>(op.getRhs().getType());
+      if (!lhsType || !rhsType) {
+        return failure();
+      }
+
+      auto emptyTensor = rewriter.create<tensor::EmptyOp>(
+          op.getLoc(), lhsType.getShape(), lhsType.getElementType());
+      auto newOp =
+          hfusion::createBinaryOp<hfusion::ElemwiseBinaryOp, hfusion::BinaryFn,
+                                  hfusion::BinaryFnAttr>(
+              rewriter, op.getLoc(), hfusion::BinaryFn::mod,
+              ValueRange({op.getLhs(), op.getRhs()}),
+              ValueRange({emptyTensor.getResult()}));
+
+      rewriter.replaceOp(op, newOp->getResult(0));
+      return success();
+    }
+  };
+
   struct TritonHistogramToHFusionConversion
     : OpRewritePattern<triton::HistogramOp> {
     using OpRewritePattern<triton::HistogramOp>::OpRewritePattern;
@@ -136,6 +163,7 @@ void TritonToHFusionPass::runOnOperation() {
   RewritePatternSet patterns(&getContext());
   patterns.add<TritonHistogramToHFusionConversion>(patterns.getContext());
   patterns.add<TritonFpToFpToHFusionConversion>(patterns.getContext());
+  patterns.add<TritonModToHFusionConversion>(patterns.getContext());
   
   // Apply patterns with greedy rewriting
   // This allows patterns to return failure() without causing pass failure

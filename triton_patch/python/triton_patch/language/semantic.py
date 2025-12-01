@@ -284,9 +284,7 @@ def mod(input: Union[tl.tensor, numbers.Number], other: Union[tl.tensor, numbers
     other_scalar_ty = other.type.scalar
     # float
     if scalar_ty.is_floating():
-        floor = math.floor(fdiv(input, other, False, builder), _builder=builder)
-        ret = sub(input, mul(floor, other, True, builder), True, builder)
-        return ret
+        return tl.tensor(builder.create_mod(input.handle, other.handle), input.type)
     # % int
     elif scalar_ty.is_int():
         if scalar_ty.int_signedness != other_scalar_ty.int_signedness:
