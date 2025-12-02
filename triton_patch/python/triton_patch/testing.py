@@ -653,7 +653,6 @@ from .triton_patch.language.core import (
     index_select,
     index_put,
     gather_out_to_ub,
-    gather_out_to_ub,
     extract_slice,
     trans,
     __add__,

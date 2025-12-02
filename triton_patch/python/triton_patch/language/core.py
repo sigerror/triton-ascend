@@ -21,7 +21,7 @@
 # THE SOFTWARE.
 
 import os
-from typing import List, Sequence, Optional, Union, Tuple
+from typing import List, Sequence, Optional, Union
 
 from triton._C.libtriton import ir
 from triton.language import semantic as real_semantic
@@ -683,7 +683,8 @@ def index_put(
     ***********
     - `ptr` and `value` must have the same rank.
     - `ptr.dtype` only supports `float16`, `bfloat16`, `float32` currently.
-    - `index` must be an integer tensor, and must be 1D.
+    - `index` must be an integer tensor. If `index.rank` != 1, it will be reshaped to 1D.
+    - `index.numel` must equal `value.shape[dim]`.
     - `value` support 2~5D tensors.
     - `dim` must be valid (0 <= dim < rank(value) - 1).
 

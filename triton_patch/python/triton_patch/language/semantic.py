@@ -1091,7 +1091,8 @@ def index_put(
     Constraints:
     - `ptr` and `value` must have the same rank.
     - `ptr.dtype` only supports `float16`, `bfloat16`, `float32` currently.
-    - `index` must be an integer tensor, and must be 1D.
+    - `index` must be an integer tensor. If `index.rank` != 1, it will be reshaped to 1D.
+    - `index.numel` must equal `value.shape[dim]`.
     - `value` support 2~5D tensors.
     - `dim` must be valid (0 <= dim < rank(value) - 1).
     """
@@ -1103,12 +1104,22 @@ def index_put(
 
     v_rank = len(value.shape)
     idx_rank = len(index.shape)
-    if idx_rank != 1:
-        raise ValueError(f"index rank must be 1, got index rank={idx_rank}")
     if v_rank < 2 or v_rank > 5:
         raise ValueError(f"value rank must be in [2, 5], got value rank={v_rank}")
     if dim < 0 or dim >= v_rank - 1:
         raise ValueError(f"dim must satisfy 0<=dim<value.rank-1 ({v_rank-1}), got dim={dim}")
+    
+    if idx_rank != 1:
+        # flatten index to 1D, shape (index.numel,)
+        flat_numel = index.numel
+        index = reshape(index, (flat_numel,), True, builder)
+        idx_rank = 1
+
+    if value.shape[dim] != index.shape[0]:
+        raise ValueError(
+            f"index.numel must equal value.shape[dim], "
+            f"but got index.numel={index.numel.value}, value.shape[dim]={value.shape[dim].value}"
+        )
 
     require_i64 = index.dtype.is_int64()
     dst_shape = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in dst_shape]

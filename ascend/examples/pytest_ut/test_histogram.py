@@ -57,7 +57,7 @@ def test_histogram(M, N, ncore, dtype):
 @pytest.mark.parametrize("dtype", [ "uint32", "uint64"])
 def test_histogram_uint(M, N, ncore, dtype):
     torch.manual_seed(17)
-    x_cpu = torch.randint(low=0, high=N, size=(M,), dtype=eval(f'torch.{dtype}')).cpu()
+    x_cpu = torch.randint(low=0, high=N, size=(M,), dtype=eval(f'torch.{dtype}'), device="cpu")
     x = x_cpu.to("npu")
     # torch结果
     y_cal = torch.histc(x.float(), bins=N, min=0, max=N - 1)
