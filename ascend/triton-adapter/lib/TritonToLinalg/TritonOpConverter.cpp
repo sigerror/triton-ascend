@@ -2171,6 +2171,48 @@ EmbeddingGatherConverter::matchAndRewrite(triton::EmbeddingGatherOp op, OpAdapto
 }
 
 LogicalResult
+IndexPutConverter::matchAndRewrite(triton::IndexPutOp op, OpAdaptor adaptor,
+                                   ConversionPatternRewriter &rewriter) const
+{
+  auto loc = op.getLoc();
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+
+  auto funcName = generateUniqueFuncName(moduleOp, funcNameBase);
+
+  auto ptr = adaptor.getPtr();
+  auto index = op.getIndex();
+  auto value = op.getValue();
+  auto dim = op.getDim();
+  auto dstShape = op.getDstShape();
+  auto dstOffset = adaptor.getDstOffset();
+
+  // convert !tt.ptr<f32> to memref<?xf32>
+  auto ptrTy = dyn_cast<MemRefType>(ptr.getType());
+  if (!ptrTy) {
+      return rewriter.notifyMatchFailure(op, "expected MemRefType for ptr");
+  }
+  SmallVector<Type> inputTypes({ptrTy, index.getType(), value.getType(),
+                                dim.getType()});
+  inputTypes.append(dstShape.getTypes().begin(), dstShape.getTypes().end());
+  inputTypes.append(dstOffset.getTypes().begin(), dstOffset.getTypes().end());
+  auto libFnType = rewriter.getFunctionType(inputTypes, {});
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+
+  rewriter.setInsertionPoint(op);
+  SmallVector<Value> inputVals({ptr, index, value, dim});
+  inputVals.append(dstShape.begin(), dstShape.end());
+  inputVals.append(dstOffset.begin(), dstOffset.end());
+  rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
+                                TypeRange({}), inputVals);
+  rewriter.eraseOp(op);
+  return success();
+}
+
+LogicalResult
 GatherOutToUbConverter::matchAndRewrite(triton::GatherOutToUbOp op, OpAdaptor adaptor,
                                         ConversionPatternRewriter &rewriter) const
 {

@@ -1811,6 +1811,16 @@ void init_triton_ir(py::module &&m) {
                 return self.create<EmbeddingGatherOp>(
                           resType, src, idx, bound_val, blksiz_val, offsets, numels);
             })
+      .def("create_index_put",
+           [](TritonOpBuilder &self, Value &ptr, Value &index,
+              Value &value, const int32_t dim,
+              std::vector<Value> &dstShape, std::vector<Value> &dstOffset) -> void {
+                // dim need to be i32 type
+                auto dimI32Ty = self.getBuilder().getI32Type();
+                auto dim_val = self.create<arith::ConstantIntOp>(dim, dimI32Ty);
+
+                self.create<IndexPutOp>(ptr, index, value, dim_val, dstShape, dstOffset);
+            })
       .def("create_gather_out_to_ub",
            [](TritonOpBuilder &self, Value &src, Value &indexTile, const int64_t indexBoundary,
               const int32_t dim, std::vector<Value> &srcStride, std::vector<Value> &indexShape,

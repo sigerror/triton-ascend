@@ -393,6 +393,51 @@ def TT_EmbeddingGatherOp : TT_Op<"embedding_gather", [
 }
 
 //
+// IndexPut Op
+//
+def TT_IndexPutOp : TT_Op<"index_put", [
+  MemoryEffects<[MemWrite<GlobalMemory>]>,
+  SameVariadicOperandSize,
+]> {
+    let summary = "Scatter store to a tensor pointer with embedding semantics";
+
+    let description = [{
+        Index put values from a tensor into a destination tensor.
+
+        The operation takes:
+        - ptr: pointer type, the destination tensor pointer (in GM)
+        - index: tensor, a index to scatter (in UB)
+        - value: tensor, a value to store (in UB)
+        - dim: int, the dimension to scatter along
+        - dst_shape: tuple of int, the shape of destination tensor
+        - dst_offset: tuple of int, the offsets of each dimension for destination tensor
+
+        Constraints:
+        - `ptr` and `value` must have the same rank.
+        - `ptr.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+        - `index` must be an integer tensor, and must be 1D.
+        - `value` support 2~5D tensors.
+        - `dim` must be valid (0 <= dim < rank(value) - 1).
+    }];
+
+    let arguments = (
+      ins TT_Ptr:$ptr,
+          TT_Tensor:$index,
+          TT_Tensor:$value,
+          TT_Int:$dim,
+          Variadic<AnyTypeOf<[I32, I64]>>:$dstShape,
+          Variadic<AnyTypeOf<[I32, I64]>>:$dstOffset
+    );
+
+    let assemblyFormat = [{
+      $ptr `:` type($ptr) `,` $index `:` type($index) `,`
+      $value `:` type($value) `,` $dim `:` type($dim) `,`
+     `[` $dstShape `:` type($dstShape) `]` `,` `[` $dstOffset `:` type($dstOffset) `]`
+      attr-dict
+    }];
+}
+
+//
 // GatherOutToUb Op
 //
 def TT_GatherOutToUbOp : TT_Op<"gather_out_to_ub", [
@@ -425,8 +470,8 @@ def TT_GatherOutToUbOp : TT_Op<"gather_out_to_ub", [
         - `index_tile` must be an integer tensor, with rank between 1 and 5.
         - `dim` must be valid (0 <= dim < rank(index_tile)).
         - `other` must be a scalar value.
-        - For every dimension `i` not equal to `dim`, `index.size[i]` <= `src.size[i]`.
-        - The output shape is the same as `index.shape`. If `index` is None, \
+        - For every dimension `i` not equal to `dim`, `index_tile.size[i]` <= `src.size[i]`.
+        - The output shape is the same as `index_tile.shape`. If `index_tile` is None, \
             the output tensor will be an empty tensor with the same shape as `index_tile`.
     }];
 

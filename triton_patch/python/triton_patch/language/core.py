@@ -21,7 +21,7 @@
 # THE SOFTWARE.
 
 import os
-from typing import List, Sequence, Optional, Union
+from typing import List, Sequence, Optional, Union, Tuple
 
 from triton._C.libtriton import ir
 from triton.language import semantic as real_semantic
@@ -651,6 +651,81 @@ def index_select(src: tensor, idx: tensor, bound, lstdim_blksiz, offsets, numels
 
 
 @builtin
+def index_put(
+    ptr: tensor,
+    index: tensor,
+    value: tensor,
+    dim: int,
+    dst_shape: tuple,
+    dst_offset: tuple,
+    _builder=None
+):
+    """
+    Index put values from a tensor into a destination tensor.
+
+    Index put operation for different tensor ranks:
+    1. 2D index scatter (dim=0 scatters along rows):
+        out[index[i]][j] = value[i][j] if dim == 0
+        out[i][index[j]] = value[i][j] if dim == 1
+    2. 3D index scatter (dim=0 scatters along the 0th dimension):
+        out[index[i]][j][k] = value[i][j][k] if dim == 0
+        out[i][index[j]][k] = value[i][j][k] if dim == 1
+        out[i][j][index[k]] = value[i][j][k] if dim == 2
+
+    :param ptr: pointer type, the destination tensor pointer (in GM)
+    :param index: tensor, a index to scatter (in UB)
+    :param value: tensor, a value to store (in UB)
+    :param dim: int, the dimension to scatter along
+    :param dst_shape: tuple of int, the shape of destination tensor
+    :param dst_offset: tuple of int, the offsets of each dimension for destination tensor
+
+    Constraints
+    ***********
+    - `ptr` and `value` must have the same rank.
+    - `ptr.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+    - `index` must be an integer tensor, and must be 1D.
+    - `value` support 2~5D tensors.
+    - `dim` must be valid (0 <= dim < rank(value) - 1).
+
+    Example
+    *******
+    .. code-block:: python
+
+        import torch
+        import triton
+        import triton.language as tl
+        from triton.language.extra.ascend.libdevice import index_put
+
+        @triton.jit
+        def simple_index_put_kernel(value_ptr, index_ptr, dst_ptr):
+            # index tile shape: [2]
+            index_local = tl.arange(0, 2)
+            x1_local = tl.arange(0, 2)[None, :]  # shape=(1,2)
+
+            index_tile = tl.load(index_ptr + index_local)
+            value_tile = tl.load(value_ptr + index_local[:, None]*2 + x1_local)
+
+            index_put(
+                ptr=dst_ptr,
+                index=index_tile,
+                value=value_tile,
+                dim=0,
+                dst_shape=(4, 2),
+                dst_offset=(0, 0)
+            )
+
+        dst = torch.zeros((4,2), device='npu', dtype=torch.float32)
+        value = torch.tensor([[1.,2.], [3.,4.]], device='npu')
+        index = torch.tensor([2, 0], device='npu')
+
+        simple_index_put_kernel[(1,)](value, index, dst)
+        print("IndexPut result:", dst) # ref:[[3.,4.], [0.,0.], [1.,2.], [0.,0.]]
+    """
+    dim = _constexpr_to_value(dim)
+    return semantic.index_put(ptr, index, value, dim, dst_shape, dst_offset, _builder)
+
+
+@builtin
 def gather_out_to_ub(
     src: tensor,
     index_tile: tensor,
@@ -694,8 +769,8 @@ def gather_out_to_ub(
     - `index_tile` must be an integer tensor, with rank between 1 and 5.
     - `dim` must be valid (0 <= dim < rank(index_tile)).
     - `other` must be a scalar value.
-    - For every dimension `i` not equal to `dim`, `index.size[i]` <= `src.size[i]`.
-    - The output shape is the same as `index.shape`. If `index` is None, \
+    - For every dimension `i` not equal to `dim`, `index_tile.size[i]` <= `src.size[i]`.
+    - The output shape is the same as `index_tile.shape`. If `index_tile` is None, \
         the output tensor will be an empty tensor with the same shape as `index_tile`.
 
     Example
