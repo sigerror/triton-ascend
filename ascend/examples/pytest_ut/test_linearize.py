@@ -26,20 +26,10 @@ import test_common
 
 import torch
 import torch_npu
-from triton.runtime.driver import driver
 
 
-
-# npu hardware params from trion
-target = driver.active.get_current_target()
-device = driver.active.get_current_device()
-prop = driver.active.utils.get_device_properties(device)
-
-num_cube_core = prop["num_aicore"]
-num_vector_core = prop["num_aicore"]
-if (target.arch in ("Ascend910B","Ascend910_9382" )):
-    num_vector_core = num_cube_core * 2
-    print(target.arch, "vector_core",num_vector_core)
+num_cube_core = 20
+num_vector_core = 20
 
 def foo(a, d ,shape ):
     y = a.reshape(shape)

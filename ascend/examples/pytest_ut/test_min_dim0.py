@@ -61,9 +61,14 @@ def test_min_dim0_3d():
     triton_cal = triton_func(x0, dim)
     test_common.validate_cmp("float32", triton_cal, torch_ref)
 
-def standard_min(x0,dim,dtype):
+
+def standard_min(x0, dim, dtype):
+    # fix with aclnnMinDim support list:[DT_FLOAT,DT_FLOAT16,DT_INT64,DT_BOOL,DT_BFLOAT16,].
+    if x0.dtype == torch.int8:
+        x0 = x0.to(torch.int64)
     res, index = torch.min(x0, dim)
-    return res
+    return res.to(dtype)
+
 
 @triton.jit
 def triton_min_dim0(in_ptr0, out_ptr0, M : tl.constexpr, N : tl.constexpr, MNUMEL: tl.constexpr, NNUMEL: tl.constexpr):

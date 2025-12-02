@@ -29,9 +29,14 @@ import torch
 import torch_npu
 import test_common
 
-def standard_max(x0,dim,dtype):
-    (res, maxindex) = torch.max(x0, dim)
-    return res
+
+def standard_max(x0, dim, dtype):
+    # fix with aclnnMaxDim support list:[DT_FLOAT,DT_FLOAT16,DT_INT64,DT_BOOL,DT_BFLOAT16,].
+    if x0.dtype == torch.int8:
+        x0 = x0.to(torch.int64)
+    res, index = torch.max(x0, dim)
+    return res.to(dtype)
+
 
 @triton.jit
 def triton_max_dim1(in_ptr0, out_ptr0, M : tl.constexpr, N : tl.constexpr, MNUMEL: tl.constexpr, NNUMEL: tl.constexpr):
