@@ -8,71 +8,47 @@ sys.path.append("..")
 import test_common
 
 
-# source: python\sglang\srt\layers\elementwise.py
+# source: sgl-kernel/benchmark/bench_moe_align_block_size.py
 @triton.jit
-def fused_dual_residual_rmsnorm_kernel(
-    output_ptr,
-    mid_ptr,
-    activ_ptr,
-    residual_ptr,
-    weight1_ptr,
-    weight2_ptr,
-    eps: tl.constexpr,
-    hidden_dim: tl.constexpr,
-    BLOCK_SIZE: tl.constexpr,
+def moe_align_block_size_stage4(
+    topk_ids_ptr,
+    sorted_token_ids_ptr,
+    expert_ids_ptr,
+    tokens_cnts_ptr,
+    cumsum_ptr,
+    num_experts: tl.constexpr,
+    block_size: tl.constexpr,
+    numel: tl.constexpr,
+    tokens_per_thread: tl.constexpr,
 ):
-    pid = tl.program_id(axis=0)
-    input_start = pid * hidden_dim
+    pid = tl.program_id(0)
+    start_idx = tl.load(cumsum_ptr + pid)
+    end_idx = tl.load(cumsum_ptr + pid + 1)
 
-    offsets = tl.arange(0, BLOCK_SIZE)
-    mask = offsets < hidden_dim
+    for i in range(start_idx, end_idx, block_size):
+        tl.store(expert_ids_ptr + i // block_size, pid)
 
-    a_ = tl.load(activ_ptr + input_start + offsets, mask=mask, other=0.0)
-    a = a_.to(tl.float32)
-    rms = tl.sqrt(tl.sum(a * a, axis=0) / hidden_dim + eps)
+    start_idx = pid * tokens_per_thread
+    off_t = pid * num_experts
 
-    r = tl.load(residual_ptr + input_start + offsets, mask=mask, other=0.0)
-    w1_ = tl.load(weight1_ptr + offsets, mask=mask, other=0.0)
-    w1 = w1_.to(tl.float32)
-
-    a2r = r + (a / rms * w1).to(r.dtype)
-    tl.store(
-        mid_ptr + input_start + offsets,
-        a2r,
-        mask=mask,
-    )
-
-    a2r = a2r.to(tl.float32)
-    rms2 = tl.sqrt(tl.sum(a2r * a2r, axis=0) / hidden_dim + eps)
-
-    w2_ = tl.load(weight2_ptr + offsets, mask=mask, other=0.0)
-    w2 = w2_.to(tl.float32)
-
-    tl.store(
-        output_ptr + input_start + offsets,
-        a2r / rms2 * w2,  # implicitly casts to output dtype here
-        mask=mask,
-    )
+    for i in range(start_idx, tl.minimum(start_idx + tokens_per_thread, numel)):
+        expert_id = tl.load(topk_ids_ptr + i)
+        token_cnt = tl.load(tokens_cnts_ptr + off_t + expert_id)
+        rank_post_pad = token_cnt + tl.load(cumsum_ptr + expert_id)
+        tl.store(sorted_token_ids_ptr + rank_post_pad, i)
+        tl.store(tokens_cnts_ptr + off_t + expert_id, token_cnt + 1)
 
 
-def test_fused_dual_residual_rmsnorm_kernel(ptfile_path):
+def test_moe_align_block_size_stage4(ptfile_path):
     try:
         data = torch.load(ptfile_path, map_location=torch.device('cpu'), weights_only=False)
     except Exception as e:
         pytest.fail(f"load file {ptfile_path} failed: {str(e)}")
 
-    # ptfile format:
-    # [input_data] (dict):
-    #     key : value
-    # [gpu_output] (dict):
-    #     key : value
-    # [grid] :
-    #     (1,)
     input_data = test_common.convert_tensor_with_device_type(data["input_data"], device_type='npu')
 
-    fused_dual_residual_rmsnorm_kernel[data["grid"]](**input_data)
+    moe_align_block_size_stage4[data["grid"]](**input_data)
 
-    # compare the results of GPU and NPU.
     try:
         test_common.compare_data_precision(data["gpu_output"], input_data, device_type='cpu')
     except ValueError as e:
