@@ -810,6 +810,7 @@ extern "C" {
 
     return f"""
 {precompile_headers}
+#define __CCE_ENABLE_PRINT__
 {extract_device_print_code_from_cann() if enable_device_print else ''}
 #define PY_SSIZE_T_CLEAN
 {'#define ENABLE_GRID_WARN_PRINT' if enable_grid_warn_print else ''}
