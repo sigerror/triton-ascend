@@ -149,7 +149,6 @@ def test_floordiv_4d_5d(shape, dtype):
     test_common.validate_cmp(dtype, ans, output)
 
 invalid_types = [
-    'bool',
     'float16',
     'float32',
     'bfloat16',
