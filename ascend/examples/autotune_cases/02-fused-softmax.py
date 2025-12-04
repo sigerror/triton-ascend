@@ -32,14 +32,12 @@ import triton.language as tl
 from triton.testing import do_bench_npu
 
 
+# split_params={"x": "XBLOCK"}, tiling_params={"x": "XBLOCK_SUB"}, low_dims=["y"]
+# persistent_reduction=False, dual_reduction=False
 @triton.autotune(
     configs=[],
-    key={"x": "n_rows", "y": "n_cols"},
-    split_params={"x": "XBLOCK"},
-    tiling_params={"x": "XBLOCK_SUB"},
-    low_dims=["y"],
-    persistent_reduction=False,
-    dual_reduction=False,
+    hints={"enable_ascend_autotune": True},
+    key=["n_rows", "n_cols"],
 )
 @triton.jit
 def softmax_kernel(

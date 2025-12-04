@@ -66,6 +66,23 @@ class KernelMeta:
         persistent_reduction: bool,
         dual_reduction: bool,
     ):
+        """
+        :param split_params: a dict of axis name: argument name, the argument is an adjustable parameter in a split axis, such as 'XBLOCK'.
+            The axis name must be in key's axis names. Do not add prefix 'r' before the axis name.
+            This param can be empty. Note that the auto tiling feature will be disabled when the split_params and tiling_params are both empty.
+            The split axis can usually be identified according to `tl.program_id()` expression.
+        :type split_params: Dict[str, str]
+        :param tiling_params: a dict of axis name: argument name, the argument is an adjustable parameter in a tiling axis, such as 'XBLOCK_SUB'.
+            The axis name must be in key's axis names. Do not add prefix 'r' before the axis name.
+            This param can be empty. Note that the auto tiling feature will be disabled when the split_params and tiling_params are both empty.
+            The tiling axis can usually be identified according to `tl.arange()` expression.
+        :type tiling_params: Dict[str, str]
+        :param low_dims: a list of axis name in which the corresponding axis is low dim aixs.
+            The axis name must be in key's axis names. Do not add prefix 'r' before the axis name.
+        :type low_dims: List[str]
+        :param dual_reduction: performing reduction on more than one axis.
+        :param persistent_reduction: there is no splitting in reduction axis.
+        """
         self._validate_axis(axis_sizes, split_params, tiling_params, low_dims)
 
         axis_dict = {}

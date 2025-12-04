@@ -127,6 +127,144 @@ def add_kernel(
 1. Triton-Ascend默认采取benchmark的方式取片上计算时间，当设置环境变量`export TRITON_BENCH_METHOD="npu"`后，会通过`torch_npu.profiler.profile`的方式取每个kernel配置下的片上计算时间，对于一些triton kernel计算非常快的情况，例如小shape算子，相较于默认方式能够获取更准确的计算时间，但是会显著增加整体autotune的时间，请谨慎开启
 2. 目前该进阶用法主要针对的是 Vector 类算子，对于 Cube 类算子自动生成的配置或许性能不佳，待后续优化。更多进阶使用示例可以参考[autotune进阶使用示例](https://gitcode.com/Ascend/triton-ascend/tree/master/ascend/examples/autotune_cases)
 
+### 参数自动解析
+
+做参数自动解析前首先会获取`kernel`函数调用时未传入的参数，**将未传入的参数作为切分轴和分块轴参数的候选项**。
+
+```Python
+@triton.jit
+def kernel_func(
+    outputptr, 
+    input_ptr, 
+    n_rows, 
+    n_cols, 
+    BLOCK_SIZE: tl.constexpr,
+    XBLOCK: tl.constexpr,
+    XBLOCK_SUB: tl.constexpr,
+):
+    # Kernel implementation
+    ...
+
+# XBLOCK和XBLOCK_SUB未传入，则作为切分轴和分块轴参数的候选项
+# BLOCK_SIZE以关键字参数传入，不作为参数候选项，不会被识别
+kernel_func[grid](y, x, n_rows, n_cols, BLOCK_SIZE=block_size)
+```
+
+#### 切分轴参数解析
+
+切分轴参数解析依据 `tl.program_id()`分核语句来确定 ，通过分析程序中 `tl.program_id()` 变量的使用情况及其与其他变量的乘法运算识别潜在的切分轴参数（当前支持直接相乘或通过中间变量间接相乘的场景），并根据候选参数列表（用户未提供的参数）进行过滤。
+
+最后通过掩码比较和 `autotune` 中传入的 `key` 确认当前参数对应的切分轴。
+
+注意：1. 分割轴参数必须要与 `tl.program_id()` 相乘。 2. 若不进行掩码比较则无法对应到具体的切分轴，会导致参数解析失败。3. 识别出的分割轴参数仅限于候选参数列表，确保只有那些可以通过自动调优动态调整的参数才会被考虑。  
+
+```Python
+@triton.autotune(
+    key={"n_elements"} # 需要指定
+    ...
+)
+@triton.jit
+def triton_func(...):
+    # case1:
+    pid = tl.program_id(0)
+    block_start = pid * XBLOCK
+    offsets = block_start + tl.arange(0, XBLOCK)
+
+    # case2:
+    block_start = tl.program_id(0) * XBLOCK
+    offsets = block_start + tl.arange(0, XBLOCK)
+
+    # case3:
+    offsets = tl.program_id(0) * XBLOCK + tl.arange(0, XBLOCK)
+
+    # mask compare
+    mask = offsets < n_elements
+
+# 解析得到切分轴参数 split_params = {"x": "XBLOCK"}
+```
+
+#### 分块轴参数解析
+
+分块轴参数解析依据 `tl.arange()` 和 `tl.range()` 分块语句来确定，通过分析程序中`for` 循环里的 `tl.range()` 和 `tl.arange()` 的使用情况及其计算得到的变量来识别潜在的分块轴参数，提取 `tl.range()` 和 `tl.arange()` 的共同参数，并根据候选参数列表（用户未提供的参数）进行过滤。
+
+最后通过掩码比较和 `autotune` 中传入的 `key` 确认当前参数对应的分块轴。
+
+注意：1. 分块轴参数必须要在`tl.arange()`和`for` 循环里的 `tl.range()`进行计算。 2. 若不进行掩码比较则无法对应到具体的分块轴，会导致参数解析失败。3. 识别出的分块轴参数仅限于候选参数列表，确保只有那些可以通过自动调优动态调整的参数才会被考虑。  
+
+```Python
+@triton.autotune(
+    key={"n_rows", "n_cols"} # 需要指定
+    ...
+)
+@triton.jit
+def triton_func(...):
+    ...
+    for row_idx in tl.range(0, XBLOCK, XBLOCK_SUB):
+        row_offsets = row_idx + tl.arange(0, XBLOCK_SUB)[:, None]
+        col_offsets = tl.arange(0, BLOCK_SIZE)[None, :]
+
+        xmask = row_offsets < n_rows
+        ymask = col_offsets < n_cols
+
+# 解析得到分块轴参数 tiling_params = {"x": "XBLOCK_SUB"}
+# 参数BLOCK_SIZE虽然也在tl.arange中且与n_cols比较计算mask，但不是一个分块轴参数
+```
+
+#### 低维轴参数解析
+
+低维轴参数解析依据 `tl.arange()` 分块语句来确定，通过分析程序中 `tl.arange()` 的使用情况及其计算得到的变量来识别潜在的低维轴参数，提取 `tl.arange()` 本身以及它参与计算的变量，通过是否进行切片操作来进行增维以及判断增维维度来进行过滤。
+
+最后通过掩码比较和 `autotune` 中传入的 `key` 确认当前kernel的低维轴。
+
+注意：1. 低维轴必须要通过`tl.arange()`进行计算，并进行切片并在非最低维进行维度扩充或不参与切片，才会被识别。 2. 若不进行掩码比较则无法对应到具体的低维轴，会导致参数解析失败 
+
+```Python
+@triton.autotune(
+    key={"n_rows", "n_cols"} # 会按顺序自动分配成 {"x": "n_rows", "y": "n_cols"}
+    ...
+)
+@triton.jit
+def triton_func(...):
+    ...
+    for row_idx in tl.range(0, XBLOCK, XBLOCK_SUB):
+        row_offsets = row_idx + tl.arange(0, XBLOCK_SUB)[:, None]
+        col_offsets = tl.arange(0, BLOCK_SIZE)[None, :]
+
+        xmask = row_offsets < n_rows
+        ymask = col_offsets < n_cols
+
+# 解析得到低维轴 low_dims = {"y"}
+# row_offsets虽然也通过tl.arange计算且与n_rows比较计算mask，但切片在低维进行扩充，所以x不是一个低维轴
+```
+
+#### 参数指针解析
+
+指针类型的参数解析依据该参数是否参与 `tl.load()` 和 `tl.store()` 的访存类语句来确定。
+
+首先解析出kernel函数中的所有入参，之后递归寻找每一个入参参与计算的所有变量。
+
+如果该入参直接或该入参计算得到的中间变量间接参与 `tl.load()` 和 `tl.store()` 的第一个参数计算，则认为该参数是一个指针类型参数。
+
+注意：1. 使用 `tl.constexpr` 修饰的变量不会是指针类型的变量，不进行后续解析 2. 只计算入参直接参与或入参计算一次间接参与的访存类语句，若入参进行两次即以上计算得到的中间变量不进行统计。
+
+```Python
+@triton.autotune(...)
+@triton.jit
+def triton_func(input_ptr, output_ptr, ...):
+    ...
+    # case1
+    input = tl.load(input_ptr + offsets, mask=mask)
+    tl.store(output_ptr + offsets, input, mask=mask)
+
+    # case2
+    inputs_ptr = input_ptr + offsets
+    input = tl.load(inputs_ptr, mask=mask)
+    outputs_ptr = output_ptr + offsets
+    tl.store(outputs_ptr, input, mask=mask)
+
+# 解析得到指针类型参数为：input_ptr, output_ptr
+```
+
 ## 更多功能
 ### 自动生成最优配置的 Profiling 结果
 ```Python

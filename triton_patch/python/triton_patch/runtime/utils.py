@@ -53,7 +53,7 @@ byte_per_numel = {
     torch.complex128: 16,  # torch.complex128
 }
 
-valid_axis_names = {
+valid_axis_names = [
     "x",
     "y",
     "z",
@@ -66,7 +66,7 @@ valid_axis_names = {
     "rw",
     "rv",
     "rt",
-}
+]
 
 
 def get_byte_per_numel(dtype: torch.dtype) -> int:

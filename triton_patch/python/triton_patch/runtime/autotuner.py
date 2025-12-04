@@ -423,9 +423,8 @@ class Config:
         return ", ".join(res)
 
 
-def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None,
-             pre_hook=None, post_hook=None, warmup=None, rep=None, use_cuda_graph=False, do_bench=None, auto_profile_dir=None,
-             split_params=None, tiling_params=None, low_dims=None, dual_reduction=False, persistent_reduction=False):
+def autotune(configs, key, hints=None, prune_configs_by=None, reset_to_zero=None, restore_value=None,
+             pre_hook=None, post_hook=None, warmup=None, rep=None, use_cuda_graph=False, do_bench=None, auto_profile_dir=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -485,13 +484,11 @@ def autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_va
     """
 
     def decorator(fn):
-        if split_params or tiling_params:
+        if hints is not None and hints.get("enable_ascend_autotune"):
             from .autotiling_tuner import AutoTilingTuner
             return AutoTilingTuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
                                    post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
-                                   use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_profile_dir,
-                                   split_params=split_params, tiling_params=tiling_params, low_dims=low_dims,
-                                   dual_reduction=dual_reduction, persistent_reduction=persistent_reduction)
+                                   use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_profile_dir)
         else:
             return Autotuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
                              post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,

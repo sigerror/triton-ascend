@@ -32,14 +32,12 @@ import triton.language as tl
 from triton.testing import do_bench_npu
 
 
+# split_params={"x": "XBLOCK_SIZE"}, tiling_params={"y": "RBLOCK_SIZE"}, low_dims=["y"]
+# persistent_reduction=False, dual_reduction=False,
 @triton.autotune(
     configs=[],
-    key={"x": "M", "y": "N"},
-    split_params={"x": "XBLOCK_SIZE"},
-    tiling_params={"y": "RBLOCK_SIZE"},
-    low_dims=["y"],
-    persistent_reduction=False,
-    dual_reduction=False,
+    hints={"enable_ascend_autotune": True},
+    key=["M", "N"],
 )
 @triton.jit
 def _layer_norm_fwd_fused(

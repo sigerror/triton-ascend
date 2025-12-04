@@ -32,14 +32,12 @@ import triton.language as tl
 from triton.testing import do_bench_npu
 
 
+# split_params={"x": "BLOCK_SIZE"}, tiling_params={}, low_dims=["x"]
+# persistent_reduction=False, dual_reduction=False
 @triton.autotune(
     configs=[],
-    key={"x": "n_elements"},
-    split_params={"x": "BLOCK_SIZE"},
-    tiling_params={},
-    low_dims=["x"],
-    persistent_reduction=False,
-    dual_reduction=False,
+    hints={"enable_ascend_autotune": True},
+    key=["n_elements"]
 )
 @triton.jit
 def add_kernel(

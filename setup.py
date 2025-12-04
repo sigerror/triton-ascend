@@ -619,6 +619,7 @@ def get_package_dir(backends):
         "compiler/errors.py",
         "runtime/autotuner.py",
         "runtime/autotiling_tuner.py",
+        "runtime/autoparser.py",
         "runtime/jit.py",
         "runtime/tile_generator.py",
         "runtime/utils.py",
