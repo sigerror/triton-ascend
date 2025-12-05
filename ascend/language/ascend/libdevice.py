@@ -124,30 +124,11 @@ def isnan(arg0, _builder=None):
 
 @core.extern
 def flip(arg0, arg1=None, _builder=None):
-    if arg1 == None:
-        return core.extern_elementwise(
-            "", "", [arg0], {
-                (core.dtype("bf16"), ): ("__hmf_flipDhb", core.dtype("bf16")),
-                (core.dtype("fp16"), ): ("__hmf_flipDh", core.dtype("fp16")),
-                (core.dtype("fp32"), ): ("__hmf_flipf", core.dtype("fp32")),
-                (core.dtype("int8"), ): ("__hmf_flipi8", core.dtype("int8")),
-                (core.dtype("int16"), ): ("__hmf_flipi16", core.dtype("int16")),
-                (core.dtype("int32"), ): ("__hmf_flipi32", core.dtype("int32")),
-                (core.dtype("uint32"), ): ("__hmf_flipui32", core.dtype("uint32")),
-                (core.dtype("int64"), ): ("__hmf_flipi64", core.dtype("int64")),
-            }, is_pure=True, _builder=_builder)
-
-    return core.extern_elementwise(
-        "", "", [arg0, arg1], {
-            (core.dtype("bf16"), core.dtype("int32")): ("__hmf_flipDhb", core.dtype("bf16")),
-            (core.dtype("fp16"), core.dtype("int32")): ("__hmf_flipDh", core.dtype("fp16")),
-            (core.dtype("fp32"), core.dtype("int32")): ("__hmf_flipf", core.dtype("fp32")),
-            (core.dtype("int8"), core.dtype("int32")): ("__hmf_flipi8", core.dtype("int8")),
-            (core.dtype("int16"), core.dtype("int32")): ("__hmf_flipi16", core.dtype("int16")),
-            (core.dtype("int32"), core.dtype("int32")): ("__hmf_flipi32", core.dtype("int32")),
-            (core.dtype("uint32"), core.dtype("int32")): ("__hmf_flipui32", core.dtype("uint32")),
-            (core.dtype("int64"), core.dtype("int32")): ("__hmf_flipi64", core.dtype("int64")),
-        }, is_pure=True, _builder=_builder)
+    if _builder is None:
+        from triton.language import core as tl
+        _builder = tl.get_builder()
+    from triton.triton_patch.language.core import flip as ascend_flip
+    return ascend_flip(arg0, arg1, _builder=_builder)
 
 @core.extern
 def atan2(arg0, arg1, _builder=None):
