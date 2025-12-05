@@ -91,7 +91,8 @@ public:
 
   explicit UnstructuredMemAccessConverter(
       MLIRContext *context, bool forceScalarizeMode,
-      const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap);
+      const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap,
+      const llvm::SmallDenseMap<Value, bool> &fromTensorArg);
   LogicalResult matchAndRewrite(MemAccOpTy op,
                                 PatternRewriter &rewriter) const override;
 
@@ -114,6 +115,7 @@ private:
                             Args &&...args) const = delete;
 
   const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap;
+  const llvm::SmallDenseMap<Value, bool> &fromTensorArg;
   bool forceScalarizeMode;
 };
 
@@ -136,6 +138,7 @@ private:
   void runParse(MemAccOpTy op);
   llvm::DenseMap<Value, PtrOffsetInfo> offsetMap;
   llvm::DenseMap<Value, PtrOffsetInfo> offsetMapForLoopArgs;
+  llvm::SmallDenseMap<Value, bool> fromTensorArg;
 };
 
 } // namespace

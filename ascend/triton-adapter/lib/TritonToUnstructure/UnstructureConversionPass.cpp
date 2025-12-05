@@ -232,9 +232,10 @@ void UnstructuredMemAccessConverter<triton::LoadOp>::splatAndLoadScenario<
 template <typename MemAccOpTy>
 UnstructuredMemAccessConverter<MemAccOpTy>::UnstructuredMemAccessConverter(
     MLIRContext *context, bool forceScalarizeMode,
-    const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap)
+    const llvm::DenseMap<Value, PtrOffsetInfo> &offsetMap,
+    const llvm::SmallDenseMap<Value, bool> &fromTensorArg)
     : OpRewritePattern<MemAccOpTy>(context),
-      forceScalarizeMode(forceScalarizeMode), offsetMap(offsetMap) {}
+      forceScalarizeMode(forceScalarizeMode), offsetMap(offsetMap), fromTensorArg(fromTensorArg) {}
 
 template <typename MemAccOpTy>
 LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
@@ -298,20 +299,8 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
   }
 
-  std::function<bool(Value)> isFromTensorArg = [&](Value v) {
-    auto *defOp = v.getDefiningOp();
-    if (defOp) {
-      for (auto opr : defOp->getOperands()) {
-        if (isFromTensorArg(opr))
-          return true;
-      }
-      return false;
-    }
-    return isa<RankedTensorType>(v.getType());
-  };
-
   if (forceScalarizeMode || ptrOffsetInfo.isScalarLike() ||
-      isFromTensorArg(ptr)) {
+      fromTensorArg.at(ptr)) {
     ptrOffsetInfo.setUnstructured(ptrOffsetInfo.getRank());
   }
 
@@ -854,6 +843,24 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
   }
 }
 
+static bool isFromTensorArg(Value v, llvm::SmallDenseMap<Value, bool> &fromTensorArg) {
+  if (fromTensorArg.contains(v))
+    return fromTensorArg.at(v);
+  auto *defOp = v.getDefiningOp();
+  if (!defOp) {
+    fromTensorArg[v] = isa<RankedTensorType>(v.getType());
+    return isa<RankedTensorType>(v.getType());
+  }
+    for (auto opr : defOp->getOperands()) {
+      if (isFromTensorArg(opr, fromTensorArg)) {
+        fromTensorArg[v] = true;
+        return true;
+      }
+    }
+  fromTensorArg[v] = false;
+  return false;
+}
+
 template <typename MemAccOpTy, typename>
 void TritonToUnstructurePass::runParse(MemAccOpTy op) {
   IRRewriter rewriter(&getContext());
@@ -862,6 +869,7 @@ void TritonToUnstructurePass::runParse(MemAccOpTy op) {
     os << "Parsing " << op->getName() << "\n" << op << "\n";
   });
   parse(op.getPtr(), op.getLoc(), rewriter, offsetMap);
+  isFromTensorArg(op.getPtr(), fromTensorArg);
 }
 
 TritonToUnstructurePass::TritonToUnstructurePass(
@@ -903,7 +911,7 @@ void TritonToUnstructurePass::runOnOperation() {
                UnstructuredMemAccessConverter<triton::StoreOp>,
                UnstructuredMemAccessConverter<triton::AtomicRMWOp>,
                UnstructuredMemAccessConverter<triton::AtomicCASOp>>(
-      ctx, forceScalarizeMode, offsetMap);
+      ctx, forceScalarizeMode, offsetMap, fromTensorArg);
 
   LLVM_DEBUG({
     auto &os = llvm::dbgs();
