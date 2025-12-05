@@ -359,6 +359,11 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             _compile_option_list += [
                 f"--enable-auto-multi-buffer={multibuffer}",
             ]
+        enable_auto_bind_sub_block = metadata["enable_auto_bind_sub_block"]
+        if enable_auto_bind_sub_block is not None:
+            _compile_option_list += [
+                f"--enable-auto-bind-sub-block={enable_auto_bind_sub_block}",
+            ]
         if force_disable_ffts():
             _compile_option_list += ["--disable-ffts"]
         if _is_ascend_sanitizer_enabled():
@@ -465,6 +470,11 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         if multibuffer is not None:
             _compile_option_list += [
                 f"--enable-auto-multi-buffer={multibuffer}",
+            ]
+        enable_auto_bind_sub_block = metadata["enable_auto_bind_sub_block"]
+        if enable_auto_bind_sub_block is not None:
+            _compile_option_list += [
+                f"--enable-auto-bind-sub-block={enable_auto_bind_sub_block}",
             ]
         if _is_ascend_sanitizer_enabled():
             _compile_option_list += ["--enable-sanitizer=true"]
@@ -587,6 +597,7 @@ class NPUOptions:
     extern_libs: dict = None
 
     multibuffer: bool = not is_compile_on_910_95
+    enable_auto_bind_sub_block: bool = not is_compile_on_910_95
     enable_hivm_auto_cv_balance: bool = None
     sync_solver: bool = None
     unit_flag: bool = None
