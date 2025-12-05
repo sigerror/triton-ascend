@@ -1611,6 +1611,7 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc){
   SmallVector<OpFoldResult> tensorStrides;
   SmallVector<OpFoldResult> tensorOffsets;
   SmallVector<OpFoldResult> tensorShape; // compare mode: only 0/1
+  SmallVector<OpFoldResult> tensorDimOffset; // use for dimVar
   
   auto ptrType = cast<triton::PointerType>(source.getType());
   LLVM_DEBUG({llvm::dbgs() << "before createAddptr dump ptrState:\n";});
@@ -1640,7 +1641,8 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc){
     }
     tensorShape.push_back(builder.getIndexAttr(0)); // after this, tensorShape express maskmode <|>
     tensorStrides.push_back(info.stride);
-    tensorOffsets.push_back(info.dimOffset?info.dimOffset:info.offset);
+    tensorOffsets.push_back(info.offset);
+    tensorDimOffset.push_back(info.dimOffset?info.dimOffset:info.offset);
   }
 
   if(this->scalar){ // isa pure scalar || isa splated scalar 
@@ -1651,12 +1653,14 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc){
         tensorShape.push_back(builder.getIndexAttr(0));
         tensorStrides.push_back(builder.getIndexAttr(1));
         i?tensorOffsets.push_back(builder.getIndexAttr(0)):tensorOffsets.push_back(this->scalar);
+        i?tensorDimOffset.push_back(builder.getIndexAttr(0)):tensorDimOffset.push_back(this->scalar);
       }
     } else { //pure scalar
       tensorSizes.push_back(1);
       tensorShape.push_back(builder.getIndexAttr(0));
       tensorStrides.push_back(builder.getIndexAttr(1));
       tensorOffsets.push_back(this->scalar);
+      tensorDimOffset.push_back(this->scalar);
     }
   }
 
@@ -1671,33 +1675,38 @@ triton::AddPtrOp PtrState::createAddPtrOp(OpBuilder &builder, Location loc){
   for (int i = 0; i < dims; i++){
     auto size = tensorSizes[i];
     auto offset = tensorOffsets[i];
+    auto dimOffset = tensorDimOffset[i];
     // fixme, kaixin, type is not good to set as I32 .
     auto indexI32RowType = RankedTensorType::get({size}, builder.getI32Type());
     auto splatType = RankedTensorType::get({size}, builder.getI32Type());  
     // make range
     Value range = builder.create<triton::MakeRangeOp>(loc, indexI32RowType, 0, size);
-    
-    // add offset
-    Value offsetValue = materializeValue( builder, loc, offset );    
-    if (offsetValue.getType().isIndex()) {
-        offsetValue = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(), offsetValue );
-    }
-    Value splatOffset = builder.create<triton::SplatOp>(loc, splatType, offsetValue);
-    auto addValue = builder.create<arith::AddIOp>(loc, splatOffset, range);
-    stateInfo[i].dimVar = addValue ;
 
-    // multiply stride 
-    // fixme, kaixin, need to use i64
     Value strideValue = materializeValue( builder, loc, tensorStrides[i] );
     if (strideValue.getType().isIndex()) {
         strideValue = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(), strideValue );
     }
     Value splatStride = builder.create<triton::SplatOp>(loc, splatType, strideValue);
-    auto mulValue = builder.create<arith::MulIOp>(loc, addValue, splatStride);
-
+    auto mulValue = builder.create<arith::MulIOp>(loc, range, splatStride);
     
+    // add offset
+    Value offsetValue = materializeValue(builder, loc, offset);
+    if (offsetValue.getType().isIndex()) {
+        offsetValue = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(), offsetValue);
+    }
+    Value dimOffsetValue = materializeValue(builder, loc, dimOffset);
+    if (dimOffsetValue.getType().isIndex()) {
+        dimOffsetValue = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(), dimOffsetValue);
+    }
+    Value splatOffset = builder.create<triton::SplatOp>(loc, splatType, offsetValue);
+    Value splatDimOffset = builder.create<triton::SplatOp>(loc, splatType, dimOffsetValue);
+
+    auto addValue = builder.create<arith::AddIOp>(loc, splatOffset, mulValue);
+    auto addDimValue = builder.create<arith::AddIOp>(loc, splatDimOffset, range);
+    stateInfo[i].dimVar = addDimValue;
+
     // expand dim
-    Value expandedValue = mulValue; 
+    Value expandedValue = addValue;
     for (int j = 0; j < dims; ++j) {
       if (j == i)
         continue;
