@@ -27,7 +27,11 @@ import os
 import time
 import inspect
 from typing import Dict, List
+import threading
+from concurrent.futures import ThreadPoolExecutor
+import logging
 
+import torch
 from .jit import KernelInterface
 from .errors import OutOfResources
 from .driver import driver
@@ -155,9 +159,11 @@ class Autotuner(KernelInterface):
         else:
             self.do_bench = do_bench
 
-    def _bench(self, *args, config, **meta):
-        from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
+    def _batch_bench(self, *args, configs, **kwargs):
+        kernel_dict = {config: self._tiling_kernel(*args, config=config, **kwargs) for config in configs}
+        return self._batch_benchmark(kernel_dict=kernel_dict, quantiles=(0.5, 0.2, 0.8))
 
+    def _tiling_kernel(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -185,43 +191,79 @@ class Autotuner(KernelInterface):
                     raise
 
             self.post_hook(full_nargs, exception=None)
+        return kernel_call
 
+    def _batch_benchmark(self, kernel_dict, rep=10, quantiles=None):
+        """
+            Benchmark the runtime of the provided function.
+            By default, return the median runtime of :code:`fn` along with
+            the 20-th and 80-th performance percentile.
+
+            :param kernel_dict: Function to benchmark
+            :type kernel_dict: Callable
+            :param rep: Repetition time (in ms)
+            :type rep: int
+            :param quantiles: Performance percentile to return in addition to the median.
+            :type quantiles: list[float], optional
+        """
+        assert len(kernel_dict) > 0, f"ERROR: length of kernel_dict is empty."
+        kernel_dict_temp_lock = threading.Lock()
+        tiling_dict_lock = threading.Lock()
+        tiling_dict = {}
+        kernel_dict_temp = {}
+        from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
+
+        def run_fn(config, fn):
+            try:
+                with kernel_dict_temp_lock:
+                    fn()
+                    kernel_dict_temp[config] = fn
+            except (CompileTimeAssertionFailure, MLIRCompilationError) as ex:
+                with tiling_dict_lock:
+                    tiling_dict[config] = [float('inf')]
+                raise ex
+
+        def run_all_fns():
+            import psutil
+            max_workers = psutil.cpu_count(logical=False)
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = []
+                for config, fn in kernel_dict.items():
+                    future = executor.submit(run_fn, config, fn)
+                    futures.append(future)
+                for future in futures:
+                    try:
+                        future.result()
+                    except Exception as ex:
+                        logging.info(f"Exception raised while benchmarking function.{ex}")
+
+        run_all_fns()
+
+        if self.do_bench.__module__ == "triton.testing":
+            enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() == 'npu'
+            if torch.npu.is_available() and enable_bench_npu:
+                from triton.testing import do_bench_multiple_kernel_npu
+                tiling_dict_temp = do_bench_multiple_kernel_npu(kernel_dict_temp, active=max(30, rep), prof_dir=None, keep_res=False)
+                tiling_dict.update(tiling_dict_temp)
+                return tiling_dict
+        for config, kernel_call in kernel_dict_temp.items():
+            try:
+                tiling_dict[config] = self.do_bench(kernel_call, quantiles=quantiles)
+            except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as ex:
+                tiling_dict[config] = [float("inf"), float("inf"), float("inf")]
+        return tiling_dict
+
+    def _bench(self, *args, config, **meta):
+        from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
+        kernel_call = self._tiling_kernel(*args, config=config, **meta)
         try:
             return self.do_bench(kernel_call, quantiles=(0.5, 0.2, 0.8))
-        except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as e:
+        except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as ex:
             return [float("inf"), float("inf"), float("inf")]
 
     def _profile(self, *args, config, **meta):
         from triton.testing import do_bench_npu
-
-        # check for conflicts, i.e. meta-parameters both provided
-        # as kwargs and by the autotuner
-        conflicts = meta.keys() & config.kwargs.keys()
-        if conflicts:
-            raise ValueError(f"Conflicting meta-parameters: {', '.join(conflicts)}."
-                             " Make sure that you don't re-define auto-tuned symbols.")
-        # augment meta-parameters with tunable ones
-        current = dict(meta, **config.all_kwargs())
-        full_nargs = {**self.nargs, **current}
-
-        def kernel_call():
-            if config.pre_hook:
-                config.pre_hook(full_nargs)
-            self.pre_hook(full_nargs)
-            try:
-                self.fn.run(
-                    *args,
-                    **current,
-                )
-            except Exception as e:
-                try:
-                    self.post_hook(full_nargs, exception=e)
-                finally:
-                    # Throw exception raised by `self.fn.run`
-                    raise
-
-            self.post_hook(full_nargs, exception=None)
-
+        kernel_call = self._tiling_kernel(*args, config=config, **meta)
         do_bench_npu(
             kernel_call, prof_dir=self.auto_profile_dir, keep_res=True
         )
@@ -242,7 +284,7 @@ class Autotuner(KernelInterface):
                 used_cached_result = False
                 pruned_configs = self.prune_configs(kwargs)
                 bench_start = time.time()
-                timings = {config: self._bench(*args, config=config, **kwargs) for config in pruned_configs}
+                timings = self._batch_bench(*args, configs=pruned_configs, **kwargs)
                 bench_end = time.time()
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)

@@ -195,10 +195,7 @@ class AutoTilingTuner(Autotuner):
             if len(pruned_configs) > 1:
                 used_cached_result = False
                 bench_start = time.time()
-                timings = {
-                    config: self._bench(*args, config=config, **kwargs)
-                    for config in pruned_configs
-                }
+                timings = self._batch_bench(*args, configs=pruned_configs, **kwargs)
                 bench_end = time.time()
                 self.bench_time = bench_end - bench_start
                 self.cache[key] = builtins.min(timings, key=timings.get)
