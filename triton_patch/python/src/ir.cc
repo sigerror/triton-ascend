@@ -65,14 +65,17 @@ using namespace triton;
 // A custom op builder that keeps track of the last location
 class TritonOpBuilder {
 public:
-  TritonOpBuilder(MLIRContext *context) {
+  TritonOpBuilder(MLIRContext *context, const std::string &compile_mode = "simd") {
     builder = std::make_unique<OpBuilder>(context);
     lastLoc = std::make_unique<Location>(builder->getUnknownLoc());
+    this->compile_mode = compile_mode;
   }
 
   OpBuilder &getBuilder() { return *builder; }
 
   bool isLineInfoEnabled() { return lineInfoEnabled; }
+
+  bool isSimtMode() const { return compile_mode == "simt"; }
 
   void setLastLoc(Location loc) {
     if (lineInfoEnabled)
@@ -143,6 +146,7 @@ private:
   std::unique_ptr<OpBuilder> builder;
   std::unique_ptr<Location> lastLoc;
   bool lineInfoEnabled = !triton::tools::getBoolEnv("TRITON_DISABLE_LINE_INFO");
+  std::string compile_mode;
 };
 
 std::string locationToString(Location loc) {
@@ -614,7 +618,12 @@ void init_triton_ir(py::module &&m) {
 
   py::class_<TritonOpBuilder>(m, "builder", py::module_local(),
                               py::dynamic_attr())
-      .def(py::init<MLIRContext *>())
+      .def(py::init<MLIRContext *, const std::string &>(),
+           py::arg("context"),
+           py::arg("compile_mode") = "simd",
+           "Create a TritonOpBuilder with optional compile_mode (simt or simd, default: simd)")
+      .def("is_simt_mode", &TritonOpBuilder::isSimtMode,
+           "Check if the compile mode is simt")
       // getters
       .def("create_module",
            [](TritonOpBuilder &self) -> ModuleOp {

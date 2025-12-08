@@ -74,6 +74,13 @@ def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
     range = end - start
     if range > TRITON_MAX_TENSOR_NUMEL:
         raise ValueError(f"end - start must be less than or equal to TRITON_MAX_TENSOR_NUMEL = {TRITON_MAX_TENSOR_NUMEL}")
+    
+    # Check if compile_mode is simt, then range must be a power of 2
+    if builder.is_simt_mode():
+        # Check if range is a power of 2
+        if (range & (range - 1)) != 0:
+            raise ValueError("arange's range must be a power of 2")
+    
     shape = [range]
     ret_ty = tl.block_type(tl.int32, shape)
     return tl.tensor(builder.create_make_range(start, end), ret_ty)
@@ -670,6 +677,9 @@ def atomic_min(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, sem: str, scope:
 
 
 def compile_hint(ptr: tl.tensor, hint_name: str, hint_val, builder: ir.builder):
+    # simt mode does not support hint annotations
+    if builder.is_simt_mode():
+        return
     if not hint_val:
         hint_val = builder.get_unit_attr()
     elif isinstance(hint_val, bool):
