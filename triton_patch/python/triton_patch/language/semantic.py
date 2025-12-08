@@ -1034,7 +1034,7 @@ def _convert_elem_to_ir_value(builder, elem, require_i64):
         if require_i64:
             return builder.create_int_cast(elem.handle, builder.get_int64_ty(), elem.dtype.is_int_signed())
         else:
-            return elem.handle
+            return builder.create_int_cast(elem.handle, builder.get_int32_ty(), elem.dtype.is_int_signed())
     else:
         assert False, f"Unsupported element type in shape/strides/offsets: {type(elem)}"
 
@@ -1073,12 +1073,12 @@ def index_put(
 
     Index put operation for different tensor ranks:
     1. 2D index scatter (dim=0 scatters along rows):
-        out[index[i]][j] = value[i][j] if dim == 0
-        out[i][index[j]] = value[i][j] if dim == 1
+        out[index[i]][dst_offset[1] + j] = value[i][j] if dim == 0
+        out[dst_offset[0] + i][index[j]] = value[i][j] if dim == 1
     2. 3D index scatter (dim=0 scatters along the 0th dimension):
-        out[index[i]][j][k] = value[i][j][k] if dim == 0
-        out[i][index[j]][k] = value[i][j][k] if dim == 1
-        out[i][j][index[k]] = value[i][j][k] if dim == 2
+        out[index[i]][dst_offset[1] + j][dst_offset[2] + k] = value[i][j][k] if dim == 0
+        out[dst_offset[0] + i][index[j]][dst_offset[2] + k] = value[i][j][k] if dim == 1
+        out[dst_offset[0] + i][dst_offset[1] + j][index[k]] = value[i][j][k] if dim == 2
     
     Args:
     - ptr: pointer type, the destination tensor pointer (in GM)
@@ -1147,15 +1147,25 @@ def gather_out_to_ub(
     Gather from a source tensor in Global Memory (GM) to Unified Buffer (UB)
     along a specified dimension with out-of-bound handling.
 
+    Gather operation for different tensor ranks:
+    1. 1D index gather:
+        out[i] = src[offsets[0] + index[i]]
+    2. 2D index gather (dim=0 gathers along rows):
+        out[i][j] = src[offsets[0] + index[i][j]][offsets[1] + j] if dim == 0
+        out[i][j] = src[offsets[0] + i][offsets[1] + index[i][j]] if dim == 1
+    3. 3D index gather (dim=0 gathers along the 0th dimension):
+        out[i][j][k] = src[offsets[0] + index[i][j][k]][offsets[1] + j][offsets[2] + k] if dim == 0
+        out[i][j][k] = src[offsets[0] + i][offsets[1] + index[i][j][k]][offsets[2] + k] if dim == 1
+        out[i][j][k] = src[offsets[0] + i][offsets[1] + j][offsets[2] + index[i][j][k]] if dim == 2
+
     Args:
     - src: pointer type, the source tensor pointer (in GM)
     - index_tile: tensor, a tile of origin index to gather (in UB)
-    - index_boundary: int, the upper boundary for index values
-    - dim: int, the dimension to gather along
-    - src_stride: tuple of int, the stride of each dimension of src tensor
-    - index_stride: tuple of int, the stride of each dimension of origin index tensor
-    - index_shape: tuple of int, the shape of origin index tensor
-    - offsets: tuple of int, the offsets of each dimension for index tensor
+    - index_boundary: int64, the upper boundary for index values
+    - dim: int32, the dimension to gather along
+    - src_stride: tuple of int64, the stride of each dimension of src tensor
+    - index_shape: tuple of int32, the shape of origin index tensor
+    - offsets: tuple of int32, the offsets of each dimension for index tensor
     - other(Optional): scalar value, the default value when index is out of boundary (in UB)
 
     Returns:
@@ -1189,8 +1199,8 @@ def gather_out_to_ub(
     if other is not None:
         other = cast(other, src.dtype.element_ty, _builder)
 
-    require_i64 = index_tile.dtype.is_int64()
-    src_stride = [_convert_elem_to_ir_value(_builder, elem, require_i64) for elem in src_stride]
+    # src stride are always i64
+    src_stride = [_convert_elem_to_ir_value(_builder, elem, True) for elem in src_stride]
     # index shape and offsets are always i32
     index_shape = [_convert_elem_to_ir_value(_builder, elem, False) for elem in index_shape]
     offsets = [_convert_elem_to_ir_value(_builder, elem, False) for elem in offsets]

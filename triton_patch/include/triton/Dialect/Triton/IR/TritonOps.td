@@ -454,14 +454,13 @@ def TT_GatherOutToUbOp : TT_Op<"gather_out_to_ub", [
         The operation takes:
         - src: pointer type, the source tensor pointer (in GM)
         - index_tile: tensor, a tile of origin index to gather (in UB)
-        - index_boundary: int, the upper boundary for index values
-        - dim: int, the dimension to gather along
-        - src_stride: tuple of int, the stride of each dimension of src tensor
-        - index_stride: tuple of int, the stride of each dimension of origin index tensor
-        - index_shape: tuple of int, the shape of origin index tensor
-        - offsets: tuple of int, the offsets of each dimension for index tensor
+        - index_boundary: int64, the upper boundary for index values
+        - dim: int32, the dimension to gather along
+        - src_stride: tuple of int64, the stride of each dimension of src tensor
+        - index_shape: tuple of int32, the shape of origin index tensor
+        - offsets: tuple of int32, the offsets of each dimension for index tensor
         - other(Optional): scalar value, the default value when index is out of boundary (in UB)
-        
+
         Returns:
           a tensor, with the same shape as `index_tile.shape` (in UB)
 

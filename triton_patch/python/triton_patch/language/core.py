@@ -665,12 +665,12 @@ def index_put(
 
     Index put operation for different tensor ranks:
     1. 2D index scatter (dim=0 scatters along rows):
-        out[index[i]][j] = value[i][j] if dim == 0
-        out[i][index[j]] = value[i][j] if dim == 1
+        out[index[i]][dst_offset[1] + j] = value[i][j] if dim == 0
+        out[dst_offset[0] + i][index[j]] = value[i][j] if dim == 1
     2. 3D index scatter (dim=0 scatters along the 0th dimension):
-        out[index[i]][j][k] = value[i][j][k] if dim == 0
-        out[i][index[j]][k] = value[i][j][k] if dim == 1
-        out[i][j][index[k]] = value[i][j][k] if dim == 2
+        out[index[i]][dst_offset[1] + j][dst_offset[2] + k] = value[i][j][k] if dim == 0
+        out[dst_offset[0] + i][index[j]][dst_offset[2] + k] = value[i][j][k] if dim == 1
+        out[dst_offset[0] + i][dst_offset[1] + j][index[k]] = value[i][j][k] if dim == 2
 
     :param ptr: pointer type, the destination tensor pointer (in GM)
     :param index: tensor, a index to scatter (in UB)
@@ -744,22 +744,22 @@ def gather_out_to_ub(
 
     Gather operation for different tensor ranks:
     1. 1D index gather:
-        out[i] = src[index[i]]
+        out[i] = src[offsets[0] + index[i]]
     2. 2D index gather (dim=0 gathers along rows):
-        out[i][j] = src[index[i][j]][j] if dim == 0
-        out[i][j] = src[i][index[i][j]] if dim == 1
+        out[i][j] = src[offsets[0] + index[i][j]][offsets[1] + j] if dim == 0
+        out[i][j] = src[offsets[0] + i][offsets[1] + index[i][j]] if dim == 1
     3. 3D index gather (dim=0 gathers along the 0th dimension):
-        out[i][j][k] = src[index[i][j][k]][j][k] if dim == 0
-        out[i][j][k] = src[i][index[i][j][k]][k] if dim == 1
-        out[i][j][k] = src[i][j][index[i][j][k]] if dim == 2
+        out[i][j][k] = src[offsets[0] + index[i][j][k]][offsets[1] + j][offsets[2] + k] if dim == 0
+        out[i][j][k] = src[offsets[0] + i][offsets[1] + index[i][j][k]][offsets[2] + k] if dim == 1
+        out[i][j][k] = src[offsets[0] + i][offsets[1] + j][offsets[2] + index[i][j][k]] if dim == 2
 
     :param src: pointer type, the source tensor pointer (in GM)
     :param index_tile: tensor, a tile of origin index to gather (in UB)
-    :param index_boundary: int, the upper boundary for index values
-    :param dim: int, the dimension to gather along
-    :param src_stride: tuple of int, the stride of each dimension of src tensor
-    :param index_shape: tuple of int, the shape of origin index tensor
-    :param offsets: tuple of int, the offsets of each dimension for index tensor
+    :param index_boundary: int64, the upper boundary for index values
+    :param dim: int32, the dimension to gather along
+    :param src_stride: tuple of int64, the stride of each dimension of src tensor
+    :param index_shape: tuple of int32, the shape of origin index tensor
+    :param offsets: tuple of int32, the offsets of each dimension for index tensor
     :param other(Optional): scalar value, the default value when index is out of boundary (in UB)
     :return: tensor, with the same shape as `index_tile.shape` (in UB)
 

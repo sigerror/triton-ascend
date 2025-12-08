@@ -342,14 +342,14 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
   
   LLVM_DEBUG({
     auto &os = llvm::dbgs();
-    os << "Unsturcture Flag check:\n";
-    os << "ptrOffsetInfo.sUnstructured: " << ptrOffsetInfo.isUnstructured() << "\n";
+    os << "UnStructured Flag check:\n";
+    os << "ptrOffsetInfo.isStructured: " << ptrOffsetInfo.isStructured() << "\n";
     os << "compileOn91095Flag: " << compileOn91095Flag << "\n";
     os << "forceSimtTemplateFlag: " << forceSimtTemplateFlag << "\n";
   });
   
   // Fast path on A5: rewrite tt.load/store to tt.indirect_load/store directly.
-  if (compileOn91095Flag && forceSimtTemplateFlag && ptrOffsetInfo.isUnstructured()) {
+  if (compileOn91095Flag && forceSimtTemplateFlag && !ptrOffsetInfo.isStructured()) {
     if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
       assert(isa<triton::PointerType>(srcPtr.getType()) && "src must be ptr type");
       Value mask = op.getMask();

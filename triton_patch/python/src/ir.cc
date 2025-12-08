@@ -1831,8 +1831,9 @@ void init_triton_ir(py::module &&m) {
                 std::vector<int64_t> retShape(idxShape.begin(), idxShape.end());
                 auto resType = RankedTensorType::get(retShape, elemTy);
 
-                auto idxBitWidth = idxTy.getElementType().getIntOrFloatBitWidth();
-                auto bound_val = self.create<arith::ConstantIntOp>(indexBoundary, idxBitWidth);
+                // indexBoundary need to be i64 type
+                auto dimI64Ty = self.getBuilder().getI64Type();
+                auto bound_val = self.create<arith::ConstantIntOp>(indexBoundary, dimI64Ty);
                 // dim need to be i32 type
                 auto dimI32Ty = self.getBuilder().getI32Type();
                 auto dim_val = self.create<arith::ConstantIntOp>(dim, dimI32Ty);
