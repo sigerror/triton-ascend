@@ -817,28 +817,27 @@ void TritonToUnstructurePass::runPreparse(LoopLikeOpInterface op) {
     os << "Pre-parsing " << op->getName() << "\n" << op << "\n";
   });
 
-  SmallVector<Value> valuesToParse;
-  valuesToParse.append(op.getYieldedValues().begin(),
-                       op.getYieldedValues().end());
-  valuesToParse.append(op->getResults().begin(), op->getResults().end());
-  for (auto res : valuesToParse) {
-    if (auto tensorType = dyn_cast<RankedTensorType>(res.getType())) {
-      parse(res, loc, rewriter, offsetMapForLoopArgs);
-    }
+  Block::BlockArgListType args;
+  ValueRange yields;
+  if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
+    args = whileOp.getBeforeArguments();
+    yields = whileOp.getYieldOp().getOperands();
+  } else {
+    args = op.getRegionIterArgs();
+    yields = op.getYieldedValues();
   }
 
-  for (auto *region : op.getLoopRegions()) {
-    for (auto arg : region->getArguments()) {
-      if (offsetMapForLoopArgs.contains(arg)) {
-        offsetMap[arg] = offsetMapForLoopArgs.at(arg);
-        LLVM_DEBUG({
-          auto &os = llvm::dbgs();
-          os << "Pre-parsing result of\n" << arg << "\nis ";
-          for (auto structured : offsetMap[arg].getStructuredRef())
-            os << structured;
-          os << '\n';
-        });
-      }
+  for (auto[arg, yield] : llvm::zip_equal(args, yields)) {
+    if (auto tensorType = dyn_cast<RankedTensorType>(yield.getType())) {
+      parse(yield, loc, rewriter, offsetMapForLoopArgs);
+      offsetMap[arg] = offsetMapForLoopArgs.at(yield);
+      LLVM_DEBUG({
+        auto &os = llvm::dbgs();
+        os << "Pre-parsing result of\n" << arg << "\nis ";
+        for (auto structured : offsetMap[arg].getStructuredRef())
+          os << structured;
+        os << '\n';
+      });
     }
   }
 }
