@@ -31,7 +31,6 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import logging
 
-import torch
 from .jit import KernelInterface
 from .errors import OutOfResources
 from .driver import driver
@@ -211,14 +210,14 @@ class Autotuner(KernelInterface):
         tiling_dict_lock = threading.Lock()
         tiling_dict = {}
         kernel_dict_temp = {}
-        from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
+        from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError, CompilationError
 
         def run_fn(config, fn):
             try:
                 with kernel_dict_temp_lock:
                     fn()
                     kernel_dict_temp[config] = fn
-            except (CompileTimeAssertionFailure, MLIRCompilationError) as ex:
+            except (CompileTimeAssertionFailure, MLIRCompilationError, CompilationError) as ex:
                 with tiling_dict_lock:
                     tiling_dict[config] = [float('inf')]
                 raise ex
@@ -241,6 +240,7 @@ class Autotuner(KernelInterface):
 
         if self.do_bench.__module__ == "triton.testing":
             enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() == 'npu'
+            import torch
             if torch.npu.is_available() and enable_bench_npu:
                 from triton.testing import do_bench_multiple_kernel_npu
                 tiling_dict_temp = do_bench_multiple_kernel_npu(kernel_dict_temp, active=max(30, rep), prof_dir=None, keep_res=False)

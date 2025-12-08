@@ -33,9 +33,6 @@ import builtins
 from contextlib import contextmanager
 from typing import Any, Dict, List
 
-import numpy as np
-import pandas as pd
-
 from . import language as tl
 from . import runtime
 
@@ -200,6 +197,7 @@ def do_bench(fn, warmup=25, rep=100, grad_to_none=None, quantiles=None, return_m
     return _summarize_statistics(times, quantiles, return_mode)
 
 def collect_files(base_dir):
+    import pandas as pd
     for root, dirs, files in os.walk(base_dir):
         for file in files:
             if file != 'op_statistic.csv':
@@ -217,6 +215,7 @@ def collect_single(base_dir: str, key: str = None) -> float:
     if not os.path.exists(base_dir):
         return float('inf')
 
+    import pandas as pd
     for root, _, files in os.walk(base_dir):
         for file in files:
             if file != 'op_statistic.csv':
@@ -290,14 +289,14 @@ def do_bench_multiple_kernel_npu(kernel_dict, active=30, prof_dir=None, keep_res
     import torch
     import torch_npu
 
-    from .compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
+    from .compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError, CompilationError
     assert len(kernel_dict) > 0, f"ERROR: length of kernel_dict is {len(kernel_dict)}, no kernel is profiling."
 
     # warmup kernel
     def run_fn(fn):
         try:
             fn()
-        except (CompileTimeAssertionFailure, MLIRCompilationError) as ex:
+        except (CompileTimeAssertionFailure, MLIRCompilationError, CompilationError) as ex:
             raise ex
 
     def run_all_fns():
@@ -370,6 +369,8 @@ def _rm_dic(keep_res, torch_path):
 
 
 def _collect_mul_prof_result(base_dir: str, kernel_dict, total, key: str = None):
+    import numpy as np
+    import pandas as pd
     tiling_dict = {}
     kernel_details_file = None
     for root, _, files in os.walk(base_dir):
@@ -416,6 +417,7 @@ def assert_close(x, y, atol=None, rtol=None, err_msg=''):
     :param err_msg: The error message to use if the assertion fails.
     :type err_msg: str
     """
+    import numpy as np
     import torch
 
     # canonicalize arguments to be tensors
@@ -529,6 +531,7 @@ class Mark:
         import os
 
         import matplotlib.pyplot as plt
+        import pandas as pd
         y_mean = bench.line_names
         y_min = [f'{x}-min' for x in bench.line_names]
         y_max = [f'{x}-max' for x in bench.line_names]
