@@ -2225,12 +2225,12 @@ GatherOutToUbConverter::matchAndRewrite(triton::GatherOutToUbOp op, OpAdaptor ad
   auto funcName = generateUniqueFuncName(moduleOp, funcNameBase);
 
   auto src = adaptor.getSrc();
-  auto indexTile = op.getIndexTile();
+  auto index = op.getIndex();
   auto indexBoundary = op.getIndexBoundary();
   auto dim = op.getDim();
   auto srcStride = op.getSrcStride();
-  auto indexShape = op.getIndexShape();
-  auto offsets = op.getOffsets();
+  auto endOffset = op.getEndOffset();
+  auto startOffset = op.getStartOffset();
   auto other = op.getOther();
 
   auto res = op.getResult();
@@ -2242,10 +2242,10 @@ GatherOutToUbConverter::matchAndRewrite(triton::GatherOutToUbOp op, OpAdaptor ad
       return rewriter.notifyMatchFailure(op, "expected MemRefType for src");
   }
 
-  SmallVector<Type> inputTypes({srcTy, indexTile.getType(), indexBoundary.getType(), dim.getType()});
+  SmallVector<Type> inputTypes({srcTy, index.getType(), indexBoundary.getType(), dim.getType()});
   inputTypes.append(srcStride.getTypes().begin(), srcStride.getTypes().end());
-  inputTypes.append(indexShape.getTypes().begin(), indexShape.getTypes().end());
-  inputTypes.append(offsets.getTypes().begin(), offsets.getTypes().end());
+  inputTypes.append(endOffset.getTypes().begin(), endOffset.getTypes().end());
+  inputTypes.append(startOffset.getTypes().begin(), startOffset.getTypes().end());
   if (other) inputTypes.push_back(other.getType());
 
   auto libFnType = rewriter.getFunctionType(inputTypes, {resTy});
@@ -2253,15 +2253,63 @@ GatherOutToUbConverter::matchAndRewrite(triton::GatherOutToUbOp op, OpAdaptor ad
   SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
 
   rewriter.setInsertionPoint(op);
-  SmallVector<Value> inputVals({src, indexTile, indexBoundary, dim});
+  SmallVector<Value> inputVals({src, index, indexBoundary, dim});
   inputVals.append(srcStride.begin(), srcStride.end());
-  inputVals.append(indexShape.begin(), indexShape.end());
-  inputVals.append(offsets.begin(), offsets.end());
+  inputVals.append(endOffset.begin(), endOffset.end());
+  inputVals.append(startOffset.begin(), startOffset.end());
   if (other) inputVals.push_back(other);
   auto callOp = rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
                                               TypeRange({resTy}),
                                               inputVals);
   rewriter.replaceOp(op, callOp);
+  return success();
+}
+
+LogicalResult
+ScatterUbToOutConverter::matchAndRewrite(triton::ScatterUbToOutOp op, OpAdaptor adaptor,
+                                         ConversionPatternRewriter &rewriter) const
+{
+  auto loc = op.getLoc();
+
+  auto moduleOp = op->getParentOfType<ModuleOp>();
+  rewriter.setInsertionPoint(moduleOp.getBody(),
+                             std::prev(moduleOp.getBody()->end()));
+
+  auto funcName = generateUniqueFuncName(moduleOp, funcNameBase);
+
+  auto ptr = adaptor.getPtr();
+  auto value = op.getValue();
+  auto index = op.getIndex();
+  auto indexBoundary = op.getIndexBoundary();
+  auto dim = op.getDim();
+  auto dstStride = op.getDstStride();
+  auto endOffset = op.getEndOffset();
+  auto startOffset = op.getStartOffset();
+
+  // convert !tt.ptr<f32> to memref<?xf32>
+  auto ptrTy = dyn_cast<MemRefType>(ptr.getType());
+  if (!ptrTy) {
+      return rewriter.notifyMatchFailure(op, "expected MemRefType for ptr");
+  }
+
+  SmallVector<Type> inputTypes({ptrTy, value.getType(), index.getType(),
+                                indexBoundary.getType(), dim.getType()});
+  inputTypes.append(dstStride.getTypes().begin(), dstStride.getTypes().end());
+  inputTypes.append(endOffset.getTypes().begin(), endOffset.getTypes().end());
+  inputTypes.append(startOffset.getTypes().begin(), startOffset.getTypes().end());
+
+  auto libFnType = rewriter.getFunctionType(inputTypes, {});
+  auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
+  SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
+
+  rewriter.setInsertionPoint(op);
+  SmallVector<Value> inputVals({ptr, value, index, indexBoundary, dim});
+  inputVals.append(dstStride.begin(), dstStride.end());
+  inputVals.append(endOffset.begin(), endOffset.end());
+  inputVals.append(startOffset.begin(), startOffset.end());
+  rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
+                                TypeRange({}), inputVals);
+  rewriter.eraseOp(op);
   return success();
 }
 

@@ -729,12 +729,12 @@ def index_put(
 @builtin
 def gather_out_to_ub(
     src: tensor,
-    index_tile: tensor,
+    index: tensor,
     index_boundary: int,
     dim: int,
     src_stride: tuple,
-    index_shape: tuple,
-    offsets: tuple,
+    end_offset: tuple,
+    start_offset: tuple,
     other=None,
     _builder=None
 ):
@@ -744,35 +744,40 @@ def gather_out_to_ub(
 
     Gather operation for different tensor ranks:
     1. 1D index gather:
-        out[i] = src[offsets[0] + index[i]]
-    2. 2D index gather (dim=0 gathers along rows):
-        out[i][j] = src[offsets[0] + index[i][j]][offsets[1] + j] if dim == 0
-        out[i][j] = src[offsets[0] + i][offsets[1] + index[i][j]] if dim == 1
-    3. 3D index gather (dim=0 gathers along the 0th dimension):
-        out[i][j][k] = src[offsets[0] + index[i][j][k]][offsets[1] + j][offsets[2] + k] if dim == 0
-        out[i][j][k] = src[offsets[0] + i][offsets[1] + index[i][j][k]][offsets[2] + k] if dim == 1
-        out[i][j][k] = src[offsets[0] + i][offsets[1] + j][offsets[2] + index[i][j][k]] if dim == 2
+        out[i] = src[start_offset[0] + index[i]]
+    2. 2D index gather (0 <= dim < 2):
+        2.1 dim = 0
+            out[i][j] = src[start_offset[0] + index[i][j]][start_offset[1] + j]
+        2.2 dim = 1
+            out[i][j] = src[start_offset[0] + i][start_offset[1] + index[i][j]]
+    3. 3D index gather (0 <= dim < 3):
+        3.1 dim = 0
+            out[i][j][k] = src[start_offset[0] + index[i][j][k]][start_offset[1] + j][start_offset[2] + k]
+        3.2 dim = 1
+            out[i][j][k] = src[start_offset[0] + i][start_offset[1] + index[i][j][k]][start_offset[2] + k]
+        3.3 dim = 2
+            out[i][j][k] = src[start_offset[0] + i][start_offset[1] + j][start_offset[2] + index[i][j][k]]
 
     :param src: pointer type, the source tensor pointer (in GM)
-    :param index_tile: tensor, a tile of origin index to gather (in UB)
+    :param index: tensor, a tensor to gather (in UB)
     :param index_boundary: int64, the upper boundary for index values
     :param dim: int32, the dimension to gather along
     :param src_stride: tuple of int64, the stride of each dimension of src tensor
-    :param index_shape: tuple of int32, the shape of origin index tensor
-    :param offsets: tuple of int32, the offsets of each dimension for index tensor
+    :param end_offset: tuple of int32, the end offsets of each dimension for index tensor
+    :param start_offset: tuple of int32, the start offsets of each dimension for index tensor
     :param other(Optional): scalar value, the default value when index is out of boundary (in UB)
-    :return: tensor, with the same shape as `index_tile.shape` (in UB)
+    :return: tensor, with the same shape as `index.shape` (in UB)
 
     Constraints
     ***********
-    - `src` and `index_tile` must have the same rank.
+    - `src` and `index` must have the same rank.
     - `src.dtype` only supports `float16`, `bfloat16`, `float32` currently.
-    - `index_tile` must be an integer tensor, with rank between 1 and 5.
-    - `dim` must be valid (0 <= dim < rank(index_tile)).
+    - `index` must be an integer tensor, with rank between 1 and 5.
+    - `dim` must be valid (0 <= dim < rank(index)).
     - `other` must be a scalar value.
-    - For every dimension `i` not equal to `dim`, `index_tile.size[i]` <= `src.size[i]`.
-    - The output shape is the same as `index_tile.shape`. If `index_tile` is None, \
-        the output tensor will be an empty tensor with the same shape as `index_tile`.
+    - For every dimension `i` not equal to `dim`, `index.size[i]` <= `src.size[i]`.
+    - The output shape is the same as `index.shape`. If `index` is None, \
+        the output tensor will be an empty tensor with the same shape as `index`.
 
     Example
     *******
@@ -791,17 +796,17 @@ def gather_out_to_ub(
             mask = (y0_local < 2) & (x1_local < 2)
 
             # Load index tile to UB
-            index_tile = tl.load(index_ptr + y0_local*2 + x1_local, mask)
+            index = tl.load(index_ptr + y0_local*2 + x1_local, mask)
 
             # Call gather_out_to_ub: gather values from src along dim=0
             gathered = gather_out_to_ub(
                 src=src_ptr,
-                index_tile=index_tile,
+                index=index,
                 index_boundary=4,
                 dim=0,
                 src_stride=(2, 1),
-                index_shape=(2, 2),
-                offsets=(0, 0)
+                end_offset=(2, 2),
+                start_offset=(0, 0)
             )
             
             tl.store(out_ptr + y0_local*2 + x1_local, gathered, mask)
@@ -816,8 +821,104 @@ def gather_out_to_ub(
     dim = _constexpr_to_value(dim)
     index_boundary = _constexpr_to_value(index_boundary)
     return semantic.gather_out_to_ub(
-        src, index_tile, index_boundary, dim, 
-        src_stride, index_shape, offsets, other, _builder
+        src, index, index_boundary, dim, 
+        src_stride, end_offset, start_offset, other, _builder
+    )
+
+
+@builtin
+def scatter_ub_to_out(
+    ptr: tensor,
+    value: tensor,
+    index: tensor,
+    index_boundary: int,
+    dim: int,
+    dst_stride: tuple,
+    end_offset: tuple,
+    start_offset: tuple,
+    _builder=None
+):
+    """
+    Scatter a tile from Unified Buffer (UB) into a destination tensor in Global Memory (GM)
+    along a specified dimension, with index-boundary checking.
+
+    Scatter operation for different tensor ranks:
+    1. 1D index scatter:
+        out[start_offset[0] + index[i]] = value[i]
+    2. 2D index scatter (0 <= dim < 2):
+        2.1 dim = 0
+            out[start_offset[0] + index[i][j]][start_offset[1] + j] = value[i][j]
+        2.2 dim = 1
+            out[start_offset[0] + i][start_offset[1] + index[i][j]] = value[i][j]
+    3. 3D index scatter (0 <= dim < 3):
+        3.1 dim = 0
+            out[start_offset[0] + index[i][j][k]][start_offset[1] + j][start_offset[2] + k] = value[i][j][k]
+        3.2 dim = 1
+            out[start_offset[0] + i][start_offset[1] + index[i][j][k]][start_offset[2] + k] = value[i][j][k]
+        3.3 dim = 2
+            out[start_offset[0] + i][start_offset[1] + j][start_offset[2] + index[i][j][k]] = value[i][j][k]
+
+    :param ptr: pointer type, the destination tensor pointer (in GM)
+    :param value: tensor, a tile value to store (in UB)
+    :param index: tensor, a index to scatter (in UB)
+    :param index_boundary: int64, the upper boundary for index values
+    :param dim: int32, the dimension to scatter along
+    :param dst_stride: tuple of int64, the stride of each dimension of destination tensor
+    :param end_offset: tuple of int32, the end offsets of each dimension for index tensor
+    :param start_offset: tuple of int32, the start offsets of each dimension for index tensor
+
+    Constraints
+    ***********
+    - `ptr`, `index` and `value` must have the same rank.
+    - `ptr.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+    - `index` must be an integer tensor, with rank between 1 and 5.
+    - `dim` must be valid (0 <= dim < rank(index)).
+    - For every dimension `i` not equal to `dim`, `index.size[i]` <= `ptr.size[i]`.
+    - The output shape is the same as `index.shape`. If `index` is None, \
+        the output tensor will be an empty tensor with the same shape as `index`.
+
+    Example
+    *******
+    .. code-block:: python
+
+        import torch
+        import triton
+        import triton.language as tl
+        from triton.language.extra.ascend.libdevice import scatter_ub_to_out
+
+        @triton.jit
+        def simple_scatter_kernel(value_ptr, index_ptr, dst_ptr):
+            # index tile shape: [2,2]
+            y0_local = tl.arange(0, 2)[:, None]  # [0,1] rows
+            x1_local = tl.arange(0, 2)[None, :]  # [0,1] cols
+            mask = (y0_local < 2) & (x1_local < 2)
+            
+            value = tl.load(value_ptr + y0_local*2 + x1_local, mask)
+            index = tl.load(index_ptr + y0_local*2 + x1_local, mask)
+            
+            scatter_ub_to_out(
+                ptr=dst_ptr,
+                value=value,
+                index=index,
+                index_boundary=4,
+                dim=0,
+                dst_stride=(2, 1),
+                end_offset=(2, 2),
+                start_offset=(0, 0)
+            )
+
+        dst = torch.zeros((4,2), device='npu', dtype=torch.float32)
+        value = torch.tensor([[1.,2.], [3.,4.]], device='npu')
+        index = torch.tensor([[1,2], [3,0]], device='npu')
+
+        simple_scatter_kernel[(1,)](value, index, dst)
+        print("Scatter result:", dst)  # ref:[[0.,4.], [1.,0.], [0.,2.], [3.,0.]]
+    """
+    dim = _constexpr_to_value(dim)
+    index_boundary = _constexpr_to_value(index_boundary)
+    return semantic.scatter_ub_to_out(
+        ptr, value, index, index_boundary, dim,
+        dst_stride, end_offset, start_offset, _builder
     )
 
 

@@ -768,6 +768,7 @@ from .triton_patch.language.core import (
     insert_slice,
     index_select_simd,
     index_select,
+    scatter_ub_to_out,
     index_put,
     gather_out_to_ub,
     extract_slice,
@@ -978,3 +979,4 @@ language.extra.ascend.libdevice.abs = language.math.abs
 language.extra.ascend.libdevice.index_select_simd = index_select_simd
 language.extra.ascend.libdevice.index_put = index_put
 language.extra.ascend.libdevice.gather_out_to_ub = gather_out_to_ub
+language.extra.ascend.libdevice.scatter_ub_to_out = scatter_ub_to_out

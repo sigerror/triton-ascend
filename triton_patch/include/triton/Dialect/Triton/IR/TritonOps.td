@@ -453,47 +453,100 @@ def TT_GatherOutToUbOp : TT_Op<"gather_out_to_ub", [
 
         The operation takes:
         - src: pointer type, the source tensor pointer (in GM)
-        - index_tile: tensor, a tile of origin index to gather (in UB)
+        - index: tensor, a tensor to gather (in UB)
         - index_boundary: int64, the upper boundary for index values
         - dim: int32, the dimension to gather along
         - src_stride: tuple of int64, the stride of each dimension of src tensor
-        - index_shape: tuple of int32, the shape of origin index tensor
-        - offsets: tuple of int32, the offsets of each dimension for index tensor
+        - end_offset: tuple of int32, the end offsets of each dimension for index tensor
+        - start_offset: tuple of int32, the start offsets of each dimension for index tensor
         - other(Optional): scalar value, the default value when index is out of boundary (in UB)
 
         Returns:
-          a tensor, with the same shape as `index_tile.shape` (in UB)
+          a tensor, with the same shape as `index.shape` (in UB)
 
         Constraints:
-        - `src` and `index_tile` must have the same rank.
+        - `src` and `index` must have the same rank.
         - `src.dtype` only supports `float16`, `bfloat16`, `float32` currently.
-        - `index_tile` must be an integer tensor, with rank between 1 and 5.
-        - `dim` must be valid (0 <= dim < rank(index_tile)).
+        - `index` must be an integer tensor, with rank between 1 and 5.
+        - `dim` must be valid (0 <= dim < rank(index)).
         - `other` must be a scalar value.
-        - For every dimension `i` not equal to `dim`, `index_tile.size[i]` <= `src.size[i]`.
-        - The output shape is the same as `index_tile.shape`. If `index_tile` is None, \
-            the output tensor will be an empty tensor with the same shape as `index_tile`.
+        - For every dimension `i` not equal to `dim`, `index.size[i]` <= `src.size[i]`.
+        - The output shape is the same as `index.shape`. If `index` is None, \
+            the output tensor will be an empty tensor with the same shape as `index`.
     }];
 
     let arguments = (
       ins TT_Ptr:$src,
-          TT_Tensor:$indexTile,
+          TT_Tensor:$index,
           TT_Int:$indexBoundary,
           TT_Int:$dim,
           Variadic<AnyTypeOf<[I32, I64]>>:$srcStride,
-          Variadic<AnyTypeOf<[I32, I64]>>:$indexShape,
-          Variadic<AnyTypeOf<[I32, I64]>>:$offsets,
+          Variadic<AnyTypeOf<[I32, I64]>>:$endOffset,
+          Variadic<AnyTypeOf<[I32, I64]>>:$startOffset,
           Optional<TT_Type>:$other
     );
 
     let results = (outs TT_Tensor:$result);
 
     let assemblyFormat = [{
-      $src `:` type($src) `,` $indexTile `:` type($indexTile) `,`
+      $src `:` type($src) `,` $index `:` type($index) `,`
       $indexBoundary `:` type($indexBoundary) `,` $dim `:` type($dim) `,`
-     `[` $srcStride `:` type($srcStride) `]` `,` `[` $indexShape `:` type($indexShape) `]` `,` 
-     `[` $offsets `:` type($offsets) `]` (`,` $other^ `:` type($other))?
+     `[` $srcStride `:` type($srcStride) `]` `,` `[` $endOffset `:` type($endOffset) `]` `,` 
+     `[` $startOffset `:` type($startOffset) `]` (`,` $other^ `:` type($other))?
       attr-dict `->` type($result)
+    }];
+}
+
+//
+// ScatterUbToOut Op
+//
+def TT_ScatterUbToOutOp : TT_Op<"scatter_ub_to_out", [
+  MemoryEffects<[MemWrite<GlobalMemory>]>,
+  SameVariadicOperandSize,
+]> {
+    let summary = "scatter store from a tensor pointer with the embedding semantics";
+
+    let description = [{
+        Scatter a tile from Unified Buffer (UB) into a destination tensor in Global Memory (GM)
+        along a specified dimension, with index-boundary checking.
+
+        The operation takes:
+        - ptr: pointer type, the destination tensor pointer (in GM)
+        - value: tensor, a tile value to store (in UB)
+        - index: tensor, a tile index to scatter (in UB)
+        - index_boundary: int, the upper boundary for index values
+        - dim: int, the dimension to scatter along
+        - dst_stride: tuple of int, the stride of each dimension of destination tensor
+        - end_offset: tuple of int32, the end offsets of each dimension for index tensor
+        - start_offset: tuple of int32, the start offsets of each dimension for index tensor
+
+        Constraints:
+        - `ptr` and `index` must have the same rank.
+        - `ptr.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+        - `index` must be an integer tensor, with rank between 1 and 5.
+        - `dim` must be valid (0 <= dim < rank(index)).
+        - For every dimension `i` not equal to `dim`, `index.size[i]` <= `ptr.size[i]`.
+        - The output shape is the same as `index.shape`. If `index` is None, \
+            the output tensor will be an empty tensor with the same shape as `index`.
+    }];
+
+    let arguments = (
+      ins TT_Ptr:$ptr,
+          TT_Tensor:$value,
+          TT_Tensor:$index,
+          TT_Int:$indexBoundary,
+          TT_Int:$dim,
+          Variadic<AnyTypeOf<[I32, I64]>>:$dstStride,
+          Variadic<AnyTypeOf<[I32, I64]>>:$endOffset,
+          Variadic<AnyTypeOf<[I32, I64]>>:$startOffset
+    );
+
+    let assemblyFormat = [{
+      $ptr `:` type($ptr) `,` $value `:` type($value) `,` `,` $index `:` type($index) `,`
+      $indexBoundary `:` type($indexBoundary) `,` $dim `:` type($dim) `,`
+     `[` $dstStride `:` type($dstStride) `]` `,` `[` $endOffset `:` type($endOffset) `]` `,`
+     `[` $startOffset `:` type($startOffset) `]`
+      attr-dict
     }];
 }
 

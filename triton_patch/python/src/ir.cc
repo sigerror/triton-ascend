@@ -1831,23 +1831,39 @@ void init_triton_ir(py::module &&m) {
                 self.create<IndexPutOp>(ptr, index, value, dim_val, dstShape, dstOffset);
             })
       .def("create_gather_out_to_ub",
-           [](TritonOpBuilder &self, Value &src, Value &indexTile, const int64_t indexBoundary,
-              const int32_t dim, std::vector<Value> &srcStride, std::vector<Value> &indexShape,
-              std::vector<Value> &offsets, std::optional<Value> &other) -> Value {
+           [](TritonOpBuilder &self, Value &src, Value &index, const int64_t indexBoundary,
+              const int32_t dim, std::vector<Value> &srcStride, std::vector<Value> &endOffset,
+              std::vector<Value> &startOffset, std::optional<Value> &other) -> Value {
                 auto elemTy = cast<PointerType>(src.getType()).getPointeeType();
-                auto idxTy = cast<RankedTensorType>(indexTile.getType());
+                auto idxTy = cast<RankedTensorType>(index.getType());
                 auto idxShape = idxTy.getShape();
                 std::vector<int64_t> retShape(idxShape.begin(), idxShape.end());
                 auto resType = RankedTensorType::get(retShape, elemTy);
 
                 // indexBoundary need to be i64 type
-                auto dimI64Ty = self.getBuilder().getI64Type();
-                auto bound_val = self.create<arith::ConstantIntOp>(indexBoundary, dimI64Ty);
+                auto BoundI64Ty = self.getBuilder().getI64Type();
+                auto bound_val = self.create<arith::ConstantIntOp>(indexBoundary, BoundI64Ty);
                 // dim need to be i32 type
                 auto dimI32Ty = self.getBuilder().getI32Type();
                 auto dim_val = self.create<arith::ConstantIntOp>(dim, dimI32Ty);
-                return self.create<GatherOutToUbOp>(resType, src, indexTile, bound_val, dim_val,
-                                                    srcStride, indexShape, offsets, other.value_or(Value()));
+                return self.create<GatherOutToUbOp>(resType, src, index, bound_val, dim_val,
+                                                    srcStride, endOffset, startOffset, other.value_or(Value()));
+            })
+      .def("create_scatter_ub_to_out",
+           [](TritonOpBuilder &self, Value &ptr, Value &value, Value &index,
+              const int64_t indexBoundary, const int32_t dim, std::vector<Value> &dstStride,
+              std::vector<Value> &endOffset, std::vector<Value> &startOffset) -> void {
+                auto idxTy = cast<RankedTensorType>(index.getType());
+
+                // indexBoundary need to be i64 type
+                auto BoundI64Ty = self.getBuilder().getI64Type();
+                auto bound_val = self.create<arith::ConstantIntOp>(indexBoundary, BoundI64Ty);
+                // dim need to be i32 type
+                auto dimI32Ty = self.getBuilder().getI32Type();
+                auto dim_val = self.create<arith::ConstantIntOp>(dim, dimI32Ty);
+
+                self.create<ScatterUbToOutOp>(ptr, value, index, bound_val, dim_val,
+                                              dstStride, endOffset, startOffset);
             })
       // Add mod
       .def("create_mod",

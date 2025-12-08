@@ -1144,12 +1144,12 @@ def index_put(
 
 def gather_out_to_ub(
     src: tl.tensor,
-    index_tile: tl.tensor,
+    index: tl.tensor,
     index_boundary: int,
     dim: int,
     src_stride: Tuple,
-    index_shape: Tuple,
-    offsets: Tuple,
+    end_offset: Tuple,
+    start_offset: Tuple,
     other: Optional[numbers.Number] = None,
     _builder: ir.builder = None
 ):
@@ -1159,39 +1159,45 @@ def gather_out_to_ub(
 
     Gather operation for different tensor ranks:
     1. 1D index gather:
-        out[i] = src[offsets[0] + index[i]]
-    2. 2D index gather (dim=0 gathers along rows):
-        out[i][j] = src[offsets[0] + index[i][j]][offsets[1] + j] if dim == 0
-        out[i][j] = src[offsets[0] + i][offsets[1] + index[i][j]] if dim == 1
-    3. 3D index gather (dim=0 gathers along the 0th dimension):
-        out[i][j][k] = src[offsets[0] + index[i][j][k]][offsets[1] + j][offsets[2] + k] if dim == 0
-        out[i][j][k] = src[offsets[0] + i][offsets[1] + index[i][j][k]][offsets[2] + k] if dim == 1
-        out[i][j][k] = src[offsets[0] + i][offsets[1] + j][offsets[2] + index[i][j][k]] if dim == 2
+        out[i] = src[start_offset[0] + index[i]]
+    2. 2D index gather (0 <= dim < 2):
+        2.1 dim = 0
+            out[i][j] = src[start_offset[0] + index[i][j]][start_offset[1] + j]
+        2.2 dim = 1
+            out[i][j] = src[start_offset[0] + i][start_offset[1] + index[i][j]]
+    3. 3D index gather (0 <= dim < 3):
+        3.1 dim = 0
+            out[i][j][k] = src[start_offset[0] + index[i][j][k]][start_offset[1] + j][start_offset[2] + k]
+        3.2 dim = 1
+            out[i][j][k] = src[start_offset[0] + i][start_offset[1] + index[i][j][k]][start_offset[2] + k]
+        3.3 dim = 2
+            out[i][j][k] = src[start_offset[0] + i][start_offset[1] + j][start_offset[2] + index[i][j][k]]
 
     Args:
     - src: pointer type, the source tensor pointer (in GM)
-    - index_tile: tensor, a tile of origin index to gather (in UB)
+    - index: tensor, a tensor to gather (in UB)
     - index_boundary: int64, the upper boundary for index values
     - dim: int32, the dimension to gather along
     - src_stride: tuple of int64, the stride of each dimension of src tensor
-    - index_shape: tuple of int32, the shape of origin index tensor
-    - offsets: tuple of int32, the offsets of each dimension for index tensor
+    - end_offset: tuple of int32, the end offsets of each dimension for index tensor
+    - start_offset: tuple of int32, the start offsets of each dimension for index tensor
     - other(Optional): scalar value, the default value when index is out of boundary (in UB)
 
     Returns:
-        a tensor, with the same shape as `index_tile.shape` (in UB)
+        a tensor, with the same shape as `index.shape` (in UB)
 
     Constraints:
-    - `src` and `index_tile` must have the same rank.
+    - `src` and `index` must have the same rank.
     - `src.dtype` only supports `float16`, `bfloat16`, `float32` currently.
-    - `index_tile` must be an integer tensor, with rank between 1 and 5.
-    - `dim` must be valid (0 <= dim < rank(index_tile)).
+    - `index` must be an integer tensor, with rank between 1 and 5.
+    - `dim` must be valid (0 <= dim < rank(index)).
     - `other` must be a scalar value.
-    - For every dimension `i` not equal to `dim`, `index_tile.size[i]` <= `src.size[i]`.
-    - The output shape is the same as `index_tile.shape`. If `index_tile` is None, \
-        the output tensor will be an empty tensor with the same shape as `index_tile`.
+    - For every dimension `i` not equal to `dim`, `index.size[i]` <= `src.size[i]`.
+    - The output shape is the same as `index.shape`. If `index` is None, \
+        the output tensor will be an empty tensor with the same shape as `index`.
+
     """
-    assert index_tile.dtype.is_int(), "index_tile must be an integer tensor"
+    assert index.dtype.is_int(), "index must be an integer tensor"
     if not src.dtype.element_ty.is_floating():
         raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {src.dtype.element_ty}")
 
@@ -1200,34 +1206,109 @@ def gather_out_to_ub(
     if not isinstance(dim, int):
         raise ValueError("dim must be of type tl.constexpr")
 
-    idx_rank = len(index_tile.shape)
+    idx_rank = len(index.shape)
     if idx_rank < 1 or idx_rank > 5:
-        raise ValueError(f"index_tile rank must be in [1, 5], got rank={idx_rank}")
+        raise ValueError(f"index rank must be in [1, 5], got rank={idx_rank}")
     if dim < 0 or dim >= idx_rank:
-        raise ValueError(f"dim must satisfy 0<=dim<index_tile.rank ({idx_rank}), got dim={dim}")
+        raise ValueError(f"dim must satisfy 0<=dim<index.rank ({idx_rank}), got dim={dim}")
 
     if other is not None:
         other = cast(other, src.dtype.element_ty, _builder)
 
-    # src stride are always i64
+    # src stride need to be i64
     src_stride = [_convert_elem_to_ir_value(_builder, elem, True) for elem in src_stride]
-    # index shape and offsets are always i32
-    index_shape = [_convert_elem_to_ir_value(_builder, elem, False) for elem in index_shape]
-    offsets = [_convert_elem_to_ir_value(_builder, elem, False) for elem in offsets]
+    # end offset and start offset need to be i32
+    end_offset = [_convert_elem_to_ir_value(_builder, elem, False) for elem in end_offset]
+    start_offset = [_convert_elem_to_ir_value(_builder, elem, False) for elem in start_offset]
 
-    if len(src_stride) != idx_rank or len(index_shape) != idx_rank or len(offsets) != idx_rank:
-        raise ValueError(f"len(src_stride)==len(index_shape)==len(offsets)==index_tile.rank required, "
-                         f"got {len(src_stride)}, {len(index_shape)}, {len(offsets)}, {idx_rank}")
+    if len(src_stride) != idx_rank or len(end_offset) != idx_rank or len(start_offset) != idx_rank:
+        raise ValueError(f"len(src_stride)==len(end_offset)==len(start_offset)==index.rank required, "
+                         f"got {len(src_stride)}, {len(end_offset)}, {len(start_offset)}, {idx_rank}")
 
     ret = _builder.create_gather_out_to_ub(
         src.handle,
-        index_tile.handle,
+        index.handle,
         index_boundary,
         dim,
         src_stride,
-        index_shape,
-        offsets,
+        end_offset,
+        start_offset,
         other if other else None
     )
-    ret_shape = [_unwrap_if_constexpr(s) for s in index_tile.shape]
+    ret_shape = [_unwrap_if_constexpr(s) for s in index.shape]
     return wrap_tensor(ret, src.dtype.element_ty, ret_shape)
+
+
+def scatter_ub_to_out(
+    ptr: tl.tensor,
+    value: tl.tensor,
+    index: tl.tensor,
+    index_boundary: int,
+    dim: int,
+    dst_stride: tuple,
+    end_offset: tuple,
+    start_offset: tuple,
+    _builder=None
+):
+    """
+    Scatter a tile from Unified Buffer (UB) into a destination tensor in Global Memory (GM)
+    along a specified dimension, with index-boundary checking.
+
+    Args:
+    - ptr: pointer type, the destination tensor pointer (in GM)
+    - value: tensor, a tile value to store (in UB)
+    - index: tensor, a tile index to scatter (in UB)
+    - index_boundary: int, the upper boundary for index values
+    - dim: int, the dimension to scatter along
+    - dst_stride: tuple of int, the stride of each dimension of destination tensor
+    - end_offset: tuple of int32, the end offsets of each dimension for index tensor
+    - start_offset: tuple of int32, the start offsets of each dimension for index tensor
+
+    Constraints:
+    - `ptr` and `index` must have the same rank.
+    - `ptr.dtype` only supports `float16`, `bfloat16`, `float32` currently.
+    - `index` must be an integer tensor, with rank between 1 and 5.
+    - `dim` must be valid (0 <= dim < rank(index)).
+    - For every dimension `i` not equal to `dim`, `index.size[i]` <= `ptr.size[i]`.
+    - The output shape is the same as `index.shape`. If `index` is None, \
+        the output tensor will be an empty tensor with the same shape as `index`.
+
+    """
+    assert index.dtype.is_int(), "index must be an integer tensor"
+    if not ptr.dtype.element_ty.is_floating():
+        raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {ptr.dtype.element_ty}")
+
+    if not isinstance(index_boundary, int):
+        raise ValueError("index_boundary must be of type tl.constexpr")
+    if not isinstance(dim, int):
+        raise ValueError("dim must be of type tl.constexpr")
+
+    idx_rank = len(index.shape)
+    if idx_rank < 1 or idx_rank > 5:
+        raise ValueError(f"index rank must be in [1, 5], got rank={idx_rank}")
+    if dim < 0 or dim >= idx_rank:
+        raise ValueError(f"dim must satisfy 0<=dim<index.rank (index.rank={idx_rank}), got dim={dim}")
+
+    # dst stride are always i64
+    dst_stride = [_convert_elem_to_ir_value(_builder, elem, True) for elem in dst_stride]
+    # end offset and start offset need to be i32
+    end_offset = [_convert_elem_to_ir_value(_builder, elem, False) for elem in end_offset]
+    start_offset = [_convert_elem_to_ir_value(_builder, elem, False) for elem in start_offset]
+
+    if len(dst_stride) != idx_rank or len(end_offset) != idx_rank or len(start_offset) != idx_rank:
+        raise ValueError(f"len(dst_stride)==len(end_offset)==len(start_offset)==index.rank required, "
+                         f"got {len(dst_stride)}, {len(end_offset)}, {len(start_offset)}, {idx_rank}")
+
+    return tl.tensor(
+        _builder.create_scatter_ub_to_out(
+            ptr.handle,
+            value.handle,
+            index.handle,
+            index_boundary,
+            dim,
+            dst_stride,
+            end_offset,
+            start_offset
+        ),
+        tl.void
+    )

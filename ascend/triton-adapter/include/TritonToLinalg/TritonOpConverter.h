@@ -606,6 +606,16 @@ private:
   static constexpr llvm::StringRef funcNameBase = "triton__gather_out_to_ub";
 };
 
+class ScatterUbToOutConverter : public OpConversionPattern<triton::ScatterUbToOutOp> {
+public:
+  using OpConversionPattern<triton::ScatterUbToOutOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(triton::ScatterUbToOutOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+private:
+  static constexpr llvm::StringRef funcNameBase = "triton_scatter_ub_to_out";
+};
+
 class IndirectLoadConverter : public OpConversionPattern<triton::IndirectLoadOp> {
 public:
   using OpConversionPattern<triton::IndirectLoadOp>::OpConversionPattern;
