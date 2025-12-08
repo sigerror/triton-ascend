@@ -1074,29 +1074,36 @@ def index_put(
     index: tl.tensor,
     value: tl.tensor,
     dim: int,
-    dst_shape: Tuple,
-    dst_offset: Tuple,
+    index_boundary: int,
+    end_offset: Tuple,
+    start_offset: Tuple,
+    dst_stride: Tuple,
     builder: ir.builder
 ):
     """
     Index put values from a tensor into a destination tensor.
 
     Index put operation for different tensor ranks:
-    1. 2D index scatter (dim=0 scatters along rows):
-        out[index[i]][dst_offset[1] + j] = value[i][j] if dim == 0
-        out[dst_offset[0] + i][index[j]] = value[i][j] if dim == 1
-    2. 3D index scatter (dim=0 scatters along the 0th dimension):
-        out[index[i]][dst_offset[1] + j][dst_offset[2] + k] = value[i][j][k] if dim == 0
-        out[dst_offset[0] + i][index[j]][dst_offset[2] + k] = value[i][j][k] if dim == 1
-        out[dst_offset[0] + i][dst_offset[1] + j][index[k]] = value[i][j][k] if dim == 2
-    
+    1. 2D index scatter (0 <= dim < 1):
+        1.1 dim = 0
+        out[index[i]][start_offset[1]:end_offset[1]] = value[i][0:end_offset[1]-start_offset[1]]
+    2. 3D index scatter (0 <= dim < 2):
+        2.1 dim = 0
+            out[index[i]][start_offset[1]:end_offset[1]][start_offset[2]:end_offset[2]] 
+                = value[i][0:end_offset[1]-start_offset[1]][0:end_offset[2]-start_offset[2]]
+        2.2 dim = 1
+            out[start_offset[0]:end_offset[0]][index[j]][start_offset[2]:end_offset[2]] 
+                = value[0:end_offset[0]-start_offset[0]][j][0:end_offset[2]-start_offset[2]]
+
     Args:
     - ptr: pointer type, the destination tensor pointer (in GM)
     - index: tensor, a index to scatter (in UB)
     - value: tensor, a value to store (in UB)
-    - dim: int, the dimension to scatter along
-    - dst_shape: tuple of int, the shape of destination tensor
-    - dst_offset: tuple of int, the offsets of each dimension for destination tensor
+    - dim: int32, the dimension to scatter along
+    - index_boundary: int64, the upper boundary for index values
+    - end_offset: tuple of int, the offsets of each dimension for the end of the scatter region
+    - start_offset: tuple of int, the offsets of each dimension for the start of the scatter region
+    - dst_stride: tuple of int, the stride of each dimension of destination tensor
 
     Constraints:
     - `ptr` and `value` must have the same rank.
@@ -1132,14 +1139,16 @@ def index_put(
         )
 
     require_i64 = index.dtype.is_int64()
-    dst_shape = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in dst_shape]
-    dst_offset = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in dst_offset]
+    end_offset = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in end_offset]
+    start_offset = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in start_offset]
+    dst_stride = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in dst_stride]
 
-    if len(dst_shape) != v_rank or len(dst_offset) != v_rank:
-        raise ValueError(f"len(dst_shape)==len(dst_offset)==value.rank required, "
-                         f"got {len(dst_shape)}, {len(dst_offset)}, {v_rank}")
+    if len(end_offset) != v_rank or len(start_offset) != v_rank or len(dst_stride) != v_rank:
+        raise ValueError(f"len(end_offset)==len(start_offset)==len(dst_stride)==value.rank required, "
+                         f"got {len(end_offset)}, {len(start_offset)}, {len(dst_stride)}, {v_rank}")
 
-    return tl.tensor(builder.create_index_put(ptr.handle, index.handle, value.handle, dim, dst_shape, dst_offset), tl.void)
+    return tl.tensor(builder.create_index_put(ptr.handle, index.handle, value.handle, dim,
+                                              index_boundary, end_offset, start_offset, dst_stride), tl.void)
 
 
 def gather_out_to_ub(

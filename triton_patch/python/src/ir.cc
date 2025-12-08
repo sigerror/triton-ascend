@@ -1822,13 +1822,17 @@ void init_triton_ir(py::module &&m) {
             })
       .def("create_index_put",
            [](TritonOpBuilder &self, Value &ptr, Value &index,
-              Value &value, const int32_t dim,
-              std::vector<Value> &dstShape, std::vector<Value> &dstOffset) -> void {
+              Value &value, const int32_t dim, const int64_t indexBoundary,
+              std::vector<Value> &endOffset, std::vector<Value> &startOffset,
+              std::vector<Value> &dstStride) -> void {
                 // dim need to be i32 type
                 auto dimI32Ty = self.getBuilder().getI32Type();
                 auto dim_val = self.create<arith::ConstantIntOp>(dim, dimI32Ty);
+                // indexBoundary need to be i64 type
+                auto BoundI64Ty = self.getBuilder().getI64Type();
+                auto bound_val = self.create<arith::ConstantIntOp>(indexBoundary, BoundI64Ty);
 
-                self.create<IndexPutOp>(ptr, index, value, dim_val, dstShape, dstOffset);
+                self.create<IndexPutOp>(ptr, index, value, dim_val, bound_val, endOffset, startOffset, dstStride);
             })
       .def("create_gather_out_to_ub",
            [](TritonOpBuilder &self, Value &src, Value &index, const int64_t indexBoundary,

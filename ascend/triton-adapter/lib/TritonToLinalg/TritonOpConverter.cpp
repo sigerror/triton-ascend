@@ -2186,8 +2186,10 @@ IndexPutConverter::matchAndRewrite(triton::IndexPutOp op, OpAdaptor adaptor,
   auto index = op.getIndex();
   auto value = op.getValue();
   auto dim = op.getDim();
-  auto dstShape = op.getDstShape();
-  auto dstOffset = adaptor.getDstOffset();
+  auto indexBoundary = op.getIndexBoundary();
+  auto endOffset = op.getEndOffset();
+  auto startOffset = op.getStartOffset();
+  auto dstStride = adaptor.getDstStride();
 
   // convert !tt.ptr<f32> to memref<?xf32>
   auto ptrTy = dyn_cast<MemRefType>(ptr.getType());
@@ -2195,17 +2197,19 @@ IndexPutConverter::matchAndRewrite(triton::IndexPutOp op, OpAdaptor adaptor,
       return rewriter.notifyMatchFailure(op, "expected MemRefType for ptr");
   }
   SmallVector<Type> inputTypes({ptrTy, index.getType(), value.getType(),
-                                dim.getType()});
-  inputTypes.append(dstShape.getTypes().begin(), dstShape.getTypes().end());
-  inputTypes.append(dstOffset.getTypes().begin(), dstOffset.getTypes().end());
+                                dim.getType(), indexBoundary.getType()});
+  inputTypes.append(endOffset.getTypes().begin(), endOffset.getTypes().end());
+  inputTypes.append(startOffset.getTypes().begin(), startOffset.getTypes().end());
+  inputTypes.append(dstStride.getTypes().begin(), dstStride.getTypes().end());
   auto libFnType = rewriter.getFunctionType(inputTypes, {});
   auto funcOp = rewriter.create<func::FuncOp>(loc, funcName.str(), libFnType);
   SymbolTable::setSymbolVisibility(funcOp, SymbolTable::Visibility::Private);
 
   rewriter.setInsertionPoint(op);
-  SmallVector<Value> inputVals({ptr, index, value, dim});
-  inputVals.append(dstShape.begin(), dstShape.end());
-  inputVals.append(dstOffset.begin(), dstOffset.end());
+  SmallVector<Value> inputVals({ptr, index, value, dim, indexBoundary});
+  inputVals.append(endOffset.begin(), endOffset.end());
+  inputVals.append(startOffset.begin(), startOffset.end());
+  inputVals.append(dstStride.begin(), dstStride.end());
   rewriter.create<func::CallOp>(loc, funcOp.getSymNameAttr(),
                                 TypeRange({}), inputVals);
   rewriter.eraseOp(op);

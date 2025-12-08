@@ -408,9 +408,12 @@ def TT_IndexPutOp : TT_Op<"index_put", [
         - ptr: pointer type, the destination tensor pointer (in GM)
         - index: tensor, a index to scatter (in UB)
         - value: tensor, a value to store (in UB)
-        - dim: int, the dimension to scatter along
-        - dst_shape: tuple of int, the shape of destination tensor
-        - dst_offset: tuple of int, the offsets of each dimension for destination tensor
+        - dim: int32, the dimension to scatter along
+        - index_boundary: int64, the upper boundary for index values
+        - end_offset: tuple of int, the offsets of each dimension for the end of the scatter region
+        - start_offset: tuple of int, the offsets of each dimension for the start of the scatter region
+        - dst_stride: tuple of int, the stride of each dimension of destination tensor
+
 
         Constraints:
         - `ptr` and `value` must have the same rank.
@@ -426,14 +429,17 @@ def TT_IndexPutOp : TT_Op<"index_put", [
           TT_Tensor:$index,
           TT_Tensor:$value,
           TT_Int:$dim,
-          Variadic<AnyTypeOf<[I32, I64]>>:$dstShape,
-          Variadic<AnyTypeOf<[I32, I64]>>:$dstOffset
+          TT_Int:$indexBoundary,
+          Variadic<AnyTypeOf<[I32, I64]>>:$endOffset,
+          Variadic<AnyTypeOf<[I32, I64]>>:$startOffset,
+          Variadic<AnyTypeOf<[I32, I64]>>:$dstStride
     );
 
     let assemblyFormat = [{
       $ptr `:` type($ptr) `,` $index `:` type($index) `,`
-      $value `:` type($value) `,` $dim `:` type($dim) `,`
-     `[` $dstShape `:` type($dstShape) `]` `,` `[` $dstOffset `:` type($dstOffset) `]`
+      $value `:` type($value) `,` $dim `:` type($dim) `,` $indexBoundary `:` type($indexBoundary) `,`
+     `[` $endOffset `:` type($endOffset) `]` `,` `[` $startOffset `:` type($startOffset) `]` `,`
+     `[` $dstStride `:` type($dstStride) `]`
       attr-dict
     }];
 }

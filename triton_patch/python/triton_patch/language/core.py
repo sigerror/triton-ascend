@@ -656,28 +656,36 @@ def index_put(
     index: tensor,
     value: tensor,
     dim: int,
-    dst_shape: tuple,
-    dst_offset: tuple,
+    index_boundary: int,
+    end_offset: tuple,
+    start_offset: tuple,
+    dst_stride: tuple,
     _builder=None
 ):
     """
     Index put values from a tensor into a destination tensor.
 
     Index put operation for different tensor ranks:
-    1. 2D index scatter (dim=0 scatters along rows):
-        out[index[i]][dst_offset[1] + j] = value[i][j] if dim == 0
-        out[dst_offset[0] + i][index[j]] = value[i][j] if dim == 1
-    2. 3D index scatter (dim=0 scatters along the 0th dimension):
-        out[index[i]][dst_offset[1] + j][dst_offset[2] + k] = value[i][j][k] if dim == 0
-        out[dst_offset[0] + i][index[j]][dst_offset[2] + k] = value[i][j][k] if dim == 1
-        out[dst_offset[0] + i][dst_offset[1] + j][index[k]] = value[i][j][k] if dim == 2
+    1. 2D index scatter (0 <= dim < 1):
+        1.1 dim = 0
+        out[index[i]][start_offset[1]:end_offset[1]] = value[i][0:end_offset[1]-start_offset[1]]
+    2. 3D index scatter (0 <= dim < 2):
+        2.1 dim = 0
+            out[index[i]][start_offset[1]:end_offset[1]][start_offset[2]:end_offset[2]] 
+                = value[i][0:end_offset[1]-start_offset[1]][0:end_offset[2]-start_offset[2]]
+        2.2 dim = 1
+            out[start_offset[0]:end_offset[0]][index[j]][start_offset[2]:end_offset[2]] 
+                = value[0:end_offset[0]-start_offset[0]][j][0:end_offset[2]-start_offset[2]]
+
 
     :param ptr: pointer type, the destination tensor pointer (in GM)
     :param index: tensor, a index to scatter (in UB)
     :param value: tensor, a value to store (in UB)
-    :param dim: int, the dimension to scatter along
-    :param dst_shape: tuple of int, the shape of destination tensor
-    :param dst_offset: tuple of int, the offsets of each dimension for destination tensor
+    :param dim: int32, the dimension to scatter along
+    :param index_boundary: int64, the upper boundary for index values
+    :param end_offset: tuple of int, the offsets of each dimension for the end of the scatter region
+    :param start_offset: tuple of int, the offsets of each dimension for the start of the scatter region
+    :param dst_stride: tuple of int, the stride of each dimension of destination tensor
 
     Constraints
     ***********
@@ -711,8 +719,10 @@ def index_put(
                 index=index_tile,
                 value=value_tile,
                 dim=0,
-                dst_shape=(4, 2),
-                dst_offset=(0, 0)
+                index_boundary=4,
+                end_offset=(2, 2),
+                start_offset=(0, 0),
+                dst_stride=(2, 1)
             )
 
         dst = torch.zeros((4,2), device='npu', dtype=torch.float32)
@@ -723,7 +733,9 @@ def index_put(
         print("IndexPut result:", dst) # ref:[[3.,4.], [0.,0.], [1.,2.], [0.,0.]]
     """
     dim = _constexpr_to_value(dim)
-    return semantic.index_put(ptr, index, value, dim, dst_shape, dst_offset, _builder)
+    index_boundary = _constexpr_to_value(index_boundary)
+    return semantic.index_put(ptr, index, value, dim, index_boundary, 
+                              end_offset, start_offset, dst_stride, _builder)
 
 
 @builtin
