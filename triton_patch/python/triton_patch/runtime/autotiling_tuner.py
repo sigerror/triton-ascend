@@ -89,6 +89,7 @@ class AutoTilingTuner(Autotuner):
         self.low_dims = None
         self.dual_reduction = False
         self.persistent_reduction = False
+        self.input_ptr_num = 0
         if len(key) > len(valid_axis_names):
             raise ValueError("Number of parameters exceeds the number of available axes.")
         self.keys = {axis: param for axis, param in zip(valid_axis_names, key)}
@@ -117,12 +118,13 @@ class AutoTilingTuner(Autotuner):
             dtype,
             self.persistent_reduction,
             self.dual_reduction,
+            self.input_ptr_num,
         )
         tile_gen = TileGenerator(kernel_meta=kernel_meta)
         tile_gen.descend_split_tiling()
 
         self.gen_configs.clear()
-        self.gen_configs = list(tile_gen.configs.values())
+        self.gen_configs = tile_gen.configs
         if len(self.gen_configs) == 0:
             print(
                 "[WARNING] The generated candidate tiling configs are empty based on provided parameters!"

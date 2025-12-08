@@ -31,9 +31,14 @@ prop = driver.active.utils.get_device_properties(device)
 
 num_cube_core = prop["num_aicore"]
 num_vector_core = prop["num_aicore"]
+num_ub_max = 192
 
-if "Ascend910B" in target.arch:
+ASCEND_VARIANTS = ["Ascend910B", "Ascend910_93", "Ascend910_95"]
+if any(variant in target.arch for variant in ASCEND_VARIANTS):
     num_vector_core = num_cube_core * 2
+
+if '910_95' in target.arch:
+    num_ub_max = 256
 
 # wrapper npu 32 bytes align, get and pass unalign info to triton meta
 # then autotune choose tiling param and send them to bishengIR
