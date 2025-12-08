@@ -99,6 +99,7 @@ private:
                                                 unsigned int launchGridRank);
 
   LogicalResult processDescriptorOperations(ModuleOp moduleOp);
+  LogicalResult processPtrBroadcastOperations(ModuleOp moduleOp);
 
 public:
   void getDependentDialects(DialectRegistry &registry) const override;

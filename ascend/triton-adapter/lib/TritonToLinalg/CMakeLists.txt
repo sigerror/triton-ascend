@@ -5,6 +5,7 @@ add_triton_library(TritonToLinalg
         ArgMinMaxConverter.cpp
         DescriptorConverter.cpp
         TritonOpConverter.cpp
+        HoistBroadcast.cpp
         BlockPtrAnalysis.cpp
         MaskAnalysis.cpp
         UseAnalysis.cpp
