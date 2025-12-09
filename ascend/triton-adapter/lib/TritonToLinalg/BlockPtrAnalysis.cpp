@@ -477,6 +477,8 @@ void BlockDataParser::parse(
     parse(tensorCastOp.getSource(), data, loc, rewriter, known);
   } else if (auto fillOp = operand.getDefiningOp<linalg::FillOp>()) {
     parseFill(fillOp, data, loc, rewriter, known);
+  } else if (auto selectOp = operand.getDefiningOp<arith::SelectOp>()){
+    parseSelect(selectOp, data, loc, rewriter, known);
   } else {
     operand.dump();
     llvm_unreachable("encountered AddPtrOp produced by unsupported operation");
@@ -943,6 +945,44 @@ void BlockDataParser::parseFill(linalg::FillOp op, BlockData &data,
   }
   if (data.isScalar()) {
     data.getOffsetsRef()[0] = data.getScalarRef();
+  }
+}
+
+void BlockDataParser::parseSelect(
+    arith::SelectOp op, BlockData &data, const Location &loc,
+    ConversionPatternRewriter &rewriter,
+    const llvm::SmallDenseMap<Value, BlockData> &known) {
+  assert(data.isEmpty());
+  auto res = op.getResult();
+  auto resType = dyn_cast<ShapedType>(op.getResult().getType());
+
+  assert(llvm::all_of(resType.getShape(), [](int64_t dim) { return dim == 1; }));
+  assert(isa<IntegerType>(resType.getElementType()) || 
+        isa<IndexType>(resType.getElementType()));
+
+  size_t loopLimit = resType.getShape().size();
+  SmallVector<Value> indices;
+
+  for (auto i = 0; i < loopLimit; i++) {
+    indices.push_back(rewriter.create<arith::ConstantIndexOp>(loc, 0));
+  }
+  auto extractOp = rewriter.create<tensor::ExtractOp>(loc, res, indices);
+  OpFoldResult IndexOfr = extractOp.getResult();
+  if (isa<IntegerType>(extractOp.getType())) { 
+    IndexOfr = getOpFoldResultOfLayoutInfo(extractOp.getResult(), rewriter);
+  }
+  // Set scalar for mul state
+  data.setScalar(IndexOfr);
+
+  for (auto i = 0; i < loopLimit; i++) {
+    // Add original dense val to first dim offset for add state
+    if (i == 0) {
+      data.getOffsetsRef().push_back(IndexOfr);
+    } else {
+      data.getOffsetsRef().push_back(rewriter.getIndexAttr(0));
+    }
+    data.getSizesRef().push_back(rewriter.getIndexAttr(resType.getShape()[i]));
+    data.getStridesRef().push_back(rewriter.getIndexAttr(0));
   }
 }
 
