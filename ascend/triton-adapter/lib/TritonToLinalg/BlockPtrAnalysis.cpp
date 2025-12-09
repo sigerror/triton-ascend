@@ -989,11 +989,13 @@ void BlockDataParser::rewriteAddPtr(
   // And here store the unmodified state into known ptrs, since any following
   // pointer arithmetic operations should still use the original 0 stride.
   auto inferedSize = 1;
+  auto hoistDim = op->getAttrOfType<IntegerAttr>("hoist_dim");
   for (int i = data.getSizesRef().size() - 1; i >= 0; i--) {
     auto strideConst = getConstantIntValue(data.getStridesRef()[i]);
     auto sizeConst = getConstantIntValue(data.getSizesRef()[i]);
     assert(sizeConst.has_value());
-    if (sizeConst.value() == 1 && strideConst && strideConst.value() == 0) {
+    bool shouldReplaceStride = (sizeConst.value() == 1) || (hoistDim && hoistDim.getValue() == i);
+    if (shouldReplaceStride && strideConst && strideConst.value() == 0) {
       data.getStridesRef()[i] = rewriter.getIndexAttr(inferedSize);
     }
     inferedSize *= sizeConst.value();

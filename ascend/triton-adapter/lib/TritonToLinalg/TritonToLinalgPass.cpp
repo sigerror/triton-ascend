@@ -27,6 +27,7 @@
 #include "TritonToLinalg/LoadStoreConverter.h"
 #include "TritonToLinalg/TritonOpConverter.h"
 #include "TritonToLinalg/DescriptorConverter.h"
+#include "TritonToLinalg/HoistBroadcast.h"
 #include "TritonToLinalg/UseAnalysis.h"
 #include "Utils/InterleaveOptimization.h"
 #include "Utils/Utils.h"
@@ -727,6 +728,29 @@ LogicalResult TritonToLinalgPass::processDescriptorOperations(ModuleOp moduleOp)
     return success();
 }
 
+LogicalResult TritonToLinalgPass::processPtrBroadcastOperations(ModuleOp moduleOp)
+{
+    // --- ConversionTarget: dynamic legality checks ---
+    mlir::ConversionTarget target(getContext());
+    target.addLegalOp<triton::SplatOp>();
+    target.addLegalOp<triton::AddPtrOp>();
+    target.addDynamicallyLegalOp<triton::BroadcastOp>([](triton::BroadcastOp op) {
+        auto resultType = dyn_cast<RankedTensorType>(op.getType());
+        return !isa<triton::PointerType>(resultType.getElementType());
+    });
+
+    // --- Patterns ---
+    mlir::RewritePatternSet patterns(&getContext());
+    patterns.add<HoistBroadcast::BroadcastConverter>(patterns.getContext());
+
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+        moduleOp->emitError("failed to convert ptr broadcast operations");
+        return failure();
+    }
+
+    return success();
+}
+
 void TritonToLinalgPass::annotateTensorKindForModule(ModuleOp moduleOp) {
   moduleOp.walk([&](triton::FuncOp func) {
     // INPUT tensors
@@ -785,6 +809,11 @@ void TritonToLinalgPass::runOnOperation() {
 
   // Execute tensor descriptor operations conversion
   if (failed(processDescriptorOperations(moduleOp))) {
+    signalPassFailure();
+  }
+
+  // Execute ptr broadcast operations conversion
+  if (failed(processPtrBroadcastOperations(moduleOp))) {
     signalPassFailure();
   }
 
