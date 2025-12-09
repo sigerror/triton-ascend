@@ -149,7 +149,13 @@ static PyObject *createStream(PyObject *self, PyObject *args) {
 		return NULL;
 	}
 	uint64_t stream_uint64 = reinterpret_cast<uint64_t>(stream);
-	return Py_BuildValue("K", stream_uint64);
+    PyObject* result = Py_BuildValue("K", stream_uint64);
+    
+    if (result == NULL) {
+        rtStreamDestroy(stream);
+    }
+    
+    return result;
 }
 
 /**
@@ -249,7 +255,13 @@ static PyObject* allocateHostMemory(PyObject* self, PyObject* args) {
 		return NULL;
 	}
 
-	return Py_BuildValue("K", (uint64_t)host_ptr);
+    PyObject* result = Py_BuildValue("K", (uint64_t)host_ptr);
+    
+    if (result == NULL) {
+        rtFreeHost(host_ptr);
+    }
+    
+    return result;
 }
 
 static PyObject* allocateDeviceMemory(PyObject* self, PyObject* args) {
@@ -265,7 +277,13 @@ static PyObject* allocateDeviceMemory(PyObject* self, PyObject* args) {
 		return NULL;
 	}
 
-	return Py_BuildValue("K", (uint64_t)device_ptr);
+    PyObject* result = Py_BuildValue("K", (uint64_t)device_ptr);
+    
+    if (result == NULL) {
+        rtFree(device_ptr);
+    }
+    
+    return result;
 }
 
 static PyObject* copyMemory(PyObject* self, PyObject* args) {
