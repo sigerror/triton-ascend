@@ -155,11 +155,24 @@ def _get_bisheng_path() -> str:
     return bisheng_path
 
 
+def _is_valid_bishengir_path(path: str) -> bool:
+    if not path or not isinstance(path, str):
+        return False
+    if os.path.basename(path) != "bishengir-compile":
+        return False
+    if not os.path.isfile(path) or not os.access(path, os.X_OK):
+        return False
+    return True
+
+
 # grep bishengir-compile's option limit-auto-multi-buffer-buffer to check
 # if bishengir-compile is a newer version which does not generate kernel_reloc.o
 # any more.
 def _check_bishengir_api_change() -> bool:
     bishengir_path = _get_npucompiler_path()
+    if not _is_valid_bishengir_path(bishengir_path):
+        print(f"ERROR: Invalid bishengir path format: {bishengir_path}")
+        return False
     try:
         result = subprocess.run(
             [bishengir_path, "--help"],
@@ -180,6 +193,9 @@ def _check_bishengir_api_change() -> bool:
 
 def _check_bishengir_is_regbased() -> bool:
     bishengir_path = _get_npucompiler_path()
+    if not _is_valid_bishengir_path(bishengir_path):
+        print(f"ERROR: Invalid bishengir path format: {bishengir_path}")
+        return False
     try:
         result = subprocess.run(
             [bishengir_path, "--help"],
@@ -458,6 +474,9 @@ def convert_torch_dtype_to_numpy(torch_dtype):
 
 def _check_bishengir_able_save_ir() -> bool:
     bishengir_path = _get_npucompiler_path()
+    if not _is_valid_bishengir_path(bishengir_path):
+        print(f"ERROR: Invalid bishengir path format: {bishengir_path}")
+        return False
     try:
         result = subprocess.run(
             f"{bishengir_path} --help | grep 'save-linked-ir'",
@@ -565,7 +584,6 @@ def connect_to_remote_machine():
     import os
     ssh = paramiko.SSHClient()
     ssh.load_system_host_keys()
-    ssh.set_missing_host_key_policy(paramiko.WarningPolicy)
     script_path = os.path.abspath(__file__)
     script_dir = os.path.dirname(script_path)
     json_fpath = os.getenv("TRITON_REMOTE_RUN_CONFIG_PATH", os.path.join(script_dir, "remote_run_config.json"))
