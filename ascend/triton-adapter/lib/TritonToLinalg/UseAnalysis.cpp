@@ -417,7 +417,7 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
     // We first trace from the 1st load to the 2nd load with the ops between
     // them marked as MixUse. Then we traceback from the 2nd load to mark defs
     // MixUse.
-    if (opIsIndirectLoad(op) || opIsIndirectCalc(op)) {
+    if (opIsIndirectLoad(op) || opIsIndirectCalc(op) || isa<triton::IndirectStoreOp>(op)) {
       LLVM_DEBUG({
         os << "[UseAnalysis] Found indirect load interface op: " << *op << "\n";
       });
