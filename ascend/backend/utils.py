@@ -479,13 +479,15 @@ def _check_bishengir_able_save_ir() -> bool:
         return False
     try:
         result = subprocess.run(
-            f"{bishengir_path} --help | grep 'save-linked-ir'",
-            shell=True,
+            [bishengir_path, "--help"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
-        return result.returncode == 0
+        if result.returncode == 0 and 'save-linked-ir' in result.stdout:
+            return True
+        else:
+            return False
     except Exception as e:
         print(f"ERROR: {e}")
         return False
