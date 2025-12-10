@@ -46,7 +46,6 @@ from triton.backends.ascend.utils import (
     _is_debug_line_info_disabled,
     _is_auto_map_parallel_blocks_enabled,
     downgrade_llir,
-    is_remote_run,
     force_disable_ffts,
 )
 from triton.backends.ascend.driver import (
@@ -440,11 +439,6 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_num_function", metadata, "lock_num")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_init_function", metadata, "lock_init_val")
-
-        remote_run = is_remote_run(metadata["target"].arch)
-        if (remote_run):
-            from triton.backends.ascend.utils import copy_file_for_remote_run
-            copy_file_for_remote_run(bin_path, metadata["hash"])
 
         return Path(bin_path).read_bytes()
 
