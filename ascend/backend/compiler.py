@@ -106,6 +106,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         triton_adapter_opt_path = _get_triton_adapter_opt_path()
 
         enable_nd2nz_on_vector = metadata["enable_nd2nz_on_vector"]
+        enable_select_analysis = metadata["enable_select_analysis"]
         compile_on_910_95 = metadata["compile_on_910_95"]
         force_simt_template = metadata["force_simt_template"]
         enable_linearize = metadata.get("enable_linearize")
@@ -128,6 +129,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
             "--bubble-up-operation",
             f"--triton-to-linalg=global-kernel=false named-ops={named_ops} "\
             f"enable-nd2nz-on-vector={enable_nd2nz_on_vector} "\
+            f"enable-select-analysis={enable_select_analysis} " \
             f"compile-on-910-95={compile_on_910_95}",
             "-o",
             dst_path,
@@ -598,6 +600,7 @@ class NPUOptions:
 
     multibuffer: bool = not is_compile_on_910_95
     enable_auto_bind_sub_block: bool = not is_compile_on_910_95
+    enable_select_analysis: bool = is_compile_on_910_95
     enable_hivm_auto_cv_balance: bool = None
     sync_solver: bool = None
     unit_flag: bool = None

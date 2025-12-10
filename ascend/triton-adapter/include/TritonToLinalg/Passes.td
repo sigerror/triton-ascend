@@ -16,6 +16,9 @@ def TritonToLinalg : Pass<"triton-to-linalg", "mlir::ModuleOp"> {
         Option<"enableNd2nzOnVector", "enable-nd2nz-on-vector", 
             "bool", /*default*/"false",
             "enable nd2nz on vector">,
+        Option<"enableSelectAnalysis", "enable-select-analysis",
+            "bool", /*default*/"false",
+            "enable select analysis">,
         Option<"compileOn91095", "compile-on-910-95", 
             "bool", /*default*/"false",
             "compile on 910_95">
