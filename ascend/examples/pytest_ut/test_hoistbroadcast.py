@@ -188,3 +188,55 @@ def test_hoistbroadcast_compare(param_list):
     copy_all_layer_kv_cache[(len(data_ptrs),)](data_ptrs, data_strides, tgt_loc, src_loc, len(tgt_loc), 1)
     copy_all_layer_kv_cache2[(len(data_ptrs_ref),)](data_ptrs_ref, data_strides_ref, tgt_loc, src_loc, len(tgt_loc), 1)
     test_common.validate_cmp(dtype, kv_buffer, kv_buffer_ref)
+
+
+def torch_pointwise(x0):
+    if x0.dtype != torch.uint32:
+        return torch.abs(x0)
+    else:
+        return torch.abs(x0.to(torch.float32))
+
+
+@triton.jit
+def fn_npu_(output_ptr, x_ptr, y_ptr, z_ptr,
+            XB: tl.constexpr, YB: tl.constexpr, ZB: tl.constexpr,
+            XNUMEL: tl.constexpr, YNUMEL: tl.constexpr, ZNUMEL: tl.constexpr):
+    xoffs = tl.program_id(0) * XB
+    yoffs = tl.program_id(1) * YB
+    zoffs = tl.program_id(2) * ZB
+
+    xidx = tl.arange(0, XB) + xoffs
+    yidx = tl.arange(0, YB) + yoffs
+    zidx = tl.arange(0, ZB) + zoffs
+
+    X = tl.load(x_ptr + xidx[:, None, None] * YNUMEL * ZNUMEL + yidx[None, :, None] * ZNUMEL + zidx[None, None, :])
+    ret = tl.abs(X)
+    tl.store(output_ptr + xidx[:, None, None] * YNUMEL * ZNUMEL + yidx[None, :, None] * ZNUMEL + zidx[None, None, :], ret)
+
+
+@pytest.mark.parametrize('shape', [(8, 16, 16)])
+@pytest.mark.parametrize('dtype', ['float32'])
+def test_case2(dtype, shape):
+    # 生成数据
+    x = test_common.generate_tensor(shape, dtype).npu()
+    y = test_common.generate_tensor(shape, dtype).npu()
+    z = test_common.generate_tensor(shape, dtype).npu()
+    new_shape = shape
+
+    output = torch.randint(1, new_shape, dtype=eval('torch.' + dtype)).npu()
+    output1 = output
+
+    ans = torch_pointwise(x)
+
+    XB = shape[0]
+    xnumel = shape[0]
+    YB = shape[1]
+    ynumel = shape[1]
+    ZB = shape[2]
+    znumel = shape[2]
+
+    grid = (1, 1, 1)
+
+    fn_npu_[grid](output, x, y, z, XB, YB, ZB, xnumel, ynumel, znumel)
+
+    test_common.validate_cmp(dtype, ans, output)
