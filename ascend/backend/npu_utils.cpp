@@ -58,7 +58,7 @@ registerKernel(const char *name, const void *data, size_t data_size, int shared,
     return {NULL, NULL};
   }
 
-  void *devbinHandle = NULL;
+  void *devbinHandle = nullptr;
   rtRet = rtDevBinaryRegister(&devbin, &devbinHandle);
   if (rtRet != RT_ERROR_NONE) {
     printf("rtDevBinaryRegister failed, 0x%x\n", rtRet);
@@ -91,7 +91,7 @@ static PyObject *loadKernelBinary(PyObject *self, PyObject *args) {
 
   if (!PyArg_ParseTuple(args, "ss#iis", &name, &data, &data_size, &shared,
                         &device, &kernel_mode)) {
-    return NULL;
+    return nullptr;
   }
 
   auto [module_handle, func_handle] =
@@ -100,7 +100,7 @@ static PyObject *loadKernelBinary(PyObject *self, PyObject *args) {
   uint64_t mod = reinterpret_cast<uint64_t>(module_handle);
   uint64_t func = reinterpret_cast<uint64_t>(func_handle);
   if (PyErr_Occurred()) {
-    return NULL;
+    return nullptr;
   }
 
   return Py_BuildValue("(KKii)", mod, func, 0, 0);
@@ -110,13 +110,12 @@ static PyObject *getArch(PyObject *self, PyObject *args) {
   char name[64] = {'\0'};
 
   rtError_t rtRet = rtGetSocVersion(name, 64);
-
   if (rtRet != RT_ERROR_NONE) {
     printf("rtGetSocVersion failed, 0x%x", rtRet);
-    return NULL;
+    return nullptr;
   }
   if (PyErr_Occurred()) {
-    return NULL;
+    return nullptr;
   }
   return Py_BuildValue("s", name);
 }
@@ -125,13 +124,12 @@ static PyObject *getAiCoreNum(PyObject *self, PyObject *args) {
   uint32_t aiCoreCnt;
 
   rtError_t rtRet = rtGetAiCoreCount(&aiCoreCnt);
-
   if (rtRet != RT_ERROR_NONE) {
     printf("rtGetAiCoreCount failed, 0x%x", rtRet);
-    return NULL;
+    return nullptr;
   }
   if (PyErr_Occurred()) {
-    return NULL;
+    return nullptr;
   }
   return Py_BuildValue("I", aiCoreCnt);
 }
@@ -140,13 +138,12 @@ static PyObject *createStream(PyObject *self, PyObject *args) {
 	rtStream_t stream;
 
 	rtError_t rtRet = rtStreamCreate(&stream, 0);
-
 	if (rtRet != RT_ERROR_NONE) {
 		printf("rtStreamCreate failed, 0x%x", rtRet);
-		return NULL;
+		return nullptr;
 	}
 	if (PyErr_Occurred()) {
-		return NULL;
+		return nullptr;
 	}
 	uint64_t stream_uint64 = reinterpret_cast<uint64_t>(stream);
     PyObject* result = Py_BuildValue("K", stream_uint64);
@@ -196,7 +193,7 @@ static PyObject *readDataFromBinaryFileWrapper(PyObject *self, PyObject *args) {
 	const char *filename;
 	uint64_t arr_ptr;
 	if (!PyArg_ParseTuple(args, "sK", &filename, &arr_ptr)) {
-		return NULL;
+		return nullptr;
 	}
 
 	try {
@@ -206,7 +203,7 @@ static PyObject *readDataFromBinaryFileWrapper(PyObject *self, PyObject *args) {
 		return Py_None;
 	} catch (const std::exception& e) {
 		PyErr_SetString(PyExc_RuntimeError, e.what());
-		return NULL;
+		return nullptr;
 	}
 }
 
@@ -229,7 +226,7 @@ static PyObject *writeDataToBinaryFileWrapper(PyObject *self, PyObject *args) {
 	size_t num_bytes;
 
 	if (!PyArg_ParseTuple(args, "sKn", &filename, &arr_ptr, &num_bytes)) {
-		return NULL;
+		return nullptr;
 	}
 
 	try {
@@ -238,21 +235,21 @@ static PyObject *writeDataToBinaryFileWrapper(PyObject *self, PyObject *args) {
 		return Py_None;
 	} catch (const std::exception& e) {
 		PyErr_SetString(PyExc_RuntimeError, e.what());
-		return NULL;
+		return nullptr;
 	}
 }
 
 static PyObject* allocateHostMemory(PyObject* self, PyObject* args) {
 	uint64_t num_bytes;
 	if (!PyArg_ParseTuple(args, "K", &num_bytes)) {
-		return NULL;
+		return nullptr;
 	}
 
-	void* host_ptr = NULL;
+	void* host_ptr = nullptr;
 	rtError_t error = rtMallocHost(&host_ptr, num_bytes, RT_MEMORY_HOST);
 	if (error != RT_ERROR_NONE) {
 		PyErr_Format(PyExc_RuntimeError, "rtMallocHost failed with error code: 0x%x", error);
-		return NULL;
+		return nullptr;
 	}
 
     PyObject* result = Py_BuildValue("K", (uint64_t)host_ptr);
@@ -267,14 +264,14 @@ static PyObject* allocateHostMemory(PyObject* self, PyObject* args) {
 static PyObject* allocateDeviceMemory(PyObject* self, PyObject* args) {
 	uint64_t num_bytes;
 	if (!PyArg_ParseTuple(args, "K", &num_bytes)) {
-		return NULL;
+		return nullptr;
 	}
 
-	void* device_ptr = NULL;
+	void* device_ptr = nullptr;
 	rtError_t error = rtMalloc(&device_ptr, num_bytes, RT_MEMORY_HBM, 0);
 	if (error != RT_ERROR_NONE) {
 		PyErr_Format(PyExc_RuntimeError, "rtMalloc failed with error code: 0x%x", error);
-		return NULL;
+		return nullptr;
 	}
 
     PyObject* result = Py_BuildValue("K", (uint64_t)device_ptr);
@@ -294,7 +291,7 @@ static PyObject* copyMemory(PyObject* self, PyObject* args) {
 	rtMemcpyKind_t copy_direction;
 
 	if (!PyArg_ParseTuple(args, "KKns", &dst_ptr, &src_ptr, &count, &direction_str)) {
-		return NULL;
+		return nullptr;
 	}
 
 	if (strcmp(direction_str, "H2D") == 0) {
@@ -303,7 +300,7 @@ static PyObject* copyMemory(PyObject* self, PyObject* args) {
 		copy_direction = RT_MEMCPY_DEVICE_TO_HOST;
 	} else {
 		PyErr_SetString(PyExc_ValueError, "Invalid copy direction. Must be 'H2D' or 'D2H'.");
-		return NULL;
+		return nullptr;
 	}
 
 	void *dst = (void*)dst_ptr;
@@ -312,7 +309,7 @@ static PyObject* copyMemory(PyObject* self, PyObject* args) {
 	rtError_t error = rtMemcpy(dst, count, src, count, copy_direction);
 	if (error != RT_ERROR_NONE) {
 		PyErr_Format(PyExc_RuntimeError, "rtMemcpy failed with error code: 0x%x", error);
-		return NULL;
+		return nullptr;
 	}
 
 	Py_INCREF(Py_None);

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -697,6 +698,7 @@ LogicalResult MaskState::parseRemsi(arith::RemSIOp remsiOp,
   for(auto &info: stateInfo){
     if(info.isRealDim){
       auto staticDim = getIntAttr(rhsState.scalar);
+      assert(staticShape != 0 && staticDim.value() != 0 && "shape or dim is 0, invalid！");
       if(!staticDim.has_value() || (staticDim.value() % staticShape != 0 && staticShape % staticDim.value() != 0)){
         remsiOp->emitError("MaskAnalysis: The shape of the mask is not divisible by the shape of the block");
         return failure();
@@ -756,6 +758,7 @@ LogicalResult MaskState::parseDivsi(arith::DivSIOp divsiOp,
   for(auto &info: stateInfo){
     if(info.isRealDim){
       auto staticDim = getIntAttr(rhsState.scalar);
+      assert(staticDiv != 0 && staticDim.value() != 0 && "div or dim is 0, invalid！");
       if(!staticDim.has_value() || (staticDim.value() % staticDiv != 0 && staticDiv % staticDim.value() != 0)){
         divsiOp->emitError("MaskAnalysis: The shape of the mask is not divisible by the shape of the block");
         return failure();

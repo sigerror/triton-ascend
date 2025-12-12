@@ -117,6 +117,7 @@ static SmallVector<SmallVector<Value>> createDestOps(triton::ElementwiseInlineAs
         // Pack return elements into 32-bits.
         unsigned bitWidth = ty.isIntOrFloat() ? ty.getIntOrFloatBitWidth() : 64;
         unsigned numElemsPerReg = std::min(std::max(32 / bitWidth, 1u), op.getPackedElement());
+        assert(op.getPackedElement() != 0);
         assert(op.getPackedElement() % numElemsPerReg == 0);
         if (numElemsPerReg > 1) {
             ty = VectorType::get(numElemsPerReg, ty);

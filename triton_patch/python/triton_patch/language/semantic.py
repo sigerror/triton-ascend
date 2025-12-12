@@ -1050,7 +1050,6 @@ def embedding_gather(src: tl.tensor, idx: tl.tensor, bound: int, blksiz: int, of
         raise ValueError(f"Expected dtype fp16/fp32/bf16, but got {src.dtype.element_ty}")
     
     require_i64 = idx.dtype.is_int64()
-    # require_i64 = True
     offsets = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in offsets]
     numels = [_convert_elem_to_ir_value(builder, elem, require_i64) for elem in numels]
     ret = builder.create_embedding_gather(src.handle, idx.handle, bound, blksiz, offsets, numels)

@@ -300,7 +300,6 @@ def _precompile_npu_ext(header_path):
         scheme = "posix_prefix"
     py_include_dir = sysconfig.get_paths(scheme=scheme)["include"]
     cc_cmd += [f"-I{py_include_dir}"]
-    # device_print.h
     cc_cmd += [f"-I{os.path.dirname(os.path.realpath(__file__))}"]
     # find the ascend library
     asc_path = _get_ascend_path()
@@ -354,7 +353,6 @@ def _build_npu_ext(obj_name: str, header_path, src_path, *, kernel_launcher="tor
         scheme = "posix_prefix"
     py_include_dir = sysconfig.get_paths(scheme=scheme)["include"]
     cc_cmd += [f"-I{py_include_dir}"]
-    # device_print.h
     cc_cmd += [f"-I{os.path.dirname(os.path.realpath(__file__))}"]
     # find the ascend library
     asc_path = _get_ascend_path()
@@ -479,13 +477,15 @@ def _check_bishengir_able_save_ir() -> bool:
         return False
     try:
         result = subprocess.run(
-            f"{bishengir_path} --help | grep 'save-linked-ir'",
-            shell=True,
+            [bishengir_path, "--help"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            check=False,
         )
-        return result.returncode == 0
+        output = result.stdout + result.stderr
+        has_save_linked_ir = "save-linked-ir" in output
+        return result.returncode == 0 and has_save_linked_ir
     except Exception as e:
         print(f"ERROR: {e}")
         return False

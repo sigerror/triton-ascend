@@ -191,7 +191,6 @@ def acos(arg0: core.tensor, _builder: ir.builder):
     t4_mid = semantic.mul(t2_mid, t2_mid, True, _builder) 
     t6_mid = semantic.mul(t4_mid, t2_mid, True, _builder) 
 
-    # 1 + t2*(-0.3333310 + t2*(0.1999341 + t2*(-0.1420890 + t2*0.1065976)))
     poly_mid1 = semantic.mul(0.1065976, t2_mid, True, _builder)
     poly_mid2 = semantic.add(-0.1420890, poly_mid1, True, _builder)
     poly_mid3 = semantic.mul(poly_mid2, t2_mid, True, _builder)
