@@ -481,6 +481,10 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
         if (auto *defOp = yield.getDefiningOp())
           setMixUseRecursively(defOp);
       }
+    } else if(auto atomicRmwOp = dyn_cast<triton::AtomicRMWOp>(op)) {
+      auto mask = atomicRmwOp.getMask();
+      if(mask  && op->hasAttr(ConverterUtils::discreteMaskAttrName))
+        setMixUseRecursively(mask.getDefiningOp());
     }
   });
   // Remove MetaUse in case of MixUse existing in the op
