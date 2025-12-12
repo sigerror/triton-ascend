@@ -429,7 +429,6 @@ $(PYPI_CONFIG):
 	fi
 	@echo "[$(PYPI_URL)]"         >  $@
 	@echo "  username = __token__" >> $@
-	@echo "  password = $$PASSWORD" >> $@
 
 
 # ======================
