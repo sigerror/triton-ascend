@@ -31,7 +31,7 @@
 #include <fstream>
 #include <algorithm>
 
-#include "experiment/runtime/runtime/rt.h"
+#include "runtime/runtime/rt.h"
 
 // Use map to differentiate same name functions from different binary
 static std::unordered_map<std::string, size_t> registered_names;

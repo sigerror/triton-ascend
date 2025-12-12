@@ -526,7 +526,7 @@ def generate_npu_header_src():
 #include <sys/syscall.h>
 #include <vector>
 #include <Python.h>
-#include "experiment/runtime/runtime/rt.h"
+#include "runtime/runtime/rt.h"
 #include <ATen/ATen.h>
 #include <acl/acl.h>
 #include <torch_npu/csrc/core/npu/NPUWorkspaceAllocator.h>
