@@ -834,7 +834,7 @@ def _log2(i: core.constexpr):
     return core.constexpr(log2)
 
 
-def flip(ptr: tl.tensor, dim: int, builder: ir.builder):
+def flip(ptr: tl.tensor, dim: int, builder: ir.builder, generator=None):
     """
     Flips a tensor `ptr` along the dimension `dim`.
 
@@ -842,6 +842,8 @@ def flip(ptr: tl.tensor, dim: int, builder: ir.builder):
     :type ptr: tl.tensor
     :param dim: the dimension to flip along
     :type dim: int
+    :param generator: the code generator (required for reduce operations)
+    :type generator: generator object
     """
 
     # If compile_mode is not simt, use the simd implementation
@@ -858,7 +860,7 @@ def flip(ptr: tl.tensor, dim: int, builder: ir.builder):
     idtype = core.get_int_dtype(bitwidth=ptr.dtype.primitive_bitwidth, signed=True)
     y = core.reshape(ptr.to(idtype, bitcast=True, _builder=builder), ptr.shape.__getitem__(slice(None, _dim)) + [2] * steps + ptr.shape.__getitem__(slice(_dim + 1, None)), _builder=builder)
     for i in static_range(steps):
-        y = y.__xor__(standard.xor_sum(y, _dim + i, True, _builder=builder), _builder=builder)
+        y = y.__xor__(standard.xor_sum(y, _dim + i, True, _builder=builder, _generator=generator), _builder=builder)
     ptr = core.reshape(y, ptr.shape, _builder=builder).to(ptr.dtype, bitcast=True, _builder=builder)
     return ptr
 

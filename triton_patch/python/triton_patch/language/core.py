@@ -479,14 +479,14 @@ def compile_hint(ptr, hint_name, hint_val=None, _builder=None):
     semantic.compile_hint(ptr, hint_name, hint_val, _builder)
 
 @builtin
-def flip(ptr, dim=-1, _builder=None):
+def flip(ptr, dim=-1, _builder=None, _generator=None):
     try:
         dim = int(dim.value) if hasattr(dim, "value") else int(dim)
     except Exception as e:
         raise TypeError(f"dim must be an integer (or tl.constexpr int), got {dim!r}") from e
 
     dim = len(ptr.shape) - 1 if dim == -1 else dim
-    return semantic.flip(ptr, dim, _builder)
+    return semantic.flip(ptr, dim, _builder, _generator)
 
 @builtin
 def sort(ptr, dim=-1, descending=False, _builder=None):
