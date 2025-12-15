@@ -56,11 +56,7 @@ from .tensor_descriptor import (
     tensor_descriptor
 )
 
-try:
-    import acl
-    is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
-except Exception as e:
-    is_compile_on_910_95 = False
+is_compile_on_910_95 = False
 
 def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
     if not isinstance(start, int) or not isinstance(end, int):

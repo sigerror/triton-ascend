@@ -31,11 +31,7 @@ from typing import Any, Dict, List
 from . import language as tl
 from . import runtime
 
-try:
-    import acl
-    is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
-except Exception as e:
-    is_compile_on_910_95 = False
+is_compile_on_910_95 = False
 
 def nvsmi(attrs):
     attrs = ','.join(attrs)

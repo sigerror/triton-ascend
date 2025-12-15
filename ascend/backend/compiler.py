@@ -61,11 +61,7 @@ from triton.backends.compiler import (
 from triton.runtime import driver
 from triton.runtime.cache import get_dump_manager
 
-try:
-    import acl
-    is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
-except Exception as e:
-    is_compile_on_910_95 = False
+is_compile_on_910_95 = False
 
 # TODO: materialize the concrete min shape
 def min_dot_size(target: GPUTarget):
