@@ -821,3 +821,140 @@ def copysign(arg0: core.tensor, arg1: core.tensor, _builder: ir.builder):
     neg_magnitude = semantic.mul(magnitude, semantic.full(magnitude.shape, -1.0, magnitude.type.scalar, _builder), True, _builder)
     
     return semantic.where(is_negative, neg_magnitude, magnitude, _builder)
+
+
+@core.builtin
+def set_element(tensor: core.tensor, indices: core.tensor, values: core.tensor, _builder: ir.builder):
+    """
+    Set a single element in an N-dimensional tensor at the specified multi-dimensional index.
+
+    Args:
+        tensor: Input tensor of rank >= 1 (i.e., 1D, 2D, ..., N-D).
+        indices: Either a scalar (for 1D tensors) or a 1D tensor of length equal to the rank of `tensor`,
+                 containing integer indices for each dimension.
+        values: A scalar value (0-D tensor) to assign at the specified location.
+        _builder: IR builder context.
+
+    Returns:
+        A new tensor with the same shape as input, where the element at the position specified by `indices`
+        is replaced by `values`.
+    """
+    tensor = semantic.to_tensor(tensor, _builder)
+    indices = semantic.to_tensor(indices, _builder)
+    values = semantic.to_tensor(values, _builder)
+    
+    if len(values.shape) != 0:
+        raise ValueError("set_element currently only supports scalar values")
+    
+    original_shape = [int(dim) for dim in tensor.shape]
+    rank = len(original_shape)
+    
+    if len(indices.shape) == 1:
+        if indices.shape[0] != rank:
+            raise ValueError(f"indices has {indices.shape[0]} elements, but tensor rank is {rank}")
+    elif len(indices.shape) == 0:
+        if rank != 1:
+            raise ValueError("Scalar index is only allowed for 1D tensors")
+    else:
+        raise ValueError("Indices must be either a scalar or a 1D tensor")
+        
+    total_elements = 1
+    for dim in original_shape:
+        total_elements *= dim
+    
+    # Flatten the tensor to 1D
+    flattened_tensor = semantic.reshape(tensor, [total_elements], True, _builder)
+    
+    if len(indices.shape) == 0:
+        flat_index = indices
+    elif len(indices.shape) == 1:
+        # 1D tensor index; compute the corresponding flat index
+        flat_index = _calculate_flat_index(indices, original_shape, _builder)
+    else:
+        raise ValueError("Indices must be either a scalar or a 1D tensor")
+    
+    flattened_result = _set_element_1d(flattened_tensor, flat_index, values, _builder)
+    
+    result_tensor = semantic.reshape(flattened_result, original_shape, False, _builder)
+    
+    return result_tensor
+
+
+def _calculate_flat_index(indices, shape, _builder):
+    """
+    Compute the flattened (linear) index from multi-dimensional indices and shape.
+
+    Args:
+        indices: A 1D tensor of integer indices with length equal to rank.
+        shape: The original shape of the tensor (list of ints).
+        _builder: IR builder context.
+
+    Returns:
+        A scalar tensor representing the linear index in the flattened 1D view.
+    """
+    rank = len(shape)
+    if rank == 1:
+        return indices
+    strides = []
+    stride = 1
+    for i in range(rank - 1, 0, -1):
+        stride *= shape[i]
+        strides.append(stride)
+    strides.reverse()
+    strides.append(1)
+
+    # All calculations use scalar (IR scalar).
+    flat_scalar = semantic.full([], 0, core.int32, _builder)
+    for i in range(rank):
+        idx_scalar = _extract_element_by_const_index(indices, i, _builder)
+        idx_i = semantic.cast(idx_scalar, core.int32, _builder)
+        stride_val = semantic.full([], strides[i], core.int32, _builder)
+        product = semantic.mul(idx_i, stride_val, False, _builder)
+        flat_scalar = semantic.add(flat_scalar, product, False, _builder)
+
+    return flat_scalar 
+
+
+def _set_element_1d(tensor_1d, index, value, _builder):
+    """
+    Set a single element in a 1D tensor at the given scalar index.
+
+    Returns:
+        A new 1D tensor with the element at `index` replaced by `value`.
+    """
+    n = tensor_1d.shape[0]
+    
+    positions_handle = _builder.create_make_range(0, n)
+    
+    positions_type = core.block_type(core.int32, [n])
+    
+    positions = core.tensor(positions_handle, positions_type)
+    
+    index_broadcast = semantic.broadcast_impl_shape(index, positions.shape, _builder)
+    
+    mask = semantic.equal(positions, index_broadcast, _builder)
+    
+    value_broadcast = semantic.broadcast_impl_shape(value, tensor_1d.shape, _builder)
+    
+    result_tensor = semantic.where(mask, value_broadcast, tensor_1d, _builder)
+    
+    return result_tensor
+
+
+def _extract_element_by_const_index(tensor_1d, const_i, _builder):
+    """
+    Extract the i-th element from a 1D tensor as a scalar tensor.
+
+    Returns:
+        A scalar tensor (0-D) containing the value at position `const_i`.
+    """
+    n = core._constexpr_to_value(tensor_1d.shape[0])
+    if not isinstance(n, int) or n <= 0:
+        raise ValueError("Expected compile-time constant shape")
+    if const_i < 0 or const_i >= n:
+        raise IndexError(f"Index {const_i} out of range for size {n}")
+
+    # Create scalar index tensor
+    idx_tensor = semantic.full([], const_i, core.int32, _builder)
+    result_handle = _builder.create_extract_scalar(tensor_1d.handle, [idx_tensor.handle])
+    return core.tensor(result_handle, tensor_1d.dtype)

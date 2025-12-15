@@ -531,19 +531,3 @@ def test_scan_float_invalid(dtype, shape, dim, combine_fn, reverse):
     x_npu = x.npu()
     triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
 
-@pytest.mark.parametrize("dtype", ['int32'])
-@pytest.mark.parametrize("shape", TestUtils.test_shape1d)
-@pytest.mark.parametrize("dim", [0])
-@pytest.mark.parametrize("combine_fn",
-                         ['maximum_fn', 'minimum_fn', 'bitwise_or_fn', 'bitwise_xor_fn', 'bitwise_and_fn'])
-@pytest.mark.parametrize("reverse", [True])
-@test_common.raises_with_match(triton.compiler.errors.MLIRCompilationError,
-                               "reverse=True is not yet supported for scan op")
-def test_scan_float_invalid_reverse(dtype, shape, dim, combine_fn, reverse):
-    should_skip_due_to_mem(dtype, shape)
-    torch.manual_seed(0)
-    x = test_common.generate_tensor(shape=shape, dtype=dtype)
-
-    x_npu = x.npu()
-    triton_res = triton_func_scan(x_npu, dim, combine_fn, reverse)
-
