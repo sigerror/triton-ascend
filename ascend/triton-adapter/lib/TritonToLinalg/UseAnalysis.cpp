@@ -96,6 +96,8 @@ void triton::UseAnalysis::visitOperation(Operation *op,
           propagateUse(operands[3], UseType::MetaUse);
         }
       })
+      .Case<triton::PrintOp>(
+        [&](auto print) { propagateUse(operands[0], UseType::DataUse); })
       .Case<triton::AssertOp>(
           [&](auto assert) { propagateUse(operands[0], UseType::DataUse); })
       .Case<triton::StoreOp>([&](auto store) {
@@ -381,6 +383,8 @@ LogicalResult triton::runUseAnalysis(triton::FuncOp &funcOp) {
                   splat.getSrc().getDefiningOp<arith::ConstantOp>()) {
                 metaUsers.insert(user);
               }
+            })
+            .Case<triton::PrintOp>([&](auto print) {
             })
             .Default([&](Operation *op) {
               bool allMeta = true;
