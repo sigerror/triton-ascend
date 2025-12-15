@@ -621,10 +621,6 @@ def atom_red_typechecking_impl(ptr: tl.tensor, val: tl.tensor, mask: tl.tensor, 
 def atomic_cas(ptr: tl.tensor, cmp: tl.tensor, val: tl.tensor, sem: str, scope: str, builder: ir.builder) -> tl.tensor:
     sem = _str_to_sem(sem)
     scope = _str_to_scope(scope)
-    element_ty = ptr.type.scalar.element_ty
-    if element_ty in [tl.int1, tl.int8, tl.float64, tl.bfloat16]:
-        raise ValueError(f"atomic_cas does not support {str(element_ty)}. "
-                         "All support dtypes are int16, int32, int64, float16, float32.")
     return tl.tensor(builder.create_atomic_cas(ptr.handle, cmp.handle, val.handle, sem, scope), val.type)
 
 
