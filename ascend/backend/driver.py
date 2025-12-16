@@ -743,6 +743,26 @@ extern "C" {
       nodeBasicInfo.data.nodeBasicInfo.taskType = {task_type};
       nodeBasicInfo.data.nodeBasicInfo.blockDim = blockNum;
       MsprofReportCompactInfo(0, static_cast<void *>(&nodeBasicInfo), sizeof(MsprofCompactInfo));
+      // workspace > 0 indicates a 'mix' kernel, which requires reporting the ctxID
+      if ({workspace_size} > 0) {{
+        MsprofAdditionalInfo info;
+        info.level = MSPROF_REPORT_NODE_LEVEL;
+        info.type = MSPROF_REPORT_NODE_CONTEXT_ID_INFO_TYPE;
+        info.threadId = threadId;
+        info.timeStamp = endTime;
+        MsprofContextIdInfo ctxId;
+        ctxId.opName = opNameHashID;
+        ctxId.ctxIdNum = 1;
+        for (uint32_t i = 0; i < ctxId.ctxIdNum; i++) {{
+          ctxId.ctxIds[i] = i;
+        }}
+        size_t copyLen = sizeof(MsprofContextIdInfo);
+        if (copyLen > MSPROF_ADDTIONAL_INFO_DATA_LENGTH) {{
+          copyLen = MSPROF_ADDTIONAL_INFO_DATA_LENGTH;
+        }}
+        std::memcpy(info.data, &ctxId, copyLen);
+        MsprofReportAdditionalInfo(false, static_cast<void *>(&info), sizeof(MsprofAdditionalInfo));
+      }}
 
       // Report tensor info
       int max_tensors_num = tensorShapes.size() < MSPROF_GE_TENSOR_DATA_NUM ? tensorShapes.size() : MSPROF_GE_TENSOR_DATA_NUM;
