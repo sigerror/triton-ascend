@@ -278,6 +278,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
   auto memRefElementType = memRefType.getElementType();
 
   Value allocOp;
+  Value allocOpTmp;
   if (op->hasAttr(ConverterUtils::discreteAttrName)) {
     Operation *loop = op->getParentOp();
     for (auto parentOp = loop->getParentOp();
@@ -292,6 +293,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     if (fullMemRefShape.size() == 2u)
       loopOp->setAttr("hivm.parallel_loop", rewriter.getUnitAttr());
     allocOp = rewriter.create<memref::AllocOp>(loc, fullMemRefType);
+    allocOpTmp = allocOp;
     rewriter.setInsertionPointAfter(loop);
     auto toTensorOp = rewriter.create<bufferization::ToTensorOp>(
         loc, RankedTensorType::get(fullMemRefShape, memRefElementType), allocOp, true, true);
@@ -372,8 +374,11 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
         return success();
       }
       rewriter.create<memref::CopyOp>(loc, ptr, allocOp);
-      if (mayImplicitTransposeWithLastAxis) {
+      if (mayImplicitTransposeWithLastAxis && allocOp.getDefiningOp<memref::AllocOp>()) {
         auto markOp = rewriter.create<annotation::MarkOp>(loc, allocOp);
+        markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
+      } else if (mayImplicitTransposeWithLastAxis && allocOp.getDefiningOp<memref::SubViewOp>()) {
+        auto markOp = rewriter.create<annotation::MarkOp>(loc, allocOpTmp);
         markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
       }
     }
@@ -436,8 +441,11 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
     auto castOp = rewriter.create<memref::CastOp>(loc, castType, dstSubView);
     rewriter.create<memref::CopyOp>(loc, srcSubView, castOp);
     
-    if (mayImplicitTransposeWithLastAxis) {
+    if (mayImplicitTransposeWithLastAxis && allocOp.getDefiningOp<memref::AllocOp>()) {
       auto markOp = rewriter.create<annotation::MarkOp>(loc, allocOp);
+      markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
+    } else if (mayImplicitTransposeWithLastAxis && allocOp.getDefiningOp<memref::SubViewOp>()) {
+      auto markOp = rewriter.create<annotation::MarkOp>(loc, allocOpTmp);
       markOp->setAttr(MayImplicitTransposeWithLastAxisTAG, UnitAttr::get(rewriter.getContext()));
     }
   }
