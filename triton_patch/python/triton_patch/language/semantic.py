@@ -161,9 +161,12 @@ def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
         if dst_sca_ty.is_bool():
             ty = input.dtype.to_ir(builder)
             _0 = tl.tensor(builder.get_null_value(ty), input.dtype)
-            return not_equal(input, _0, builder)
-        else:
-            return tl.tensor(builder.create_int_cast(input.handle, dst_ty.to_ir(builder), sign_extend), dst_ty)
+            return not_equal(input, _0, builder) 
+        elif not is_compile_on_910_95 and \
+             (src_sca_ty.is_int_unsigned() or dst_sca_ty.is_int_unsigned()) and \
+             src_sca_ty.int_bitwidth >= dst_sca_ty.int_bitwidth:
+            return cast(cast(input, tl.float32, builder), dst_sca_ty, builder)
+        return tl.tensor(builder.create_int_cast(input.handle, dst_ty.to_ir(builder), sign_extend), dst_ty)
 
     # Casting standard floating types to integer types
     if src_sca_ty.is_standard_floating() and dst_sca_ty.is_int():
