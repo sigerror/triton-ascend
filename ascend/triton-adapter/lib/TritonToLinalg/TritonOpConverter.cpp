@@ -1841,7 +1841,7 @@ DotScaledConverter::matchAndRewrite(triton::DotScaledOp op, OpAdaptor adaptor,
 
   if (lhsScaleTy.getElementType().isIntOrIndex()) {
     RankedTensorType lhsScaleI16Ty = RankedTensorType::get(lhsScaleTy.getShape(), i16Ty);
-    Value lhsScaleI16 = rewriter.create<arith::ExtUIOp>(
+    Value lhsScaleI16 = rewriter.create<arith::ExtSIOp>(
       op.getLoc(),
       lhsScaleI16Ty,
       lhsScale
@@ -1935,7 +1935,7 @@ DotScaledConverter::matchAndRewrite(triton::DotScaledOp op, OpAdaptor adaptor,
     RankedTensorType rhsScaleI16Ty = RankedTensorType::get(
         transposedShape,
         i16Ty);
-    Value rhsScaleI16 = rewriter.create<arith::ExtUIOp>(
+    Value rhsScaleI16 = rewriter.create<arith::ExtSIOp>(
       op.getLoc(),
       rhsScaleI16Ty,
       transposedRhsScale
