@@ -1902,7 +1902,6 @@ void BlockDataParser::rewriteLoopOp(
     SmallVector<bool> maskIterArgsForAfter(whileOp->getNumResults());
     
     int64_t indexCnt = 0;
-    int64_t afterArgCnt = 0;
     
     for (auto newInitArg: newInitArgs) {
       usedForBeforeRegionArgs.push_back(newInitArg ? true:false);

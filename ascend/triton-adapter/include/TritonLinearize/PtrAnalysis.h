@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation, Meta Platforms.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -200,7 +201,7 @@ struct PtrState {
   // Check whether the current read count is less than the batch size and 
   // broadcast the data along the highest dimension if needed.
   LogicalResult broadcastIfNeeded(SmallVector<StateInfo> &InfoPerDim,
-                                          Operation *op, OpBuilder &builder);
+                                          OpBuilder &builder);
 
   // Process addition of two PtrStates.
   LogicalResult addState(const PtrState &lhsState, const PtrState &rhsState,

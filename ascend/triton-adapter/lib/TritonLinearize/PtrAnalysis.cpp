@@ -319,9 +319,8 @@ bool PtrState::dimHasModulo(uint32_t dim) const {
 
 bool PtrState::isBlockPtr() const { return !order.empty(); }
 
-LogicalResult PtrState::broadcastIfNeeded(SmallVector<StateInfo> &infoPerDim,
-                                          Operation *op, OpBuilder &builder) {
-    auto loc = op->getLoc();
+LogicalResult PtrState::broadcastIfNeeded(SmallVector<StateInfo> &infoPerDim, OpBuilder &builder)
+{
     auto defaultAttr = builder.getIndexAttr(0);
     auto staticSize = getIntAttr(this->sizes[infoPerDim[0].dim]);
     assert(staticSize.has_value() && "do not support dynamic size");
@@ -484,7 +483,7 @@ LogicalResult PtrState::ExpandInfo(SmallVector<StateInfo> &infoPerDim,
     infoPerDim.insert(infoPerDim.begin() + insertPos[i] + i, insertInfo[i]);
   }
 
-  if(this->broadcastIfNeeded(infoPerDim, op, builder).failed()){
+  if (this->broadcastIfNeeded(infoPerDim, builder).failed()) {
     return failure();
   }
   return success();
@@ -1153,8 +1152,7 @@ LogicalResult PtrAnalysis::visitOperandRem(arith::RemSIOp remOp,
   }
 
   auto staticShape = cast<IntegerAttr>(remsiop.getValue()).getInt();
-  for(auto &info : state.stateInfo){
-    auto staticSize = getIntAttr(state.sizes[info.dim]);
+  for (auto &info : state.stateInfo) {
     auto staticStride = getIntAttr(info.stride);
     auto preShape = getIntAttr(info.shape);
     auto staticMask = getIntAttr(info.mask);
