@@ -1024,6 +1024,8 @@ class CodeGenerator(ast.NodeVisitor):
                 for_op.set_attr("tt.disable_licm", self.builder.get_unit_attr())
             if (bind_sub_block is not None) and bind_sub_block:
                 for_op.set_attr("bind_sub_block", self.builder.get_bool_attr(bind_sub_block))
+            if (IteratorClass is language.parallel):
+                for_op.set_attr("hivm.parallel_loop", self.builder.get_unit_attr())
 
             self.scf_stack.append(node)
             self.builder.set_insertion_point_to_start(for_op.get_body(0))
