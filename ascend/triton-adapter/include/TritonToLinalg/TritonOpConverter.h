@@ -68,6 +68,24 @@ public:
                   ConversionPatternRewriter &rewriter) const override;
 };
 
+/*
+Convert `tt.fp_to_fp` operation with RTNE (default) rounding mode to
+`arith.truncf` or `arith.extf` operation.
+
+For fp8 conversions with default RTNE rounding:
+- downcast: tt.fp_to_fp -> arith.truncf
+- upcast: tt.fp_to_fp -> arith.extf
+
+Note: Non-RTNE rounding modes (e.g., RTZ) are handled by TritonToHFusion pass.
+*/
+struct FpToFpConverter : public OpConversionPattern<triton::FpToFpOp> {
+public:
+  using OpConversionPattern<triton::FpToFpOp>::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(triton::FpToFpOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override;
+};
+
 class SelectCanonicalizer : public OpRewritePattern<arith::SelectOp> {
 public:
   using OpRewritePattern<arith::SelectOp>::OpRewritePattern;

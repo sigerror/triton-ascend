@@ -89,14 +89,8 @@ namespace {
       Value input = op.getSrc();
       auto resultType = op.getResult().getType();
       
-      // Check if rounding mode is specified
-      auto roundingMode = op.getRounding();
-      if (!roundingMode.has_value()) {
-        // No rounding mode specified, don't convert
-        return failure();
-      }
-
-      // Only handle float-to-float conversions with explicit rounding mode
+      // Only handle float-to-float conversions with non-RTNE rounding modes
+      // RTNE (default) rounding is handled by TritonToLinalg pass using arith.truncf/extf
       auto srcType = cast<TensorType>(input.getType());
       auto dstType = cast<TensorType>(resultType);
       if (!srcType.getElementType().isIntOrFloat() || 
@@ -104,30 +98,23 @@ namespace {
         return failure();
       }
 
-      // Check if this is a floating point downcast that needs special rounding
-      unsigned srcBitwidth = srcType.getElementType().getIntOrFloatBitWidth();
-      unsigned dstBitwidth = dstType.getElementType().getIntOrFloatBitWidth();
-      
-      if (srcBitwidth <= dstBitwidth) {
-        // Not a downcast, don't need special handling
+      // Check if this has a non-RTNE rounding mode
+      auto roundingMode = op.getRounding();
+      if (!roundingMode.has_value() || roundingMode.value() == triton::RoundingMode::RTNE) {
+        // RTNE or no rounding mode specified: let TritonToLinalg handle it
         return failure();
       }
 
-      // Map Triton rounding mode to HFusion rounding mode
-      // Note: The Python frontend (semantic.py) currently only generates FpToFpOp
-      // for non-RTNE rounding modes. RTNE downcast uses create_fp_trunc instead.
-      // However, we keep RTNE handling here for completeness.
+      // Map non-RTNE rounding modes to HFusion rounding mode
       hfusion::RoundMode hfusionRoundMode;
       switch (roundingMode.value()) {
-        case triton::RoundingMode::RTNE:
-          hfusionRoundMode = hfusion::RoundMode::RINT;
-          break;
         case triton::RoundingMode::RTZ:
           hfusionRoundMode = hfusion::RoundMode::TRUNC;
           break;
         default:
           return op.emitError("Unsupported rounding mode for HFusion conversion");
       }
+      // Note: Only RTZ (and potential future non-RTNE modes) reach here
 
       // Get or create destination tensor (destination-style)
       SmallVector<Value> dsts;

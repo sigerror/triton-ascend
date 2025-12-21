@@ -1,7 +1,7 @@
-// RUN: triton-adapter-opt --triton-linearize '--discrete-mask-access-conversion=compile-on-a5=True force_simt_template=False' --triton-to-annotation '--triton-to-unstructure=compile-on-a5=True force_simt_template=False' --triton-to-hivm --triton-to-hfusion --triton-to-llvm --bubble-up-operation '--triton-to-linalg=global-kernel=false named-ops=True enable-nd2nz-on-vector=False compile-on-a5=True' --split-input-file %s | FileCheck %s
+// RUN: triton-adapter-opt --triton-linearize '--discrete-mask-access-conversion=compile-on-910-95=True force-simt-template=False' --triton-to-annotation '--triton-to-unstructure=compile-on-910-95=True force-simt-template=False' --triton-to-hivm --triton-to-hfusion --triton-to-llvm --bubble-up-operation '--triton-to-linalg=global-kernel=false named-ops=True enable-nd2nz-on-vector=False compile-on-910-95=True' --split-input-file %s | FileCheck %s
 
 module {
-		tt.func public @fn_npu_(%arg0: !tt.ptr {tt.divisibility = 16 : i32}, %arg1: !tt.ptr {tt.divisibility = 16 : i32}, %arg2: !tt.ptr {tt.divisibility = 16 : i32}, %arg3: !tt.ptr {tt.divisibility = 16 : i32}) attributes {noinline = false} {
+		tt.func public @fn_npu_(%arg0: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32}, %arg1: !tt.ptr<f8E4M3FN> {tt.divisibility = 16 : i32}, %arg2: !tt.ptr<f32> {tt.divisibility = 16 : i32}, %arg3: !tt.ptr<f32> {tt.divisibility = 16 : i32}) attributes {noinline = false} {
 		%cst = arith.constant dense<0.000000e+00> : tensor<2x29x4xf32>
 		%cst_0 = arith.constant dense<1.000000e+00> : tensor<2x29x4xf32>
 		%cst_1 = arith.constant dense<4> : tensor<1x29x1xi32>
@@ -40,18 +40,18 @@ module {
 		%27 = tt.broadcast %24 : tensor<2x29x1xi32> -> tensor<2x29x4xi32>
 		%28 = tt.broadcast %26 : tensor<1x1x4xi32> -> tensor<2x29x4xi32>
 		%29 = arith.addi %27, %28 : tensor<2x29x4xi32>
-		%30 = tt.splat %arg1 : !tt.ptr -> tensor<2x29x4x!tt.ptr>
-		%31 = tt.addptr %30, %29 : tensor<2x29x4x!tt.ptr>, tensor<2x29x4xi32>
-		%32 = tt.load %31 : tensor<2x29x4x!tt.ptr>
+		%30 = tt.splat %arg1 : !tt.ptr<f8E4M3FN> -> tensor<2x29x4x!tt.ptr<f8E4M3FN>>
+		%31 = tt.addptr %30, %29 : tensor<2x29x4x!tt.ptr<f8E4M3FN>>, tensor<2x29x4xi32>
+		%32 = tt.load %31 : tensor<2x29x4x!tt.ptr<f8E4M3FN>>
 		%33 = tt.fp_to_fp %32 : tensor<2x29x4xf8E4M3FN> -> tensor<2x29x4xf32>
 		%34 = arith.subf %cst, %33 : tensor<2x29x4xf32>
 		%35 = math.exp %34 : tensor<2x29x4xf32>
 		%36 = arith.addf %35, %cst_0 : tensor<2x29x4xf32>
 		%37 = arith.divf %cst_0, %36 : tensor<2x29x4xf32>
 		%38 = tt.fp_to_fp %37, rounding = rtne : tensor<2x29x4xf32> -> tensor<2x29x4xf8E4M3FN>
-		%39 = tt.splat %arg0 : !tt.ptr -> tensor<2x29x4x!tt.ptr>
-		%40 = tt.addptr %39, %29 : tensor<2x29x4x!tt.ptr>, tensor<2x29x4xi32>
-		tt.store %40, %38 : tensor<2x29x4x!tt.ptr>
+		%39 = tt.splat %arg0 : !tt.ptr<f8E4M3FN> -> tensor<2x29x4x!tt.ptr<f8E4M3FN>>
+		%40 = tt.addptr %39, %29 : tensor<2x29x4x!tt.ptr<f8E4M3FN>>, tensor<2x29x4xi32>
+		tt.store %40, %38 : tensor<2x29x4x!tt.ptr<f8E4M3FN>>
 		tt.return
 	}
 }
@@ -63,18 +63,17 @@ module {
 // CHECK: %[[ALLOC_INPUT:[A-Za-z0-9_]+]] = memref.alloc() : memref<2x29x4xf8E4M3FN>
 // CHECK: %[[TENSOR_INPUT:[A-Za-z0-9_]+]] = bufferization.to_tensor %[[ALLOC_INPUT]] restrict writable : memref<2x29x4xf8E4M3FN>
 
-// CHECK: %[[FP_TO_FP:[A-Za-z0-9_]+]] = tt.fp_to_fp %[[TENSOR_INPUT]] : tensor<2x29x4xf8E4M3FN> -> tensor<2x29x4xf32>
+// CHECK: %[[FP_TO_FP:[A-Za-z0-9_]+]] = arith.extf %[[TENSOR_INPUT]] {round_mode = #hfusion.round_mode<rint>} : tensor<2x29x4xf8E4M3FN> to tensor<2x29x4xf32>
 // CHECK: %[[SUB_F:[A-Za-z0-9_]+]] = arith.subf %[[FILL_ZERO]], %[[FP_TO_FP]] : tensor<2x29x4xf32>
 // CHECK: %[[EXP:[A-Za-z0-9_]+]] = math.exp %[[SUB_F]] : tensor<2x29x4xf32>
 // CHECK: %[[ADD_F:[A-Za-z0-9_]+]] = arith.addf %[[EXP]], %[[FILL_ONE]] : tensor<2x29x4xf32>
 // CHECK: %[[DIV_F:[A-Za-z0-9_]+]] = arith.divf %[[FILL_ONE]], %[[ADD_F]] : tensor<2x29x4xf32>
-// CHECK: %[[EMPTY_F8:[A-Za-z0-9_]+]] = tensor.empty() : tensor<2x29x4xf8E4M3FN>
-// CHECK: %[[CAST_F32_TO_F8:[A-Za-z0-9_]+]] = hfusion.cast {mode = #hfusion.round_mode} ins(%[[DIV_F]] : tensor<2x29x4xf32>) outs(%[[EMPTY_F8]] : tensor<2x29x4xf8E4M3FN>) -> tensor<2x29x4xf8E4M3FN>
+// CHECK: %[[CAST_F32_TO_F8:[A-Za-z0-9_]+]] = arith.truncf %[[DIV_F]] {round_mode = #hfusion.round_mode<rint>} : tensor<2x29x4xf32> to tensor<2x29x4xf8E4M3FN>
 
 // -----
 
 module {
-		tt.func public @fn_npu_(%arg0: !tt.ptr {tt.divisibility = 16 : i32}, %arg1: !tt.ptr {tt.divisibility = 16 : i32}, %arg2: !tt.ptr {tt.divisibility = 16 : i32}, %arg3: !tt.ptr {tt.divisibility = 16 : i32}) attributes {noinline = false} {
+		tt.func public @fn_npu_(%arg0: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32}, %arg1: !tt.ptr<f8E5M2> {tt.divisibility = 16 : i32}, %arg2: !tt.ptr<f32> {tt.divisibility = 16 : i32}, %arg3: !tt.ptr<f32> {tt.divisibility = 16 : i32}) attributes {noinline = false} {
 		%cst = arith.constant dense<0.000000e+00> : tensor<2x29x4xf32>
 		%cst_0 = arith.constant dense<1.000000e+00> : tensor<2x29x4xf32>
 		%cst_1 = arith.constant dense<4> : tensor<1x29x1xi32>
@@ -113,18 +112,18 @@ module {
 		%27 = tt.broadcast %24 : tensor<2x29x1xi32> -> tensor<2x29x4xi32>
 		%28 = tt.broadcast %26 : tensor<1x1x4xi32> -> tensor<2x29x4xi32>
 		%29 = arith.addi %27, %28 : tensor<2x29x4xi32>
-		%30 = tt.splat %arg1 : !tt.ptr -> tensor<2x29x4x!tt.ptr>
-		%31 = tt.addptr %30, %29 : tensor<2x29x4x!tt.ptr>, tensor<2x29x4xi32>
-		%32 = tt.load %31 : tensor<2x29x4x!tt.ptr>
+		%30 = tt.splat %arg1 : !tt.ptr<f8E5M2> -> tensor<2x29x4x!tt.ptr<f8E5M2>>
+		%31 = tt.addptr %30, %29 : tensor<2x29x4x!tt.ptr<f8E5M2>>, tensor<2x29x4xi32>
+		%32 = tt.load %31 : tensor<2x29x4x!tt.ptr<f8E5M2>>
 		%33 = tt.fp_to_fp %32 : tensor<2x29x4xf8E5M2> -> tensor<2x29x4xf32>
 		%34 = arith.subf %cst, %33 : tensor<2x29x4xf32>
 		%35 = math.exp %34 : tensor<2x29x4xf32>
 		%36 = arith.addf %35, %cst_0 : tensor<2x29x4xf32>
 		%37 = arith.divf %cst_0, %36 : tensor<2x29x4xf32>
 		%38 = tt.fp_to_fp %37, rounding = rtne : tensor<2x29x4xf32> -> tensor<2x29x4xf8E5M2>
-		%39 = tt.splat %arg0 : !tt.ptr -> tensor<2x29x4x!tt.ptr>
-		%40 = tt.addptr %39, %29 : tensor<2x29x4x!tt.ptr>, tensor<2x29x4xi32>
-		tt.store %40, %38 : tensor<2x29x4x!tt.ptr>
+		%39 = tt.splat %arg0 : !tt.ptr<f8E5M2> -> tensor<2x29x4x!tt.ptr<f8E5M2>>
+		%40 = tt.addptr %39, %29 : tensor<2x29x4x!tt.ptr<f8E5M2>>, tensor<2x29x4xi32>
+		tt.store %40, %38 : tensor<2x29x4x!tt.ptr<f8E5M2>>
 		tt.return
 	}
 }
@@ -136,10 +135,9 @@ module {
 // CHECK: %[[ALLOC_INPUT:[A-Za-z0-9_]+]] = memref.alloc() : memref<2x29x4xf8E5M2>
 // CHECK: %[[TENSOR_INPUT:[A-Za-z0-9_]+]] = bufferization.to_tensor %[[ALLOC_INPUT]] restrict writable : memref<2x29x4xf8E5M2>
 
-// CHECK: %[[FP_TO_FP:[A-Za-z0-9_]+]] = tt.fp_to_fp %[[TENSOR_INPUT]] : tensor<2x29x4xf8E5M2> -> tensor<2x29x4xf32>
+// CHECK: %[[FP_TO_FP:[A-Za-z0-9_]+]] = arith.extf %[[TENSOR_INPUT]] {round_mode = #hfusion.round_mode<rint>} : tensor<2x29x4xf8E5M2> to tensor<2x29x4xf32>
 // CHECK: %[[SUB_F:[A-Za-z0-9_]+]] = arith.subf %[[FILL_ZERO]], %[[FP_TO_FP]] : tensor<2x29x4xf32>
 // CHECK: %[[EXP:[A-Za-z0-9_]+]] = math.exp %[[SUB_F]] : tensor<2x29x4xf32>
 // CHECK: %[[ADD_F:[A-Za-z0-9_]+]] = arith.addf %[[EXP]], %[[FILL_ONE]] : tensor<2x29x4xf32>
 // CHECK: %[[DIV_F:[A-Za-z0-9_]+]] = arith.divf %[[FILL_ONE]], %[[ADD_F]] : tensor<2x29x4xf32>
-// CHECK: %[[EMPTY_F8:[A-Za-z0-9_]+]] = tensor.empty() : tensor<2x29x4xf8E5M2>
-// CHECK: %[[CAST_F32_TO_F8:[A-Za-z0-9_]+]] = hfusion.cast {mode = #hfusion.round_mode} ins(%[[DIV_F]] : tensor<2x29x4xf32>) outs(%[[EMPTY_F8]] : tensor<2x29x4xf8E5M2>) -> tensor<2x29x4xf8E5M2>
+// CHECK: %[[CAST_F32_TO_F8:[A-Za-z0-9_]+]] = arith.truncf %[[DIV_F]] {round_mode = #hfusion.round_mode<rint>} : tensor<2x29x4xf32> to tensor<2x29x4xf8E5M2>
