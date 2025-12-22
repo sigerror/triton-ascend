@@ -737,8 +737,12 @@ LogicalResult TritonToLinalgPass::processPtrBroadcastOperations(ModuleOp moduleO
     target.addLegalOp<triton::SplatOp>();
     target.addLegalOp<triton::AddPtrOp>();
     target.addDynamicallyLegalOp<triton::BroadcastOp>([](triton::BroadcastOp op) {
+        if (op->hasAttr("MetaUse")) {
+            return true;
+        }
         auto resultType = dyn_cast<RankedTensorType>(op.getType());
-        return !isa<triton::PointerType>(resultType.getElementType());
+        HoistBroadcast::BroadcastHoister hoister(op);
+        return !(isa<triton::PointerType>(resultType.getElementType()) && hoister.canBroadcast());
     });
 
     // --- Patterns ---
@@ -815,11 +819,6 @@ void TritonToLinalgPass::runOnOperation() {
     signalPassFailure();
   }
 
-  // Execute ptr broadcast operations conversion
-  if (failed(processPtrBroadcastOperations(moduleOp))) {
-    signalPassFailure();
-  }
-
   // 0. Annotate Memory-Related Triton FuncOps with tensor_kind (used by profiling).
   annotateTensorKindForModule(moduleOp);
 
@@ -855,6 +854,10 @@ void TritonToLinalgPass::runOnOperation() {
   target.addDynamicallyLegalOp<scf::WhileOp>(loopOpLegalFn);
 
   // 5. Register converters for all illegal Triton ops.
+  // Execute ptr broadcast operations conversion first
+  if (failed(processPtrBroadcastOperations(moduleOp))) {
+    signalPassFailure();
+  }
   this->populateTritonToLinalgConversionPatterns(tritonTypeConverter, patterns,
                                                  LAUNCH_GRID_RANK);
 

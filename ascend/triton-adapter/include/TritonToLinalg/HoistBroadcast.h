@@ -55,16 +55,18 @@ public:
 
 class BroadcastHoister {
 public:
-  BroadcastHoister(RankedTensorType resultType);
+  BroadcastHoister(triton::BroadcastOp op);
   LogicalResult parse(Value operand, const Location &loc, ConversionPatternRewriter &rewriter);
   LogicalResult parseAddptr(triton::AddPtrOp op, const Location &loc, ConversionPatternRewriter &rewriter);
   LogicalResult parseBroadcast(triton::BroadcastOp op, const Location &loc, ConversionPatternRewriter &rewriter);
   LogicalResult parseSplat(triton::SplatOp op, const Location &loc, ConversionPatternRewriter &rewriter);
-
+  LogicalResult findSrc(Value operand);
   LogicalResult replaceBroadcastOp(triton::BroadcastOp op, ConversionPatternRewriter &rewriter);
+  bool canBroadcast();
 
 private:
   Value source;
+  triton::BroadcastOp opToHoist;
   SmallVector<int64_t> tensorSizes;
   llvm::SmallDenseMap<Value, Value> broadcastMap;
 };
