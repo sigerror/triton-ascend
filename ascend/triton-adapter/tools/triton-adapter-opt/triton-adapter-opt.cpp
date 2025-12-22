@@ -28,6 +28,7 @@
 #include "TritonToLLVM/Passes.h"
 #include "TritonToUnstructure/Passes.h"
 #include "TritonLinearize/Passes.h"
+#include "TritonToStructured/Passes.h"
 #include "bishengir/InitAllDialects.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -62,6 +63,7 @@ int main(int argc, char **argv) {
   mlir::triton::registerBubbleUpOperationPass();
   mlir::triton::registerTritonToUnstructurePass();
   mlir::triton::registerTritonToHFusionPass();
+  mlir::triton::registerTritonToStructuredPass();
 
   return mlir::asMainReturnCode(
       mlir::MlirOptMain(argc, argv, "Triton-Adapter test driver\n", registry));

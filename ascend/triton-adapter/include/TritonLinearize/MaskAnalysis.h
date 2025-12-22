@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -33,6 +34,7 @@
 #include "llvm/ADT/SmallVector.h"
 
 #include "triton/Dialect/Triton/IR/Dialect.h"
+#include "Utils/Utils.h"
 
 #include <utility>
 

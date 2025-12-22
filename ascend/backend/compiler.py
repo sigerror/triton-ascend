@@ -108,15 +108,11 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         enable_select_analysis = metadata["enable_select_analysis"]
         compile_on_910_95 = metadata["compile_on_910_95"]
         force_simt_template = metadata["force_simt_template"]
-        enable_linearize = metadata.get("enable_linearize")
 
         cmd_list = [
             triton_adapter_opt_path,
             src_path,
-        ]
-        if enable_linearize:
-            cmd_list.append("--triton-linearize")
-        cmd_list += [
+            "--triton-to-structured",
             f"--discrete-mask-access-conversion=compile-on-910-95={compile_on_910_95} "\
             f"force-simt-template={force_simt_template}",
             "--triton-to-annotation",

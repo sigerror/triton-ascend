@@ -15,6 +15,7 @@ target_link_libraries(triton-adapter-opt PRIVATE
   TritonToUnstructure
   TritonTransforms
   TritonLinearize
+  TritonToStructured
   ${dialect_libs}
   ${conversion_libs}
   TritonGPUTransforms

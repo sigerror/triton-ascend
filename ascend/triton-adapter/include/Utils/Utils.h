@@ -225,6 +225,14 @@ FailureOr<TypedAttr> specializeTypelessValueToAttr(TypelessValue, Type,
 
 FailureOr<Value> specializeTypelessValueToConstant(TypelessValue, Type,
                                                    Location, OpBuilder &);
+
+std::optional<int64_t> getIntAttr(const OpFoldResult ofr);
+
+Value materializeValue(OpBuilder &builder, Location loc, OpFoldResult ofr);
+
+bool isZero(const OpFoldResult ofr);
+
+Value convertToIndexIfNeeded(Value intValue, const Location &loc, OpBuilder &b);
 } // namespace mlir
 
 #endif // TRITONNPU_UTILS_UTILS_H
