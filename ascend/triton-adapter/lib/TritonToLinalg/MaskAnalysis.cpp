@@ -238,8 +238,18 @@ LogicalResult MaskState::parseConstant(arith::ConstantOp constOp,
     auto elementType = attr.getElementType();
     assert(attr.isSplat() && isa<IntegerType>(elementType) &&
            "All elements must share a single integer constant value");
-    this->scalar = builder.getIndexAttr(
-        attr.getSplatValue<IntegerAttr>().getValue().getSExtValue());
+    
+    if (elementType.isInteger(1) && isa<ShapedType>(constOp.getValue().getType())) {
+      auto shapedType = cast<ShapedType>(constOp.getValue().getType());
+      auto shape = shapedType.getShape();
+      for (size_t i = 0; i < shape.size(); i++) {
+        this->dims.push_back(builder.getIndexAttr(shape[i]));
+        this->offsets.push_back(builder.getIndexAttr(0));
+      }
+    } else {
+      this->scalar = builder.getIndexAttr(
+          attr.getSplatValue<IntegerAttr>().getValue().getSExtValue());
+    }
   } else {
     auto value = cast<IntegerAttr>(constOp.getValue()).getInt();
     this->scalar = builder.getIndexAttr(value);
@@ -274,6 +284,7 @@ LogicalResult MaskState::parseAdd(arith::AddIOp addOp, const Location &loc,
 LogicalResult MaskState::parseDiv(arith::DivSIOp divOp, const Location &loc,
                                   OpBuilder &builder) {
   assert(this->isEmpty());
+  return failure(); // temporarily disable parseDiv
   MaskState lhsState;
   if (failed(lhsState.parse(divOp.getLhs(), loc, builder))) {
     return failure();

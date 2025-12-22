@@ -615,8 +615,7 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
         >(patterns.getContext());
     patterns.add<TTOpConverters::MakeTensorPtrCanonicalizer>(patterns.getContext());
     patterns.add<TTOpConverters::ReduceSingleCanonicalizer>(patterns.getContext());
-    // FIXME: temporarily revert SelectCanonicalizer on A3
-    if (this->compileOn91095) {
+    if (this->enableSelectAnalysis) {
       patterns.add<TTOpConverters::SelectCanonicalizer>(patterns.getContext());
     }
 }
