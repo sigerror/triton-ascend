@@ -304,6 +304,14 @@ def _precompile_npu_ext(header_path):
     cc_cmd += [f"-I{os.path.dirname(os.path.realpath(__file__))}"]
     # find the ascend library
     asc_path = _get_ascend_path()
+
+    rt_path = os.path.join(asc_path, "include/experiment/runtime/runtime/rt.h")
+    if not os.path.exists(rt_path):
+        cc_cmd += [
+            f"-I{os.path.join(asc_path, 'pkg_inc')}",
+            f"-I{os.path.join(asc_path, 'pkg_inc/profiling')}",
+        ]
+
     cc_cmd += [
         f"-I{os.path.join(asc_path, 'include')}",
         f"-I{os.path.join(asc_path, 'include/experiment')}",
@@ -360,6 +368,13 @@ def _build_npu_ext(obj_name: str, header_path, src_path, *, kernel_launcher="tor
     asc_path = _get_ascend_path()
     if header_path is not None:
         cc_cmd += [f"-I{os.path.dirname(header_path)}"]
+
+    rt_path = os.path.join(asc_path, "include/experiment/runtime/runtime/rt.h")
+    if not os.path.exists(rt_path):
+        cc_cmd += [
+            f"-I{os.path.join(asc_path, 'pkg_inc')}",
+            f"-I{os.path.join(asc_path, 'pkg_inc/profiling')}",
+        ]
 
     cc_cmd += [
         f"-I{os.path.join(asc_path, 'include')}",
