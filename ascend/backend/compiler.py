@@ -590,7 +590,7 @@ class NPUOptions:
 
     multibuffer: bool = not is_compile_on_910_95
     enable_auto_bind_sub_block: bool = not is_compile_on_910_95
-    enable_select_analysis: bool = is_compile_on_910_95
+    enable_select_analysis: bool = True
     enable_hivm_auto_cv_balance: bool = None
     sync_solver: bool = None
     unit_flag: bool = None
