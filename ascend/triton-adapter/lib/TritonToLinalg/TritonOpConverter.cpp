@@ -153,11 +153,10 @@ LogicalResult PreciseDivConverter::matchAndRewrite(
   return success();
 }
 
-LogicalResult FpToFpConverter::matchAndRewrite(
-    triton::FpToFpOp op, OpAdaptor adaptor,
-    ConversionPatternRewriter &rewriter) const {
+LogicalResult FpToFpCanonicalizer::matchAndRewrite(
+    triton::FpToFpOp op, PatternRewriter &rewriter) const {
   auto loc = op.getLoc();
-  Value input = adaptor.getSrc();
+  Value input = op.getSrc();
   auto resultType = op.getResult().getType();
   
   // Check if rounding mode is specified

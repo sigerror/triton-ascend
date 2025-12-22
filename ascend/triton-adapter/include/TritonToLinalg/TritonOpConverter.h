@@ -78,12 +78,11 @@ For fp8 conversions with default RTNE rounding:
 
 Note: Non-RTNE rounding modes (e.g., RTZ) are handled by TritonToHFusion pass.
 */
-struct FpToFpConverter : public OpConversionPattern<triton::FpToFpOp> {
+struct FpToFpCanonicalizer : public OpRewritePattern<triton::FpToFpOp> {
 public:
-  using OpConversionPattern<triton::FpToFpOp>::OpConversionPattern;
-  LogicalResult
-  matchAndRewrite(triton::FpToFpOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override;
+  using OpRewritePattern<triton::FpToFpOp>::OpRewritePattern;
+  LogicalResult matchAndRewrite(triton::FpToFpOp op,
+                                PatternRewriter &rewriter) const override;
 };
 
 class SelectCanonicalizer : public OpRewritePattern<arith::SelectOp> {

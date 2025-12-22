@@ -570,6 +570,7 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicRMWOp>,
                  LoadStoreConverter::LoadStoreCanonicalizer<triton::AtomicCASOp>>(patterns.getContext());
     patterns.add<TTOpConverters::BitcastCanonicalizer>(patterns.getContext());
+    patterns.add<TTOpConverters::FpToFpCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::ScalarStoreCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::ScalarAtomicRMWCanonicalizer>(patterns.getContext());
     patterns.add<LoadStoreConverter::ScalarAtomicCASCanonicalizer>(patterns.getContext());
@@ -641,7 +642,6 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::SplatConverter>(patterns.getContext());
   patterns.add<TTOpConverters::ClampFConverter>(patterns.getContext());
   patterns.add<TTOpConverters::PreciseDivConverter>(patterns.getContext());
-  patterns.add<TTOpConverters::FpToFpConverter>(patterns.getContext());
   // reduce converters
   patterns.add<TTOpConverters::ArgMinConverter>(patterns.getContext());
   patterns.add<TTOpConverters::ArgMaxConverter>(patterns.getContext());
