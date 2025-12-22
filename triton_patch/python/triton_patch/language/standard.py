@@ -53,6 +53,17 @@ def softmax(x, ieee_rounding=False):
 
 @core._tensor_member_fn
 @jit
+def ravel(x):
+    """
+    Returns a contiguous flattened view of :code:`x`.
+
+    :param x: the input tensor
+    :type x: Block
+    """
+    return core.reshape(x, [x.numel], can_reorder=False)
+
+@core._tensor_member_fn
+@jit
 @math._add_math_1arg_docstr("isfinited")
 def isfinited(x):
     _is_int8_type: core.constexpr = x.dtype.is_int8()
