@@ -71,6 +71,9 @@ Triton Ascend支持Triton原生的Autotune能力。通过对Tile/Block的形状�
 - #### Triton Ascend环境变量
 Triton Ascend支持Triton原生的环境变量，此外，面向昇腾平台上的新功能特性进行了拓展。Triton Ascend涉及的全量环境变量，请参考 [环境变量总览](./docs/ENVIRONMENT.md) 。
 
+- #### Triton Ascend贡献指南
+Triton Ascend贡献指南请参考 [贡献指南](CONTRIBUTING.zh.md) 。
+
 - #### Triton Ascend常见报错与应对方案
 针对在开发或迁移Triton算子时经常遇到的报错信息与解决方案，我们正在汇总并梳理相关文档供大家参考。该文档正在开发中，将于近期发布，敬请期待。
 
