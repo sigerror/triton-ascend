@@ -62,7 +62,75 @@ class AutoParser(ast.NodeVisitor):
         return False
 
 
-class SplitAxesParser(AutoParser):
+class AxesKeyParser(AutoParser):
+    """
+    A parser for extracting axis information from a given function's AST.
+    This class is designed to handle specific patterns in the function's code to
+    determine the axis associated with a given variable. It is particularly useful
+    for parsing triton DSL kernel code and identifying axis information.
+    It recursively processes assignment nodes and lessthan nodes to obtain the axes
+    corresponding to the specified var in the given function.
+    """
+    def __init__(self, func_ast: ast.AST, keys):
+        super().__init__(func_ast)
+        self.keys = keys
+        self.checked_vars = list()
+
+    def get_axis(self, var):
+        axis = None
+        for node in ast.walk(self.func_ast):
+            # handle compare node
+            if isinstance(node, ast.Compare):
+                axis = self.handle_lt_node(node, var)
+            elif isinstance(node, ast.Assign):
+                axis = self.handle_assign_node(node, var)
+            if axis is not None:
+                return axis
+        self.checked_vars.append(var)
+        return None
+
+    def handle_assign_node(self, node, var):
+        if not isinstance(node, ast.Assign) or not isinstance(node.targets, list):
+            return None
+        if len(node.targets) != 1 or not isinstance(node.targets[0], ast.Name):
+            return None
+
+        target = node.targets[0].id
+        if target in self.checked_vars:
+            return None
+        # Prevent cyclic assignment.
+        if var == target or not self.contains_target_var(node.value, var):
+            return None
+        
+        axis = self.get_axis(target)
+        if axis:
+            return axis
+        return None
+
+    def handle_lt_node(self, node, var):
+        if not isinstance(node, ast.Compare) or not isinstance(node.ops, list):
+            return None
+        if len(node.ops) != 1 or not isinstance(node.ops[0], ast.Lt):
+            return None
+        if not isinstance(node.comparators, list) or len(node.comparators) != 1:
+            return None
+        if not isinstance(node.left, ast.Name) or var != node.left.id:
+            return None
+        
+        comparator = node.comparators[0]
+        if not isinstance(comparator, ast.Name) and \
+           not (isinstance(comparator, ast.Call) and \
+           isinstance(comparator.func, ast.Name) and \
+           comparator.func.id == 'min'):
+            return None
+        
+        for k, v in self.keys.items():
+            if self.contains_target_var(comparator, v):
+                return k
+        return None
+
+
+class SplitAxesParser(AxesKeyParser):
     """
     Extracts the split axis parameters from triton kernel code. The parsing is based on the 
     `tl.program_id` statement. This class identifies potential split axes by analyzing the usage
@@ -70,7 +138,7 @@ class SplitAxesParser(AutoParser):
     variables(currently supporting scenarios where multiplication is either direct or indirect via
     intermediate variables). It then filters these candidates based on a list of candidate parameters
     (parameters not provided by the user). After that, it confirms the split axis corresponding to 
-    the current parameter using mask comparison and the `key` passed in `autotune`.
+    the current parameter using mask comparison and the `keys` passed in `autotune`.
     
     Note:
     1. Split axis parameters must be multiplied with `tl.program_id`. 
@@ -79,23 +147,21 @@ class SplitAxesParser(AutoParser):
     3. The identified split axes are limited to the list of candidated parameters, ensuring that
        only those parameters that can be dynamically adjusted through the autotune process are considered.
     """
-    def __init__(self, func_ast: ast.AST, key, candidates_params: List[str]):
+    def __init__(self, func_ast: ast.AST, keys, candidates_params: List[str]):
         """
         :param func_ast: Abstract syntax tree of the triton kernel function
         :type func_ast: ast.AST
-        :param key: a dict of axis name: argument name, used to confirm the split axis corresponding to
+        :param keys: a dict of axis name: argument name, used to confirm the split axis corresponding to
             the split axis parameters.
-        :type key: Dict[str, str]
-        :param candidatas_params: a list of parameters names that were not provided by the user when calling
+        :type keys: Dict[str, str]
+        :param candidates_params: a list of parameters names that were not provided by the user when calling
             triton kernel function. The parser will only consider these parameters as potential split axis
             parameters.
         :type candidates_params: List[str]
         """
-        super().__init__(func_ast)
+        super().__init__(func_ast, keys)
         self.split_axes = dict()
-        self.key = key
         self.program_id_vars = list()
-        self.checked_vars = list()
         self.candidates_params = candidates_params
 
     def parse(self) -> Dict[str, str]:
@@ -133,50 +199,20 @@ class SplitAxesParser(AutoParser):
             
             if split_axes_val in self.candidates_params and \
                split_axes_val not in self.split_axes.values():
-                split_axes_key = self.get_split_axes_key(split_axes_val)
+                split_axes_key = self.get_axis(split_axes_val)
                 if split_axes_key:
                     self.split_axes[split_axes_key] = split_axes_val
         self.generic_visit(node)
 
-    def get_split_axes_key(self, var):
-        for node in ast.walk(self.func_ast):
-            if isinstance(node, ast.Compare):
-                if not isinstance(node.left, ast.Name) or \
-                   not isinstance(node.comparators[0], ast.Name):
-                    continue
-                if var == node.left.id:
-                    compared_var = node.comparators[0].id
-                elif var == node.comparators[0].id:
-                    compared_var = node.left.id
-                else:
-                    continue
-                for k, v in self.key.items():
-                    if v == compared_var:
-                        return k
-            if isinstance(node, ast.Assign):
-                if len(node.targets) == 1 and \
-                   isinstance(node.targets[0], ast.Name) and \
-                   var != node.targets[0].id: # Prevent cyclic assignment.
-                    if not self.contains_target_var(node.value, var):
-                        continue
-                    target_var = node.targets[0].id
-                    if target_var in self.checked_vars:
-                        continue
-                    key = self.get_split_axes_key(target_var)
-                    if key is not None:
-                        return key
-        self.checked_vars.append(var)
-        return None
 
-
-class TilingAxesParser(AutoParser):
+class TilingAxesParser(AxesKeyParser):
     """
     Extracts the tiling axis parameters from triton kernel code. The parsing is based on the 
-    `tl.arange` and `tl.range` statement. This class identifies potential tiling axes by analyzing
-    the usage of the `tl.arange` and `tl.range` within `for` loop in the program. Common parameters
-    between `tl.range` and `tl.arange` are extracted. It then filters these candidates based on a 
+    `tl.arange`, `tl.range` and `range()` statement. This class identifies potential tiling axes by analyzing
+    the usage of the `range` and `tl.range` within `for` loop in the program. Common parameters
+    between `range()` or `tl.range` and `tl.arange` are extracted. It then filters these candidates based on a 
     list of candidate parameters (parameters not provided by the user). After that, it confirms the
-    tiling axis corresponding to the current parameter using mask comparison and the `key` passed 
+    tiling axis corresponding to the current parameter using mask comparison and the `keys` passed 
     in `autotune`.
     
     Note:
@@ -187,22 +223,20 @@ class TilingAxesParser(AutoParser):
     3. The identified tiling axes are limited to the list of candidated parameters, ensuring that
        only those parameters that can be dynamically adjusted through the autotune process are considered.
     """
-    def __init__(self, func_ast: ast.AST, key, candidates_params: List[str]):
+    def __init__(self, func_ast: ast.AST, keys, candidates_params: List[str]):
         """
         :param func_ast: Abstract syntax tree of the triton kernel function
         :type func_ast: ast.AST
-        :param key: a dict of axis name: argument name, used to confirm the tiling axis corresponding to
+        :param keys: a dict of axis name: argument name, used to confirm the tiling axis corresponding to
             the tiling axis parameters.
-        :type key: Dict[str, str]
-        :param candidatas_params: a list of parameters names that were not provided by the user when calling
+        :type keys: Dict[str, str]
+        :param candidates_params: a list of parameters names that were not provided by the user when calling
             triton kernel function. The parser will only consider these parameters as potential tiling axis
             parameters.
         :type candidates_params: List[str]
         """
-        super().__init__(func_ast)
+        super().__init__(func_ast, keys)
         self.tiling_axes = dict()
-        self.key = key
-        self.checked_vars = list()
         self.candidates_params = candidates_params
         self.candidates_params_for_loop = list()
     
@@ -215,16 +249,26 @@ class TilingAxesParser(AutoParser):
            len(node.iter.args) == 3 and \
            isinstance(node.iter.args[2], ast.Name):
             for_loop_param = node.iter.args[2].id
-            if for_loop_param in self.candidates_params:
+            if for_loop_param in self.candidates_params and \
+               for_loop_param not in self.candidates_params_for_loop:
                 self.candidates_params_for_loop.append(for_loop_param)
         self.generic_visit(node)
 
     def visit_Assign(self, node):
         if len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            # handle FloorDiv
+            if isinstance(node.value, ast.BinOp) and isinstance(node.value.op, ast.FloorDiv):
+                denominator = node.value.right
+                if isinstance(denominator, ast.Name) and \
+                   denominator.id in self.candidates_params and \
+                   denominator.id not in self.candidates_params_for_loop:
+                    self.candidates_params_for_loop.append(denominator.id)
+                    self.visit(self.func_ast)
+
             tiling_axes_val = self.get_tiling_axes_val(node.value)
             if tiling_axes_val is not None and \
                tiling_axes_val in self.candidates_params_for_loop:
-                tiling_axes_key = self.get_tiling_axes_key(tiling_axes_val)
+                tiling_axes_key = self.get_axis(tiling_axes_val)
                 if tiling_axes_key:
                     self.tiling_axes[tiling_axes_key] = tiling_axes_val
         self.generic_visit(node)
@@ -248,36 +292,6 @@ class TilingAxesParser(AutoParser):
                 if val:
                     return val
         return None
-    
-    def get_tiling_axes_key(self, var):
-        for node in ast.walk(self.func_ast):
-            if isinstance(node, ast.Compare):
-                if not isinstance(node.left, ast.Name) or \
-                   not isinstance(node.comparators[0], ast.Name):
-                    continue
-                if var == node.left.id:
-                    compared_var = node.comparators[0].id
-                elif var == node.comparators[0].id:
-                    compared_var = node.left.id
-                else:
-                    continue
-                for k, v in self.key.items():
-                    if v == compared_var:
-                        return k
-            elif isinstance(node, ast.Assign):
-                if len(node.targets) == 1 and \
-                   isinstance(node.targets[0], ast.Name) and \
-                   var != node.targets[0].id: # Prevent cyclic assignment.
-                    if not self.contains_target_var(node.value, var):
-                        continue
-                    target_var = node.targets[0].id
-                    if target_var in self.checked_vars:
-                        continue
-                    key = self.get_tiling_axes_key(target_var)
-                    if key is not None:
-                        return key
-        self.checked_vars.append(var)
-        return None
 
 
 class LowDimsAxesParser(AutoParser):
@@ -288,7 +302,7 @@ class LowDimsAxesParser(AutoParser):
     their associated operations. Then it checks if these variables are involved in slicing
     operations to determine dimension expansion and filters out variables that are expanded
     in non-lowest dimensions. After that, it compares the extracted variables with the provided
-    `key` to map them to specific low-dimensional axis.
+    `keys` to map them to specific low-dimensional axis.
 
     Note:
     1. low dimensions axis must be calculated within the `tl.arange` function and involved in 
@@ -296,16 +310,16 @@ class LowDimsAxesParser(AutoParser):
     2. Without mask comparision, it is impossible to confirm the exact low dimensions axis, which
        would lead to parameter parsing failure. (eg. mask = offsets < n_elements).
     """
-    def __init__(self, func_ast: ast.AST, key: Dict[str, str]):
+    def __init__(self, func_ast: ast.AST, keys: Dict[str, str]):
         """
         :param func_ast: Abstract syntax tree of the triton kernel function
         :type func_ast: ast.AST
-        :param key: a dict of axis name: argument name, used to confirm the low-dimensional axis.
-        :type key: Dict[str, str]
+        :param keys: a dict of axis name: argument name, used to confirm the low-dimensional axis.
+        :type keys: Dict[str, str]
         """
         super().__init__(func_ast)
         self.low_dims_axis = list()
-        self.key = key
+        self.keys = keys
         self.checked_compared_vars = list()
         self.checked_slice_vars = list()
 
@@ -367,7 +381,7 @@ class LowDimsAxesParser(AutoParser):
         if not isinstance(node.slice, ast.Tuple) or not isinstance(node.slice.elts, list):
             return False
         elts = node.slice.elts
-        if len(elts) != 0 and not isinstance(elts[len(elts) - 1], ast.Slice):
+        if len(elts) != 0 and not isinstance(elts[-1], ast.Slice):
             partin_other_slice[0] = True
             return False
         return True
@@ -404,7 +418,7 @@ class LowDimsAxesParser(AutoParser):
                     compared_var = node.left.id
                 else:
                     continue
-                for k, v in self.key.items():
+                for k, v in self.keys.items():
                     if v == compared_var:
                         return k
             elif isinstance(node, ast.Assign):

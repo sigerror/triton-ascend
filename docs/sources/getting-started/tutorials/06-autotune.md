@@ -156,7 +156,7 @@ kernel_func[grid](y, x, n_rows, n_cols, BLOCK_SIZE=block_size)
 
 最后通过掩码比较和 `autotune` 中传入的 `key` 确认当前参数对应的切分轴。
 
-注意：1. 分割轴参数必须要与 `tl.program_id()` 相乘。 2. 若不进行掩码比较则无法对应到具体的切分轴，会导致参数解析失败。3. 识别出的分割轴参数仅限于候选参数列表，确保只有那些可以通过自动调优动态调整的参数才会被考虑。  
+注意：1. 分割轴参数必须要与 `tl.program_id()` 相乘。 2. 必须要进行掩码比较，且该轴对应的key需要直接作为右值或以key为参数的min函数作为右值，才能对应到具体的切分轴，否则会导致参数解析失败。3. 识别出的分割轴参数仅限于候选参数列表，确保只有那些可以通过自动调优动态调整的参数才会被考虑。  
 
 ```Python
 @triton.autotune(
@@ -178,18 +178,19 @@ def triton_func(...):
     offsets = tl.program_id(0) * XBLOCK + tl.arange(0, XBLOCK)
 
     # mask compare
-    mask = offsets < n_elements
+    mask = offsets < n_elements # 1
+    mask = offsets < min(..., n_elements) # 2
 
 # 解析得到切分轴参数 split_params = {"x": "XBLOCK"}
 ```
 
 #### 分块轴参数解析
 
-分块轴参数解析依据 `tl.arange()` 和 `tl.range()` 分块语句来确定，通过分析程序中`for` 循环里的 `tl.range()` 和 `tl.arange()` 的使用情况及其计算得到的变量来识别潜在的分块轴参数，提取 `tl.range()` 和 `tl.arange()` 的共同参数，并根据候选参数列表（用户未提供的参数）进行过滤。
+分块轴参数解析依据 `tl.arange()` ，`tl.range()`，`range()` 分块语句来确定，通过分析程序中`for` 循环里的 `tl.range()`，`tl.arange()`以及`range()` 的使用情况及其计算得到的变量来识别潜在的分块轴参数，提取 `tl.range()` 或 `range()` 中和 `tl.arange()` 的共同参数，并根据候选参数列表（用户未提供的参数）进行过滤。
 
 最后通过掩码比较和 `autotune` 中传入的 `key` 确认当前参数对应的分块轴。
 
-注意：1. 分块轴参数必须要在`tl.arange()`和`for` 循环里的 `tl.range()`进行计算。 2. 若不进行掩码比较则无法对应到具体的分块轴，会导致参数解析失败。3. 识别出的分块轴参数仅限于候选参数列表，确保只有那些可以通过自动调优动态调整的参数才会被考虑。  
+注意：1. 分块轴参数必须要在`tl.arange()`中，并且要在 `for` 循环里的 `tl.range()` 或 `//` 和 `range()` 组合进行计算。 2. 必须要进行掩码比较，且该轴对应的key需要直接作为右值或以key为参数的min函数作为右值，才能对应到具体的分块轴，否则会导致参数解析失败。3. 识别出的分块轴参数仅限于候选参数列表，确保只有那些可以通过自动调优动态调整的参数才会被考虑。  
 
 ```Python
 @triton.autotune(
@@ -199,11 +200,20 @@ def triton_func(...):
 @triton.jit
 def triton_func(...):
     ...
+    # case 1
     for row_idx in tl.range(0, XBLOCK, XBLOCK_SUB):
         row_offsets = row_idx + tl.arange(0, XBLOCK_SUB)[:, None]
         col_offsets = tl.arange(0, BLOCK_SIZE)[None, :]
 
-        xmask = row_offsets < n_rows
+    # case 2
+    loops = (XBLOCK + XBLOCK_SUB - 1) // XBLOCK_SUB
+    for loop in range(loops)
+        row_offsets = loop * XBLOCK_SUB + tl.arange(0, XBLOCK_SUB)[:, None]
+        col_offsets = tl.arange(0, BLOCK_SIZE)[None, :]
+
+        ...
+        xmask = row_offsets < n_rows # 1
+        xmask = row_offsets < min(..., n_rows) # 2
         ymask = col_offsets < n_cols
 
 # 解析得到分块轴参数 tiling_params = {"x": "XBLOCK_SUB"}
