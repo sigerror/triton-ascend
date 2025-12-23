@@ -26,6 +26,7 @@ import subprocess
 import multiprocessing
 import sys
 from concurrent.futures import ThreadPoolExecutor
+import threading
 from datetime import datetime, timezone
 import logging
 
@@ -292,20 +293,29 @@ def do_bench_multiple_kernel_npu(kernel_dict, active=30, prof_dir=None, keep_res
     from .compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError, CompilationError
     assert len(kernel_dict) > 0, f"ERROR: length of kernel_dict is {len(kernel_dict)}, no kernel is profiling."
 
+    kernel_dict_temp_lock = threading.Lock()
+    tiling_dict_lock = threading.Lock()
+    tiling_dict = {}
+    kernel_dict_temp = {}
+
     # warmup kernel
-    def run_fn(fn):
+    def run_fn(config, fn):
         try:
             fn()
+            if kernel_dict_temp_lock:
+                kernel_dict_temp[config] = fn
         except (CompileTimeAssertionFailure, MLIRCompilationError, CompilationError) as ex:
+            if tiling_dict_lock:
+                tiling_dict[config] = [float("inf"), float("inf"), float("inf")]
             raise ex
 
     def run_all_fns():
         import psutil
-        max_workers = psutil.cpu_count(logical=False)
+        max_workers = min(psutil.cpu_count(logical=False) // 2, len(kernel_dict))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = []
-            for _, fn in kernel_dict.items():
-                future = executor.submit(run_fn, fn)
+            for config, fn in kernel_dict.items():
+                future = executor.submit(run_fn, config, fn)
                 futures.append(future)
             for future in futures:
                 try:
@@ -348,14 +358,15 @@ def do_bench_multiple_kernel_npu(kernel_dict, active=30, prof_dir=None, keep_res
             with_modules=False,
             experimental_config=experimental_config,
     ) as prof:
-        for _, fn in kernel_dict.items():
+        for _, fn in kernel_dict_temp.items():
             for _ in builtins.range(active):
                 buffer.zero_()
                 fn()
                 torch.npu.synchronize()
     del buffer
 
-    tiling_dict = _collect_mul_prof_result(base_dir=torch_path, kernel_dict=kernel_dict, total=active)
+    tiling_dict_temp = _collect_mul_prof_result(base_dir=torch_path, kernel_dict=kernel_dict_temp, total=active)
+    tiling_dict.update(tiling_dict_temp)
     _rm_dic(keep_res, torch_path)
     return tiling_dict
 

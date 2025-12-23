@@ -27,8 +27,6 @@ import os
 import time
 import inspect
 from typing import Dict, List
-import threading
-from concurrent.futures import ThreadPoolExecutor
 import logging
 
 from .jit import KernelInterface
@@ -206,50 +204,19 @@ class Autotuner(KernelInterface):
             :type quantiles: list[float], optional
         """
         assert len(kernel_dict) > 0, f"ERROR: length of kernel_dict is empty."
-        kernel_dict_temp_lock = threading.Lock()
-        tiling_dict_lock = threading.Lock()
-        tiling_dict = {}
-        kernel_dict_temp = {}
         from ..compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError, CompilationError
-
-        def run_fn(config, fn):
-            try:
-                with kernel_dict_temp_lock:
-                    fn()
-                    kernel_dict_temp[config] = fn
-            except (CompileTimeAssertionFailure, MLIRCompilationError, CompilationError) as ex:
-                with tiling_dict_lock:
-                    tiling_dict[config] = [float('inf')]
-                raise ex
-
-        def run_all_fns():
-            import psutil
-            max_workers = psutil.cpu_count(logical=False)
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = []
-                for config, fn in kernel_dict.items():
-                    future = executor.submit(run_fn, config, fn)
-                    futures.append(future)
-                for future in futures:
-                    try:
-                        future.result()
-                    except Exception as ex:
-                        logging.info(f"Exception raised while benchmarking function.{ex}")
-
-        run_all_fns()
-
         if self.do_bench.__module__ == "triton.testing":
             enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() == 'npu'
             import torch
             if torch.npu.is_available() and enable_bench_npu:
                 from triton.testing import do_bench_multiple_kernel_npu
-                tiling_dict_temp = do_bench_multiple_kernel_npu(kernel_dict_temp, active=max(30, rep), prof_dir=None, keep_res=False)
-                tiling_dict.update(tiling_dict_temp)
+                tiling_dict = do_bench_multiple_kernel_npu(kernel_dict, active=max(30, rep))
                 return tiling_dict
-        for config, kernel_call in kernel_dict_temp.items():
+        tiling_dict = {}
+        for config, kernel_call in kernel_dict.items():
             try:
                 tiling_dict[config] = self.do_bench(kernel_call, quantiles=quantiles)
-            except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as ex:
+            except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError, CompilationError) as ex:
                 tiling_dict[config] = [float("inf"), float("inf"), float("inf")]
         return tiling_dict
 
