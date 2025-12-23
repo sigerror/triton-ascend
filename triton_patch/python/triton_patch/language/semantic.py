@@ -75,7 +75,7 @@ def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
     return tl.tensor(builder.create_make_range(start, end), ret_ty)
 
 def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
-         fp_downcast_rounding: Optional[str] = None) -> tl.tensor:
+         fp_downcast_rounding: Optional[str] = None, overflow_mode: Optional[str] = None) -> tl.tensor:
     src_ty = input.type
     if isinstance(dst_ty, tl.constexpr):
         dst_ty = dst_ty.value
@@ -150,7 +150,7 @@ def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
             ty = input.dtype.to_ir(builder)
             _0 = tl.tensor(builder.get_null_value(ty), input.dtype)
             return not_equal(input, _0, builder) 
-        elif not is_compile_on_910_95 and \
+        elif not is_compile_on_910_95 and overflow_mode == "saturate" and \
              (src_sca_ty.is_int_unsigned() or dst_sca_ty.is_int_unsigned()) and \
              src_sca_ty.int_bitwidth >= dst_sca_ty.int_bitwidth:
             return cast(cast(input, tl.float32, builder), dst_sca_ty, builder)

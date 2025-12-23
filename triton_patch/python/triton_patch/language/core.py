@@ -76,7 +76,7 @@ def cast(input, dtype: real_dtype, fp_downcast_rounding: Optional[str] = None, b
         bitcast = bitcast.value
     if bitcast:
         return semantic.bitcast(input, dtype, _builder)
-    ret = semantic.cast(input, dtype, _builder, fp_downcast_rounding)
+    ret = semantic.cast(input, dtype, _builder, fp_downcast_rounding, overflow_mode)
     if overflow_mode is not None:
         if overflow_mode in overflow_modes:
             semantic.compile_hint(ret, "overflow_mode", overflow_mode, _builder)
