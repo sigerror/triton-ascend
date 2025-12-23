@@ -39,7 +39,6 @@ from triton.backends.ascend.utils import (
     convert_sigtype_to_int,
     _is_auto_map_parallel_blocks_enabled,
     get_ascend_arch_from_env,
-	  is_remote_run,
     is_ffts_supported,
     force_disable_ffts,
 )
@@ -73,10 +72,6 @@ class NPUUtils(object):
         self.npu_utils_mod = mod
         # setup for remote run
         env_arch = get_ascend_arch_from_env()
-        remote_run = is_remote_run(env_arch)
-        if (remote_run):
-            from triton.backends.ascend.utils import copy_file_for_remote_run
-            copy_file_for_remote_run(src_path)
 
     def load_binary(self, name, kernel, shared, device):
         fnname, mix_mode = name.split()
@@ -122,7 +117,6 @@ class NPULauncher(object):
     def __init__(self, src, metadata):
         self.compile_only = os.getenv("TRITON_COMPILE_ONLY", 'false').lower() in ('true', '1')
         self.enable_msprof_register_tensor = os.getenv("TRITON_REGISTER_TENSOR_MSPROF", 'false').lower() in ('true', '1')
-        self.remote_run = is_remote_run(metadata.target.arch)
         debug_mode = metadata.debug
         header_src = generate_npu_header_src()
         constants = src.constants if hasattr(src, "constants") else dict()
@@ -135,142 +129,12 @@ class NPULauncher(object):
         # TODO: use a var to pack all vars required to run on a remote machine
         self.mix_mode = metadata.mix_mode
         self.shared = metadata.shared
-        if (self.remote_run):
-            from triton.backends.ascend.utils import copy_file_for_remote_run
-            # copy both src of launcher
-            src_dir = os.path.dirname(so_launcher_path)
-            src_name = f"launcher"
-            src_path = os.path.join(src_dir, f"{src_name}.cpp")
-            with open(src_path, "w") as f:
-                f.write(wrapper_src)
-            copy_file_for_remote_run(src_path, metadata.hash)
-            #
-            script_path = os.path.abspath(__file__)
-            script_dir = os.path.dirname(script_path)
-            copy_file_for_remote_run(os.path.join(script_dir, "remote_driver.py"))
         # initialize launcher
         import importlib.util
         spec = importlib.util.spec_from_file_location("__triton_launcher", so_launcher_path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
         self.launch = getattr(mod, "launch")
-
-    def remote_launch(self, *args, **kwargs):
-        import getpass
-        import json
-        import torch
-        from triton.backends.ascend.utils import (
-          connect_to_remote_machine,
-          sftp_mkdir,
-          sftp_clear_dir,
-          sftp_put_dir,
-          sftp_rmdir,
-          sftp_get_files,
-          setup_cachedir_for_remote_run,
-          get_logger,
-        )
-        # setup the files required to run on a remote machine
-        packed_metadata = args[5]
-        cache_dir = setup_cachedir_for_remote_run(packed_metadata["hash"])
-        print(f"[INFO]: The cache dir for remote run is {cache_dir}")
-        cache_root_dir = os.path.dirname(cache_dir)
-        kernel_info = {}
-        kernel_info["gridX"] = args[0]
-        kernel_info["gridY"] = args[1]
-        kernel_info["gridZ"] = args[2]
-        kernel_info["packed_metadata"] = packed_metadata
-        kernel_info["mix_mode"] = self.mix_mode
-        kernel_info["shared"] = self.shared
-        num_arg = len(args[9:])
-        kernel_info["num_arg"] = num_arg
-        for idx, arg in enumerate(args[9:]):
-            if (torch.is_tensor(arg)):
-                arg_fname = f"arg_{idx}.bin"
-                arg_fpath = os.path.join(cache_dir, arg_fname)
-                with open(arg_fpath, 'wb') as f:
-                    f.write(bytes(arg.untyped_storage()))
-                kernel_info[f"arg_{idx}"] = {}
-                kernel_info[f"arg_{idx}"]["filename"] = arg_fname
-                kernel_info[f"arg_{idx}"]["dtype"] = arg.dtype.__str__()
-                kernel_info[f"arg_{idx}"]["shape"] = list(arg.shape)
-            else:
-                kernel_info[f"arg_{idx}"] = arg
-        kernel_info["kwargs"] = kwargs
-        with open(os.path.join(cache_dir, 'kernel_info.json'), 'w') as f:
-            json.dump(kernel_info, f, indent=4)
-        if self.compile_only:
-            return
-        # TODO: read commands from config file
-        USER = getpass.getuser()
-        HOME = "/home/HwHiAiUser"
-        REMOTE_ROOT_DIR = os.path.join(HOME, "bishengir-regbase-test-" + USER, packed_metadata["hash"])
-        # FIXME: Why python 3.9 dose not work? We must use python 3.11 as follows.
-        RUN_COMMANDS = f'''
-cd {REMOTE_ROOT_DIR}
-source ~/cann_install/latest/bin/setenv.bash
-export ASCEND_HOME_PATH=$ASCEND_AICPU_PATH
-python3 remote_driver.py'''
-        RUN_COMMANDS += f'''
-exit
-'''
-        ssh = connect_to_remote_machine()
-        sftp = ssh.open_sftp()
-        sftp_mkdir(sftp, os.path.dirname(REMOTE_ROOT_DIR), ignore_existing=True)
-        sftp_mkdir(sftp, REMOTE_ROOT_DIR, ignore_existing=True)
-        sftp_clear_dir(sftp, REMOTE_ROOT_DIR)
-        sftp_put_dir(sftp, cache_dir, REMOTE_ROOT_DIR)
-        sftp.put(os.path.join(cache_root_dir, "remote_driver.py"), os.path.join(REMOTE_ROOT_DIR, "remote_driver.py"))
-        sftp.put(os.path.join(cache_root_dir, "npu_utils.cpp"), os.path.join(REMOTE_ROOT_DIR, "npu_utils.cpp"))
-        transport = ssh.get_transport()
-        channel = transport.open_session()
-        channel.get_pty()
-        channel.invoke_shell()
-        stdin = channel.makefile("wb")
-        stdout = channel.makefile("r")
-        stderr = channel.makefile_stderr("r")
-        stdin.write(RUN_COMMANDS)
-        stdin.close()
-        channel.recv_exit_status()
-        remote_shell_output = stdout.read().strip()
-        remote_shell_error = stderr.read().strip()
-        sftp_get_files(sftp, REMOTE_ROOT_DIR, cache_dir, "bin")
-        if remote_shell_error:
-            print(remote_shell_error.decode())
-        lines = remote_shell_output.decode().replace('\r\n', '\n').replace('\r', '\n').split('\n')
-        lines = [line.strip() for line in lines if line.strip()]
-        start_idx = -1
-        end_idx = -1
-        for i, line in enumerate(lines):
-            if 'remote_driver.py' in line:
-                start_idx = i
-            if '$ exit' in line and start_idx != -1:
-                end_idx = i
-                break
-        if start_idx != -1 and end_idx != -1 and start_idx < end_idx:
-            kernel_output = "\n".join(lines[start_idx+1:end_idx]).replace('\x1b[?20041', '')
-        else:
-            kernel_output = ''
-        if kernel_output != '':
-            logger = get_logger("triton kernel's stdout", "INFO")
-            logger.info(kernel_output)
-        # Read in the data file copied from remote
-        for idx, arg in enumerate(args[9:]):
-            if (torch.is_tensor(arg)):
-                arg_fname = f"arg_{idx}.bin"
-                arg_fpath = os.path.join(cache_dir, arg_fname)
-                with open(arg_fpath, 'rb') as f:
-                    buffer = f.read()
-                    storage = torch.UntypedStorage.from_buffer(buffer, dtype=arg.dtype, byte_order='native')
-                    new_arg = torch.tensor([], dtype=arg.dtype).set_(storage, 0, arg.shape)
-                arg.copy_(new_arg.npu())
-            else:
-              pass
-        stdout.close()
-        stderr.close()
-        channel.close()
-        sftp_rmdir(sftp, REMOTE_ROOT_DIR)
-        sftp.close()
-        ssh.close()
 
     def __call__(self, *args, **kwargs):
         if self.compile_only:
@@ -286,8 +150,6 @@ exit
             # args[5] must be the packed metadata.
             # Check the launch wrapper in which PyArg_ParseTuple specifies the ordering of args
             args[5]['tensor_params_shape'] = tensor_params_shape
-        if self.remote_run:
-            self.remote_launch(*args, **kwargs)
         else:
             if self.compile_only:
                 return
