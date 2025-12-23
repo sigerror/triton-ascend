@@ -39,7 +39,7 @@ from io import BytesIO
 from pathlib import Path
 from typing import List, NamedTuple, Optional
 from dataclasses import dataclass
-from setuptools import Extension, setup
+from setuptools import Extension, setup, find_packages
 from setuptools.command.build_ext import build_ext
 from setuptools.command.install import install
 from distutils.command.clean import clean
@@ -578,13 +578,23 @@ def get_packages(backends):
         "triton/triton_patch/compiler",
         "triton/triton_patch/runtime",
     ]
-
+    # Add extension packages
+    packages += find_packages(include=[
+        "triton.extension",
+        "triton.extension.buffer",
+        "triton.extension.buffer.language",
+        "triton.extension.ascend",
+        "triton.extension.ascend.language",
+    ])
     return packages
 
 
 def get_package_dir(backends):
     triton_prefix_dir = os.path.join(triton_dir, "python/triton")
-    triton_patch_prefix_dir = os.path.join(root_dir, "triton_patch/python/triton_patch")
+    triton_patch_prefix_dir = os.path.join(
+        root_dir, "triton_patch/python/triton_patch")
+    triton_extension_prefix_dir = os.path.join(
+        root_dir, "triton_extension/python/triton/extension")
 
     # upstream triton
     package_dir = {
@@ -630,6 +640,12 @@ def get_package_dir(backends):
 
     for path in patch_paths:
         package_dir[f"triton/{path}"] = f"{triton_patch_prefix_dir}/{path}"
+
+    # triton extension
+    package_dir["triton/extension"] = triton_extension_prefix_dir
+    for full_path in Path(triton_extension_prefix_dir).rglob("*"):
+        relative_path = str(full_path).replace(triton_extension_prefix_dir, "")
+        package_dir[f"triton/extension/{relative_path}"] = full_path
 
     return package_dir
 

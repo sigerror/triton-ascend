@@ -116,10 +116,10 @@ struct DiscreteMaskLoadConversion : OpRewritePattern<triton::LoadOp> {
   }
 };
 
-struct DiscreteMaskAtomicConversion : OpRewritePattern<AtomicRMWOp> {
-  using OpRewritePattern<AtomicRMWOp>::OpRewritePattern;
+struct DiscreteMaskAtomicConversion : OpRewritePattern<triton::AtomicRMWOp> {
+  using OpRewritePattern<triton::AtomicRMWOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(AtomicRMWOp op,
+  LogicalResult matchAndRewrite(triton::AtomicRMWOp op,
                                 PatternRewriter &rewriter) const final {
     auto loc = op.getLoc();
     auto ptr = op.getPtr();
@@ -157,7 +157,7 @@ struct DiscreteMaskAtomicConversion : OpRewritePattern<AtomicRMWOp> {
       op->emitError("Unsupported atomic operation.");
 
     auto maskedValue = rewriter.create<arith::SelectOp>(loc, mask, src, *fill);
-    auto newAtomicOp = rewriter.create<AtomicRMWOp>(
+    auto newAtomicOp = rewriter.create<triton::AtomicRMWOp>(
         loc, src.getType(), rmwOp, ptr, maskedValue, mlir::Value(), op.getSem(),
         op.getScope());
     rewriter.replaceOp(op, newAtomicOp);

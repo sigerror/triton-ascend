@@ -29,7 +29,7 @@ import os
 import textwrap
 from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
 from .. import language
-from .._C.libtriton import ir
+from .._C.libtriton import ir, ascend_ir
 from ..language import constexpr, tensor, str_to_ty
 from ..language.core import _unwrap_if_constexpr, nv_tma_desc_type, _value
 from ..runtime.jit import _normalize_ty, get_jit_fn_file_line
@@ -37,6 +37,7 @@ from ..runtime.jit import _normalize_ty, get_jit_fn_file_line
 from ..runtime import JITFunction
 from .errors import (CompilationError, CompileTimeAssertionFailure, UnsupportedLanguageConstruct)
 from types import ModuleType
+import triton.extension.ascend.language as al
 
 
 def mangle_ty(ty):
@@ -201,6 +202,81 @@ class ContainsReturnChecker(ast.NodeVisitor):
     def visit_Call(self, node: ast.Call) -> bool:
         return self.visit(node.func)
 
+def create_builder_method_wrapper(main_builder, delegate_builder, method_name):
+    """
+    Create a wrapper that delegates a method call to another builder while
+    synchronizing insertion points and locations.
+
+    Args:
+        main_builder: The main builder object (e.g., ir.builder)
+        delegate_builder: The builder that actually implements the method
+        method_name: Name of the method to wrap
+
+    Returns:
+        A wrapper function that can be attached to the main builder
+    """
+    delegate_method = getattr(delegate_builder, method_name)
+
+    def wrapper(*args, **kwargs):
+        # Synchronize delegate builder to main builder's position and location
+        saved_ip = main_builder.get_insertion_point()
+        saved_loc = main_builder.get_loc()
+        delegate_builder.restore_insertion_point(saved_ip)
+        if saved_loc:
+            delegate_builder.set_loc(saved_loc)
+
+        # Call the delegate method
+        result = delegate_method(*args, **kwargs)
+
+        # Restore main builder to same position and location
+        main_builder.restore_insertion_point(saved_ip)
+        if saved_loc:
+            main_builder.set_loc(saved_loc)
+
+        return result
+
+    wrapper.__name__ = method_name
+    wrapper.__doc__ = getattr(delegate_method, '__doc__', None)
+
+    return wrapper
+
+
+def attach_builder_methods(main_builder, delegate_builder, method_names):
+    """
+    Attach multiple methods from a delegate builder to the main builder.
+
+    Args:
+        main_builder: The main builder to attach methods to
+        delegate_builder: The builder that implements the methods
+        method_names: List of method names to wrap and attach
+    """
+    for method_name in method_names:
+        wrapper = create_builder_method_wrapper(main_builder, delegate_builder, method_name)
+        setattr(main_builder, method_name, wrapper)
+
+
+def setup_unified_builder(main_builder, ascend_builder):
+    """
+    Set up a unified builder interface by attaching methods from specialized builders.
+
+    This allows code to use only main_builder while having access to methods from
+    ascend_builder and buffer_builder.
+
+    Args:
+        main_builder: The main ir.builder instance
+        ascend_builder: The ascend_ir.ascendnpu_ir_builder instance
+    """
+    # Store references to specialized builders
+    main_builder._ascend_builder = ascend_builder
+
+    ascend_methods = [
+        'create_scope_op',
+        'scope_return',
+        'get_t_core_type_cube_attr',
+        'get_t_core_type_vector_attr',
+    ]
+    attach_builder_methods(main_builder, ascend_builder, ascend_methods)
+
 
 class CodeGenerator(ast.NodeVisitor):
 
@@ -212,12 +288,18 @@ class CodeGenerator(ast.NodeVisitor):
             self.builder = ir.builder(context, compile_mode="simt")
         else:
             self.builder = ir.builder(context, compile_mode="simd")
+        self.ascend_builder = ascend_ir.ascendnpu_ir_builder(context)
         self.file_name = file_name
         # node.lineno starts from 1, so we need to subtract 1
         self.begin_line = begin_line - 1
         self.builder.set_loc(file_name, begin_line, 0)
+        self.ascend_builder.set_loc(file_name, begin_line, 0)
         self.builder.options = options
         self.builder.codegen_fns = codegen_fns
+
+        # Set up unified builder interface with methods from specialized builders
+        setup_unified_builder(self.builder, self.ascend_builder)
+
         self.builder.module_map = {} if module_map is None else module_map
         self.module = self.builder.create_module() if module is None else module
         self.function_ret_types = {} if function_types is None else function_types
@@ -775,6 +857,100 @@ class CodeGenerator(ast.NodeVisitor):
 
     def visit_Pass(self, node):
         pass
+
+    def _is_scope_context(self, context_expr):
+        """Check if the context expression is an al.scope call."""
+        if not isinstance(context_expr, ast.Call):
+            return False
+        func = context_expr.func
+        if isinstance(func, ast.Attribute) and func.attr == 'scope':
+            if isinstance(func.value, ast.Name) and func.value.id == 'al':
+                return True
+        return False
+
+    def _extract_scope_attributes(self, context_expr):
+        """Extract attributes from al.scope(...) call."""
+        scope_attrs = {}
+        for keyword in context_expr.keywords:
+            if isinstance(keyword.value, ast.Constant):
+                scope_attrs[keyword.arg] = keyword.value.value
+        return scope_attrs
+
+    def visit_With(self, node):
+        """Handle 'with' statements, including al.scope context managers."""
+
+        if len(node.items) != 1:
+            for stmt in node.body:
+                self.visit(stmt)
+            return
+
+        context_expr = node.items[0].context_expr
+
+        if self._is_scope_context(context_expr):
+            scope_attrs = self._extract_scope_attributes(context_expr)
+            self.create_scope_function(scope_attrs, node.body)
+            return
+
+        # Only al.scope context managers are supported
+        raise self._unsupported(
+            node, "This context manager is not supported in 'with' statements")
+
+    def _py_value_to_mlir_attr(self, value):
+        """Convert Python value to MLIR attribute."""
+        attr_creators = {
+            str: lambda v: self.builder.get_str_attr(v),
+            bool: lambda v: self.builder.get_bool_attr(v),
+            int: lambda v: self.builder.get_int32_attr(v),
+            list: lambda v: self.builder.get_i64_array_attr(v),
+        }
+        creator = attr_creators.get(type(value))
+        return creator(value) if creator else value
+
+    def _handle_core_mode_attr(self, core_mode):
+        if core_mode not in ("cube", "vector"):
+            return {}
+
+        return {
+            "hivm.t_core_type": (
+                self.builder.get_t_core_type_cube_attr() if core_mode == "cube"
+                else self.builder.get_t_core_type_vector_attr()
+            )
+        }
+
+    def create_scope_function(self, scope_attrs, body_stmts):
+        """
+        Create a scope.scope operation with a region for an al.scope block.
+
+        Args:
+            scope_attrs: Dict of scope attributes (e.g., {'core_mode': 'vector'})
+            body_stmts: List of AST statements in the scope body
+        """
+        scope_node = self.cur_node
+        current_block = self.builder.get_insertion_block()
+
+        # Convert Python primitives to MLIR attributes
+        mlir_attrs = {"no_inline": self.builder.get_unit_attr()}
+        for k, v in scope_attrs.items():
+            if k == "core_mode":
+                mlir_attrs.update(self._handle_core_mode_attr(v))
+            elif k == "no_inline":
+                if not v:
+                    mlir_attrs.pop("no_inline")
+            else:
+                mlir_attrs[k] = self._py_value_to_mlir_attr(v)
+
+        scope_op = self.builder.create_scope_op(mlir_attrs)
+        old_lscope = self.lscope.copy()
+        region = scope_op.get_region(0)
+        entry_block = region.front()
+        self.builder.set_insertion_point_to_end(entry_block)
+        for i, stmt in enumerate(body_stmts):
+            self.visit(stmt)
+        
+        self.builder.scope_return()
+        self.builder.set_insertion_point_to_end(current_block)
+        self.lscope = old_lscope
+        return None
 
     def visit_Compare(self, node):
         if not (len(node.comparators) == 1 and len(node.ops) == 1):

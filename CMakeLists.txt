@@ -17,6 +17,7 @@ include(CTest)
 
 set(TRITON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party/triton")
 set(PATCHED_TRITON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/triton_patch")
+set(EXTENSION_TRITON_ROOT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/triton_extension")
 set(PATCHED_TRITON_LIBRARIES
   "TritonIR"
 )
@@ -154,6 +155,16 @@ include_directories(${PROJECT_BINARY_DIR}/third_party/triton/include) # Tablegen
 include_directories(${TRITON_ROOT_DIR}/third_party)
 include_directories(${PROJECT_BINARY_DIR}/third_party) # Tablegen'd files
 
+# Triton Adaptor and Triton Extension is dependent on AscendNPU IR
+set(ASCENDNPU_IR_SRC_DIR ${PROJECT_SOURCE_DIR}/third_party/ascendnpu-ir)
+set(ASCENDNPU_IR_BINARY_DIR ${PROJECT_BINARY_DIR}/third_party/ascendnpu-ir)
+set(BISHENGIR_BUILD_STANDALONE_IR_ONLY ON)
+set(BISHENGIR_ENABLE_A5_UNPUBLISHED_FEATURES ON)
+
+add_subdirectory(${ASCENDNPU_IR_SRC_DIR} ${ASCENDNPU_IR_BINARY_DIR})
+include_directories(${ASCENDNPU_IR_SRC_DIR}/bishengir/include)
+include_directories(${ASCENDNPU_IR_BINARY_DIR}/bishengir/include) # Tablegen'd files
+
 # link_directories(${LLVM_LIBRARY_DIR})
 add_subdirectory(${TRITON_ROOT_DIR}/include)
 add_subdirectory(${TRITON_ROOT_DIR}/lib)
@@ -180,7 +191,9 @@ if(TRITON_BUILD_PYTHON_MODULE)
   message(STATUS "Adding Python module")
   set(PYTHON_SRC_PATH ${TRITON_ROOT_DIR}/python/src)
   set(PATCHED_PYTHON_SRC_PATH ${PATCHED_TRITON_ROOT_DIR}/python/src)
+  set(EXTENSION_PYTHON_SRC_PATH ${EXTENSION_TRITON_ROOT_DIR}/python/src)
   include_directories(${PYTHON_SRC_PATH})
+  include_directories(${PATCHED_PYTHON_SRC_PATH})
 
   if(PYTHON_INCLUDE_DIRS)
     # We have PYTHON_INCLUDE_DIRS set--this is what we expect when building
@@ -290,13 +303,19 @@ if(TRITON_BUILD_PYTHON_MODULE)
   set(TRITON_BACKENDS_TUPLE "(${TRITON_BACKENDS_TUPLE})")
 
   add_compile_definitions(TRITON_BACKENDS_TUPLE=${TRITON_BACKENDS_TUPLE})
-  add_library(triton SHARED ${PYTHON_SRC_PATH}/main.cc
+  add_library(triton SHARED ${PATCHED_PYTHON_SRC_PATH}/main.cc
                             ${PATCHED_PYTHON_SRC_PATH}/ir.cc
                             ${PYTHON_SRC_PATH}/passes.cc
                             ${PYTHON_SRC_PATH}/interpreter.cc
-                            ${PYTHON_SRC_PATH}/llvm.cc)
+                            ${PYTHON_SRC_PATH}/llvm.cc
+                            ${EXTENSION_PYTHON_SRC_PATH}/ascend_ir.cc)
   # Link triton with its dependencies
   target_link_libraries(triton PUBLIC ${TRITON_LIBRARIES})
+  # Link BiShengIR dialects
+  target_link_libraries(triton PUBLIC BiShengIRHFusionDialect)
+  target_link_libraries(triton PUBLIC BiShengIRScopeDialect)
+  target_link_libraries(triton PUBLIC BiShengIRHIVMDialect)
+  target_link_libraries(triton PUBLIC BiShengIRHIVMUtils)
   if(WIN32)
     target_link_libraries(triton PRIVATE ${CMAKE_DL_LIBS})
   else()

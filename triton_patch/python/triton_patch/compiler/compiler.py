@@ -23,7 +23,7 @@
 from __future__ import annotations
 import hashlib
 import json
-from .._C.libtriton import get_cache_invalidating_env_vars, ir
+from .._C.libtriton import get_cache_invalidating_env_vars, ir, ascend_ir
 from ..backends import backends
 from ..backends.compiler import GPUTarget, AttrsDescriptor
 from ..backends.ascend.compiler import AscendAttrsDescriptor
@@ -296,6 +296,7 @@ def compile(src, target=None, options=None):
         first_stage += 1
     context = ir.context()
     ir.load_dialects(context)
+    ascend_ir.load_dialects(context)
     backend.load_dialects(context)
     codegen_fns = backend.get_codegen_implementation()
     module_map = backend.get_module_map()
