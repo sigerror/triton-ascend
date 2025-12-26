@@ -23,7 +23,7 @@
 from math import pi as math_pi
 from triton.language import core, math
 from triton.language import float32, int1, int32
-from triton.language.standard import max as real_max, sum
+from triton.language.standard import sum
 from triton.language.standard import _log2
 from triton.runtime.jit import jit
 
@@ -46,7 +46,7 @@ def softmax(x, ieee_rounding=False):
     core.static_assert(not _is_int8_type, f"Expected dtype fp16/fp32/bf16, but got int8 or int1")
     _is_floating_type: core.constexpr = x.dtype.is_floating()
     core.static_assert(_is_floating_type == True, f"Expected dtype fp16/fp32/bf16, but got {core.constexpr(x.dtype)}")
-    z = x.to(core.float32) - real_max(x, 0)
+    z = x.to(core.float32) - max(x, 0, propagate_nan=True)
     num = math.exp(z)
     den = sum(num, 0)
     return math.fdiv(num, den, ieee_rounding).to(x.dtype)
@@ -181,7 +181,7 @@ def max(input, axis=None, return_indices=False, return_indices_tie_break_left=Tr
 @jit
 @core._add_reduction_docstr("maximum index", tie_break_arg="tie_break_left")
 def argmax(input, axis, tie_break_left=True, keep_dims=False):
-    (_, ret) = real_max(input, axis, return_indices=True, return_indices_tie_break_left=tie_break_left, keep_dims=keep_dims)
+    (_, ret) = max(input, axis, return_indices=True, return_indices_tie_break_left=tie_break_left, keep_dims=keep_dims, propagate_nan=True)
     return ret
 
 # min and argmin
@@ -336,7 +336,7 @@ def sort_impl(x, k: core.constexpr = None, dim: core.constexpr = None, descendin
     # select top k elements using bitonic top-k
     # https://www.doc.ic.ac.uk/~hlgr/pdfs/MassivelyParallelTopK.pdf
     for i in core.static_range(log_k + 1, log_n + 1):
-        h = real_max(h, axis=(_log2(h.numel) - 1 - log_k)) if descending else min(h, axis=(_log2(h.numel) - 1 - log_k))
+        h = max(h, axis=(_log2(h.numel) - 1 - log_k)) if descending else min(h, axis=(_log2(h.numel) - 1 - log_k), propagate_nan=True)
         h = _bitonic_merge_hypercube(h, log_k, 2 if i < log_n else descending)
 
     # reshape back:
