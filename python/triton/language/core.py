@@ -13,7 +13,7 @@ import os
 
 from .._C.libtriton import ir
 from . import semantic
-from ._utils import TRITON_MAX_TENSOR_NUMEL, validate_block_shape
+from ._utils import TRITON_MAX_TENSOR_NUMEL, validate_block_shape, get_primitive_bitwidth
 
 T = TypeVar('T')
 
@@ -762,27 +762,27 @@ class tensor(_value):
 
     @builtin
     def __add__(self, other, _builder=None):
-        return add(self, other, sanitize_overflow=True, _builder=_builder)
+        return add(self, other, sanitize_overflow=False, _builder=_builder)
 
     @builtin
     def __radd__(self, other, _builder=None):
-        return add(other, self, sanitize_overflow=True, _builder=_builder)
+        return add(other, self, sanitize_overflow=False, _builder=_builder)
 
     @builtin
     def __sub__(self, other, _builder=None):
-        return sub(self, other, sanitize_overflow=True, _builder=_builder)
+        return sub(self, other, sanitize_overflow=False, _builder=_builder)
 
     @builtin
     def __rsub__(self, other, _builder=None):
-        return sub(other, self, sanitize_overflow=True, _builder=_builder)
+        return sub(other, self, sanitize_overflow=False, _builder=_builder)
 
     @builtin
     def __mul__(self, other, _builder=None):
-        return mul(self, other, sanitize_overflow=True, _builder=_builder)
+        return mul(self, other, sanitize_overflow=False, _builder=_builder)
 
     @builtin
     def __rmul__(self, other, _builder=None):
-        return mul(other, self, sanitize_overflow=True, _builder=_builder)
+        return mul(other, self, sanitize_overflow=False, _builder=_builder)
 
     @builtin
     def __truediv__(self, other, _builder=None):
@@ -1084,6 +1084,9 @@ class tensor(_value):
     def associative_scan(self, axis, combine_fn, reverse=False) -> tensor:
         ...
 
+    def gather(self, indices, axis) -> tensor:
+        ...
+
     def histogram(self, num_bins) -> tensor:
         ...
 
@@ -1292,6 +1295,7 @@ def trans(input: tensor, *dims, _builder=None):
     """
     if not dims:
         dims = (1, 0)
+    dims = _unwrap_iterable(dims)
     return semantic.permute(input, dims, _builder)
 
 
@@ -1549,7 +1553,7 @@ def dot(input, other, acc=None, input_precision=None, allow_tf32=None, max_num_i
 
 
 @builtin
-def dot_scaled(lhs, lhs_scale, lhs_format, rhs, rhs_scale, rhs_format, acc=None, out_dtype=float32, _builder=None):
+def dot_scaled(lhs, lhs_scale, lhs_format, rhs, rhs_scale, rhs_format, acc=None, out_dtype=float32, lhs_k_pack=True, rhs_k_pack=True, _builder=None):
     """
     Returns the matrix product of two blocks in microscaling format.
     lhs and rhs use microscaling formats described here:
@@ -1568,7 +1572,7 @@ def dot_scaled(lhs, lhs_scale, lhs_format, rhs, rhs_scale, rhs_format, acc=None,
     """
     out_dtype = _constexpr_to_value(out_dtype)
     assert out_dtype == float32, "Only float32 is supported for out_dtype at the moment"
-    return semantic.dot_scaled(lhs, lhs_scale, lhs_format, rhs, rhs_scale, rhs_format, acc, out_dtype, _builder)
+    return semantic.dot_scaled(lhs, lhs_scale, lhs_format, rhs, rhs_scale, rhs_format, acc, out_dtype, lhs_k_pack, rhs_k_pack, _builder)
 
 
 # -----------------------
@@ -1578,7 +1582,7 @@ def dot_scaled(lhs, lhs_scale, lhs_format, rhs, rhs_scale, rhs_format, acc=None,
 
 @builtin
 def load(pointer, mask=None, other=None, boundary_check=(), padding_option="", cache_modifier="", eviction_policy="",
-         volatile=False, _builder=None):
+         volatile=False, care_padding = True, _builder=None):
     """
     Return a tensor of data whose values are loaded from memory at location defined by `pointer`:
 
@@ -1620,6 +1624,11 @@ def load(pointer, mask=None, other=None, boundary_check=(), padding_option="", c
     :type eviction_policy: str, optional
     :param volatile: changes volatile option in NVIDIA PTX
     :type volatile: bool, optional
+    :param care_padding: represents whether user cares about padding value or not, default is True, works as below:
+        1. if 'other' is not None, 'care_padding' takes no effect.
+        2. if 'other' is None and 'care_padding' = True, loaded tensor will fill zeroes on masked places.
+        3. if 'other' is None and 'care_padding' = False, masked places on loaded tensor will be random values, and tl.load may have a better performence.
+    :type care_padding: bool, optional
     """
     # `mask` and `other` can be constexpr
     mask = _constexpr_to_value(mask)
@@ -1632,8 +1641,9 @@ def load(pointer, mask=None, other=None, boundary_check=(), padding_option="", c
     cache_modifier = _constexpr_to_value(cache_modifier)
     eviction_policy = _constexpr_to_value(eviction_policy)
     volatile = _constexpr_to_value(volatile)
+    care_padding = _constexpr_to_value(care_padding)
     return semantic.load(pointer, mask, other, boundary_check, padding_option, cache_modifier, eviction_policy,
-                         volatile, _builder)
+                         volatile, care_padding, _builder)
 
 
 @builtin
@@ -2183,6 +2193,19 @@ def histogram(input, num_bins, _builder=None, _generator=None):
     num_bins = _constexpr_to_value(num_bins)
     return semantic.histogram(input, num_bins, _builder)
 
+@_tensor_member_fn
+@builtin
+def gather(src, index, axis, _builder=None):
+    """Gather from a tensor along a given dimension.
+    :param src: the source tensor
+    :type src: Tensor
+    :param index: the index tensor
+    :type index: Tensor
+    :param axis: the dimension to gather along
+    :type axis: int
+    """
+    axis = _constexpr_to_value(axis)
+    return semantic.gather(src, index, axis, _builder)
 
 # -----------------------
 # Compiler Hint Ops
@@ -2565,9 +2588,26 @@ class range:
     :param loop_unroll_factor: Tells the Triton IR level loop unroller how many
         times to unroll a for loop that this range is used with. Less than 2 for
         this value implies no unrolling.
+    :param disallow_acc_multi_buffer: If true, prevent the accumulator of the dot
+        operation in the loop to be multi-buffered, if applicable.
+    :param flatten: automatically flatten the loop nest starting at this loop to
+        create a single flattened loop. The compiler will try to pipeline the
+        flattened loop which can avoid stage stalling.
+    :param warp_specialize: Enable automatic warp specialization on the loop.
+        The compiler will attempt to partition memory, MMA, and vector
+        operations in the loop into separate async partitions. This will
+        increase the total number of warps required by the kernel.
+    :param disable_licm: Tells the compiler it shouldn't hoist loop invariant
+        code outside the loop. This is often useful to avoid creating long liveranges
+        within a loop.
+
+        Note that warp specialization is only supported on Blackwell GPUs and
+        only works on simple matmul loops. Support for arbitrary loops will be
+        expanded over time.
     """
 
-    def __init__(self, arg1, arg2=None, step=None, num_stages=None, loop_unroll_factor=None):
+    def __init__(self, arg1, arg2=None, step=None, num_stages=None, loop_unroll_factor=None,
+                 disallow_acc_multi_buffer=False, flatten=False, warp_specialize=False, disable_licm=False):
         if step is None:
             self.step = constexpr(1)
         else:
@@ -2580,6 +2620,10 @@ class range:
             self.end = arg2
         self.num_stages = num_stages
         self.loop_unroll_factor = loop_unroll_factor
+        self.disallow_acc_multi_buffer = disallow_acc_multi_buffer
+        self.flatten = flatten
+        self.warp_specialize = warp_specialize
+        self.disable_licm = disable_licm
 
     def __iter__(self):
         raise RuntimeError("tl.range can only be used in @triton.jit'd functions")
@@ -2692,3 +2736,684 @@ def binary_op_type_legalization(lhs, rhs, builder):
 def extern(fn):
     """A decorator for external functions."""
     return builtin(fn)
+
+
+# ------------------- FIXME:when upgrade to 3.4, del these -------------------
+def _unwrap_if_constexpr_3_4(o):
+    if isinstance(o, list):
+        return [_unwrap_if_constexpr_3_4(x) for x in o]
+    if isinstance(o, builtins.tuple):
+        return builtins.tuple(_unwrap_if_constexpr_3_4(x) for x in o)
+    if isinstance(o, tuple):
+        return tuple(_unwrap_if_constexpr_3_4(x) for x in o)
+    return o.value if isinstance(o, constexpr) else o
+
+
+def _unwrap_shape_3_4(shape):
+    shape = _unwrap_if_constexpr_3_4(shape)
+    return [_unwrap_if_constexpr_3_4(s) for s in shape]
+
+
+def _normalize_tuple(t):
+    normalized_tuple = _unwrap_if_constexpr_3_4(t)
+    if isinstance(normalized_tuple, (list, builtins.tuple)):
+        normalized_tuple = tuple(normalized_tuple)
+    return normalized_tuple
+
+
+class base_value(_value):
+    """Base class of values that exist in the triton IR (i.e. not constexprs).
+    """
+    type: base_type
+
+    def _flatten_ir(self, handles: List[ir.value]) -> None:
+        """Flatten frontend value into a sequence of mlir handles, which are appended
+        to the output list
+        """
+        raise NotImplementedError
+
+
+class base_type:
+
+    def __eq__(self, other):
+        raise NotImplementedError("Types must implement __eq__")
+
+    def __ne__(self, other):
+        return not (self == other)
+
+    def _unflatten_ir(self, handles: List[ir.value], cursor: int) -> Tuple[base_value, int]:
+        """Build a frontend value with the current dtype, wrapping a list of existing handles.
+        cursor is the index of the first handle relevant to this value, and the function
+        should return the updated cursor position after any handles consumed by the created value.
+        """
+        raise NotImplementedError
+
+    def mangle(self) -> str:
+        raise NotImplementedError(f"NYI: Type mangling for type {self.__class__}")
+
+    def _flatten_ir_types(self, builder: ir.builder, out: List[ir.type]) -> None:
+        raise NotImplementedError
+
+
+class tuple(base_value):
+
+    def __init__(self, args: Sequence, type: tuple_type = None):
+        self.values = [i for i in args]
+
+        def get_type(x):
+            if isinstance(x, dtype):
+                return dtype
+            if isinstance(x, (int, float)):
+                return constexpr
+            return x.type
+
+        self.type = type or tuple_type([get_type(x) for x in self.values])
+
+    def __getitem__(self, idx: constexpr):
+        if isinstance(idx, int):
+            idx = constexpr(idx)
+        if isinstance(idx, constexpr):
+            return self.values[idx]
+        else:
+            assert isinstance(idx, (slice, builtins.slice))
+            return tuple(self.values[idx.start:idx.stop:idx.step])
+
+    def __getattr__(self, name):
+        return self.values[self.type.fields.index(name)]
+
+    def __setitem__(self, idx: constexpr, value):
+        if isinstance(idx, int):
+            idx = constexpr(idx)
+        assert isinstance(idx, constexpr)
+        self.values[idx] = value
+
+    def __add__(self, other):
+        other = _normalize_tuple(other)
+        return tuple(self.values + other.values)
+
+    def __mul__(self, other):
+        assert isinstance(other, constexpr)
+        return tuple(self.values * other.value)
+
+    def __eq__(self, other):
+        other = _normalize_tuple(other)
+        return constexpr(self.values == other.values)
+
+    def __hash__(self):
+        return hash(builtins.tuple(self.values))
+
+    def __str__(self):
+        return str([str(x) for x in self.values])
+
+    def __iter__(self):
+        return iter(self.values)
+
+    def __len__(self):
+        return len(self.values)
+
+    def _flatten_ir(self, handles: List[ir.value]):
+        for v in self.values:
+            print("[debug]tuple _flatten_ir: value:", v)
+            v._flatten_ir(handles)
+            print("[debug]tuple _flatten_ir: handles:", handles)
+
+    def __repr__(self):
+        return f"({' ,'.join(repr(x) for x in self.values)})"
+
+
+class tuple_type(base_type):
+
+    def __init__(self, types, fields=None):
+        self.types = types
+        self.fields = fields or [''] * len(types)
+        self.name = '[' + ','.join([f"{k}:{v}" for k, v in zip(self.fields, self.types)]) + ']'
+
+    def __str__(self):
+        return self.name
+
+    def __iter__(self):
+        return iter(self.types)
+
+    def _flatten_ir_types(self, builder: ir.builder, out: List[ir.type]):
+        for ty in self.types:
+            if not isinstance(ty, constexpr):
+                ty._flatten_ir_types(builder, out)
+
+    def __getitem__(self, index: int) -> dtype:
+        return self.types[index]
+
+    def __eq__(self, other):
+        return type(self) is type(other) and self.types == other.types and self.fields == other.fields
+
+    def _unflatten_ir(self, handles: List[ir.value], cursor: int) -> Tuple[tuple, int]:
+        values = []
+        for ty in self.types:
+            value, cursor = ty._unflatten_ir(handles, cursor)
+            values.append(value)
+        return tuple(values, self), cursor
+
+    def mangle(self):
+        return 'T' + '_'.join(ty.mangle for ty in self.types) + 'T'
+
+
+
+class dtype_3_4(base_type):
+    SINT_TYPES = ['int8', 'int16', 'int32', 'int64']
+    UINT_TYPES = ['int1', 'uint8', 'uint16', 'uint32', 'uint64']
+    FP_TYPES = ['fp8e4b15', 'fp8e4nv', 'fp8e4b8', 'fp8e5', 'fp8e5b16', 'fp16', 'bf16', 'fp32', 'fp64']
+    STANDARD_FP_TYPES = ['fp16', 'bf16', 'fp32', 'fp64']
+    OTHER_TYPES = ['void']
+
+    class SIGNEDNESS(Enum):
+        SIGNED = 0
+        UNSIGNED = 1
+
+    class KIND(Enum):
+        BOOLEAN = 0
+        INTEGRAL = 1
+        FLOATING = 2
+
+    def __init__(self, name):
+        name = _unwrap_if_constexpr(name)
+        self.name = name
+        assert name in dtype_3_4.SINT_TYPES + dtype_3_4.UINT_TYPES + dtype_3_4.FP_TYPES + dtype_3_4.OTHER_TYPES, name
+        self.primitive_bitwidth = get_primitive_bitwidth(name)
+        self.itemsize = self.primitive_bitwidth // 8
+        if name in dtype_3_4.SINT_TYPES:
+            self.int_signedness = dtype_3_4.SIGNEDNESS.SIGNED
+            self.int_bitwidth = self.primitive_bitwidth
+        elif name in dtype_3_4.UINT_TYPES:
+            self.int_signedness = dtype_3_4.SIGNEDNESS.UNSIGNED
+            self.int_bitwidth = self.primitive_bitwidth
+        elif name in dtype_3_4.FP_TYPES:
+            if name == 'fp8e4b15':
+                self.fp_mantissa_width = 3
+                self.exponent_bias = 15
+            elif name == 'fp8e4nv':
+                self.fp_mantissa_width = 3
+                self.exponent_bias = 7
+            elif name == 'fp8e4b8':
+                self.fp_mantissa_width = 3
+                self.exponent_bias = 8
+            elif name == 'fp8e5':
+                self.fp_mantissa_width = 2
+                self.exponent_bias = 15
+            elif name == 'fp8e5b16':
+                self.fp_mantissa_width = 2
+                self.exponent_bias = 16
+            elif name == 'fp16':
+                self.fp_mantissa_width = 10
+                self.exponent_bias = 15
+            elif name == 'bf16':
+                self.fp_mantissa_width = 7
+                self.exponent_bias = 127
+            elif name == 'fp32':
+                self.fp_mantissa_width = 23
+                self.exponent_bias = 127
+            elif name == 'fp64':
+                self.fp_mantissa_width = 52
+                self.exponent_bias = 1023
+            else:
+                raise RuntimeError(f'Unsupported floating-point type {name}')
+
+    def is_fp8(self):
+        return 'fp8' in self.name
+
+    def is_fp8e4nv(self):
+        return self.name == 'fp8e4nv'
+
+    def is_fp8e4b8(self):
+        return self.name == 'fp8e4b8'
+
+    def is_fp8e4b15(self):
+        return self.name == 'fp8e4b15'
+
+    def is_fp8e5(self):
+        return self.name == 'fp8e5'
+
+    def is_fp8e5b16(self):
+        return self.name == 'fp8e5b16'
+
+    def is_fp16(self):
+        return self.name == 'fp16'
+
+    def is_bf16(self):
+        return self.name == 'bf16'
+
+    def is_fp32(self):
+        return self.name == 'fp32'
+
+    def is_fp64(self):
+        return self.name == 'fp64'
+
+    def is_int1(self):
+        return self.name == 'int1'
+
+    def is_int8(self):
+        return self.name == 'int8'
+
+    def is_int16(self):
+        return self.name == 'int16'
+
+    def is_int32(self):
+        return self.name == 'int32'
+
+    def is_int64(self):
+        return self.name == 'int64'
+
+    def is_uint8(self):
+        return self.name == 'uint8'
+
+    def is_uint16(self):
+        return self.name == 'uint16'
+
+    def is_uint32(self):
+        return self.name == 'uint32'
+
+    def is_uint64(self):
+        return self.name == 'uint64'
+
+    def is_floating(self):
+        return self.name in dtype_3_4.FP_TYPES
+
+    def is_standard_floating(self):
+        return self.name in dtype_3_4.STANDARD_FP_TYPES
+
+    def is_int_signed(self):
+        return self.name in dtype_3_4.SINT_TYPES
+
+    def is_int_unsigned(self):
+        return self.name in dtype_3_4.UINT_TYPES
+
+    def is_int(self):
+        return self.name in dtype_3_4.SINT_TYPES + dtype_3_4.UINT_TYPES
+
+    def is_bool(self):
+        return self.is_int1()
+
+    def kind(self):
+        # Return int value following the type ordering bool < integer < fp
+        if self.is_bool():
+            return dtype_3_4.KIND.BOOLEAN
+        elif self.is_int():
+            return dtype_3_4.KIND.INTEGRAL
+        else:
+            assert self.is_floating()
+            return dtype_3_4.KIND.FLOATING
+
+    def get_int_max_value(self):
+        if self.is_int_signed():
+            return 2**(self.int_bitwidth - 1) - 1
+        if self.is_int_unsigned():
+            return 2**self.int_bitwidth - 1
+        assert False
+
+    def get_int_min_value(self):
+        if self.is_int_signed():
+            return -2**(self.int_bitwidth - 1)
+        if self.is_int_unsigned():
+            return 0
+        assert False
+
+    @staticmethod
+    def is_dtype(type_str):
+        return type_str in dtype_3_4.SINT_TYPES + dtype_3_4.UINT_TYPES + dtype_3_4.FP_TYPES + dtype_3_4.OTHER_TYPES
+
+    @staticmethod
+    def is_void():
+        raise RuntimeError("Not implemented")
+
+    @staticmethod
+    def is_block():
+        return False
+
+    @staticmethod
+    def is_ptr():
+        return False
+
+    @staticmethod
+    def is_const():
+        return False
+
+    def __eq__(self, other: dtype):
+        if not isinstance(other, dtype):
+            return False
+        return self.name == other.name
+
+    def __hash__(self):
+        return hash((self.name, ))
+
+    @property
+    def scalar(self):
+        return self
+
+    def _flatten_ir_types(self, builder: ir.builder, out: List[ir.type]) -> None:
+        out.append(self.to_ir(builder))
+
+    def to_ir(self, builder: ir.builder) -> ir.type:
+        if self.name.startswith("fp8"):
+            if self.name not in builder.options.supported_fp8_dtypes:
+                raise ValueError(f'type {self} not supported in this architecture. '
+                                 f'The supported fp8 dtypes are {builder.options.supported_fp8_dtypes}')
+
+        if self.name == 'void':
+            return builder.get_void_ty()
+        elif self.name == 'int1':
+            return builder.get_int1_ty()
+        elif self.name in ('int8', 'uint8'):
+            return builder.get_int8_ty()
+        elif self.name in ('int16', 'uint16'):
+            return builder.get_int16_ty()
+        elif self.name in ('int32', 'uint32'):
+            return builder.get_int32_ty()
+        elif self.name in ('int64', 'uint64'):
+            return builder.get_int64_ty()
+        elif self.name == 'fp8e5':
+            return builder.get_fp8e5_ty()
+        elif self.name == 'fp8e5b16':
+            return builder.get_fp8e5b16_ty()
+        elif self.name == 'fp8e4nv':
+            return builder.get_fp8e4nv_ty()
+        elif self.name == 'fp8e4b8':
+            return builder.get_fp8e4b8_ty()
+        elif self.name == 'fp8e4b15':
+            return builder.get_fp8e4b15_ty()
+        elif self.name == 'fp16':
+            return builder.get_half_ty()
+        elif self.name == 'bf16':
+            return builder.get_bf16_ty()
+        elif self.name == 'fp32':
+            return builder.get_float_ty()
+        elif self.name == 'fp64':
+            return builder.get_double_ty()
+        raise ValueError(f'fail to convert {self} to ir type')
+
+    def __str__(self):
+        return self.name
+
+    def codegen_name(self):
+        if self.name.startswith("fp"):
+            return "float" + self.name[2:]
+        elif self.name.startswith("bf"):
+            return "bfloat" + self.name[2:]
+        else:
+            return self.name
+
+    @property
+    def cache_key_part(self) -> str:
+        """See cache_key_part() in triton.cc."""
+        return self.name
+
+    def __repr__(self):
+        """Output of repr needs to be an evaluatable expression"""
+        return f'triton.language.{self.codegen_name()}'
+
+    def _unflatten_ir(self, handles: List[ir.value], cursor: int) -> Tuple[base_value, int]:
+        return tensor(handles[cursor], self), cursor + 1
+
+    def mangle(self) -> str:
+        if self.is_int():
+            SIGNED = dtype_3_4.SIGNEDNESS.SIGNED
+            prefix = 'i' if self.int_signedness == SIGNED else 'u'
+            return prefix + str(self.int_bitwidth)
+        if self.is_floating():
+            return str(self)
+        if self.is_void():
+            return 'V'
+        return super().mangle()
+
+    def with_element_ty(self, element_ty: dtype):
+        assert not self.is_block()
+        return element_ty
+
+
+class block_type_3_4(dtype_3_4):
+
+    def __init__(self, element_ty: dtype_3_4, shape: List):
+        self.element_ty = element_ty
+
+        # Note that block_type's shape is a list of int
+        # while tensor's shape is a list of constexpr.
+        assert (isinstance(shape, (list, tuple)))
+
+        # shape can be empty ([]) when an input is a 0D tensor.
+        self.shape = tuple(_unwrap_shape_3_4(shape))
+        if not self.shape:
+            raise TypeError('0d block_type is forbidden')
+
+        self.numel = validate_block_shape(self.shape)
+        self.name = f'<{self.shape}, {self.element_ty}>'
+
+    def to_ir(self, builder: ir.builder) -> ir.block_type:
+        return builder.get_block_ty(self.element_ty.to_ir(builder), self.shape)
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.__str__()
+
+    def is_block(self):
+        return True
+
+    def get_block_shapes(self) -> Tuple[int]:
+        return self.shape
+
+    def with_element_ty(self, scalar_ty: dtype_3_4) -> block_type_3_4:
+        return block_type_3_4(scalar_ty, self.shape)
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, block_type_3_4):
+            return False
+        return self.element_ty == other.element_ty and self.shape == other.shape
+
+    @property
+    def scalar(self):
+        return self.element_ty
+
+    def mangle(self) -> str:
+        elt = self.scalar.mangle()
+        shape = '_'.join(map(str, self.shape))
+        return f'{elt}S{shape}S'
+
+
+class tensor_descriptor_base_type(base_type):
+
+    def __init__(self, block_type: block_type):
+        self.block_type = block_type
+
+    def _unflatten_ir(self, handles: List[ir.value], cursor: int) -> Tuple[tensor_descriptor_base, int]:
+        value = tensor_descriptor_base(handles[cursor], self.block_type)
+        return value, cursor + 1
+
+    def _flatten_ir_types(self, builder: ir.builder, out: List[ir.type]) -> None:
+        is_signed = self.block_type.element_ty.is_int_signed()
+        out.append(builder.create_tensor_descriptor_type(self.block_type.to_ir(builder), is_signed))
+
+    def __str__(self) -> str:
+        # ex. "tensor_descriptor<float32[16, 32]>"
+        return f"tensor_descriptor<{self.block_type}>"
+
+    def __eq__(self, other) -> bool:
+        if type(other) is not type(self):
+            return False
+        return self.block_type == other.block_type
+
+    def __neq__(self, other) -> bool:
+        return not (self == other)
+
+    def mangle(self) -> str:
+        return f"TD{self.block_type.mangle()}"
+
+
+class tensor_descriptor_base(base_value):
+    """"
+    A tensor descriptor with unknown shape and strides
+    """
+
+    def __init__(self, handle, block_type: block_type_3_4):
+        """Not called by user code."""
+        super().__init__(handle)
+
+        self.handle = handle  # IR handle
+        self.type = tensor_descriptor_base_type(block_type)  # Tensor type (block_type)
+
+    def _flatten_ir(self, handles: List[ir.value]) -> None:
+        handles.append(self.handle)
+
+    @property
+    def block_type(self):
+        return self.type.block_type
+
+    @property
+    def block_shape(self):
+        return self.type.block_type.shape
+
+    @property
+    def dtype(self):
+        return self.type.block_type.element_ty
+
+    def __str__(self) -> str:
+        return str(self.type)
+
+    @builtin
+    def load(self, offsets: Sequence[constexpr | tensor], _builder=None) -> tensor:
+        """Load a block from the descriptor starting at the given element offsets.
+
+        Values outside of the tensor bounds will be filled with zeros.
+
+        :note: Offset must be a multiple of 16-bytes
+        """
+        return semantic.descriptor_load(self, offsets, "", "", _builder)
+
+    @builtin
+    def store(self, offsets: Sequence[constexpr | tensor], value: tensor, _builder=None) -> tensor:
+        """Store a block from the descriptor starting at the given element offsets.
+
+        Values outside of the tensor bounds will be ignored.
+
+        :note: Offset must be a multiple of 16-bytes
+        """
+        return semantic.descriptor_store(self, value, offsets, _builder)
+
+
+class tensor_descriptor_type(tensor_descriptor_base_type):
+
+    def __init__(self, block_type: block_type_3_4, shape_type: tuple_type, strides_type: tuple_type):
+        self.block_type = block_type
+        self.shape_type = shape_type
+        self.strides_type = strides_type
+
+    def _unflatten_ir(self, handles: List[ir.value], cursor: int) -> Tuple[tensor_descriptor_base, int]:
+        handle = handles[cursor]
+        cursor += 1
+        shape, cursor = self.shape_type._unflatten_ir(handles, cursor)
+        strides, cursor = self.strides_type._unflatten_ir(handles, cursor)
+        shape = shape.values
+        strides = strides.values
+        value = tensor_descriptor(handle, shape, strides, self.block_type)
+        return value, cursor
+
+    def _flatten_ir_types(self, builder: ir.builder, out: List[ir.type]) -> None:
+        super()._flatten_ir_types(builder, out)
+        self.shape_type._flatten_ir_types(builder, out)
+        self.strides_type._flatten_ir_types(builder, out)
+
+    def __eq__(self, other):
+        return super().__eq__(other) and (self.shape_type == other.shape_type) and (self.strides_type
+                                                                                    == other.strides_type)
+
+
+class tensor_descriptor(tensor_descriptor_base):
+    """A descriptor representing a tensor in global memory.
+    """
+
+    def __init__(self, handle, shape: List[tensor], strides: List[tensor], block_type: block_type_3_4):
+        """Not called by user code."""
+        # IR handle
+        super().__init__(handle, block_type)
+        # Global shape
+        self.shape = tuple(shape)
+        self.strides = tuple(strides)
+        self.type = tensor_descriptor_type(
+            block_type,
+            shape_type=self.shape.type,
+            strides_type=self.strides.type,
+        )
+
+    def _flatten_ir(self, handles: List[ir.value]) -> None:
+        handles.append(self.handle)
+        self.shape._flatten_ir(handles)
+        self.strides._flatten_ir(handles)
+
+
+@builtin
+def load_tensor_descriptor(desc: tensor_descriptor_base, offsets: Sequence[Union[constexpr, tensor]],
+                           _builder=None) -> tensor:
+    """Load a block of data from a tensor descriptor."""
+    return desc.load(offsets, _builder=_builder)
+
+
+@builtin
+def store_tensor_descriptor(desc: tensor_descriptor_base, offsets: Sequence[Union[constexpr, tensor]], value: tensor,
+                            _builder=None) -> tensor:
+    """Store a block of data to a tensor descriptor."""
+    return desc.store(offsets, value, _builder=_builder)
+
+
+@builtin
+def make_tensor_descriptor(
+    base: tensor,
+    shape: List[tensor],
+    strides: List[tensor],
+    block_shape: List[constexpr],
+    _builder=None,
+) -> tensor_descriptor:
+    """Make a tensor descriptor object
+
+    :param base: the base pointer of the tensor, must be 16-byte aligned
+    :param shape: A list of non-negative integers representing the tensor shape
+    :param strides: A list of tensor strides. Leading dimensions must be multiples
+        of 16-byte strides and the last dimension must be contiguous.
+    :param block_shape: The shape of block to be loaded/stored from global memory
+
+    Notes
+    *****
+    On NVIDIA GPUs with TMA support, this will result in a TMA descriptor object
+    and loads and stores from the descriptor will be backed by the TMA hardware.
+
+    Currently only 2-5 dimensional tensors are supported.
+
+    Example
+    *******
+    .. code-block:: python
+
+        @triton.jit
+        def inplace_abs(in_out_ptr, M, N, M_BLOCK: tl.constexpr, N_BLOCK: tl.constexpr):
+            desc = tl.make_tensor_descriptor(
+                in_out_ptr,
+                shape=[M, N],
+                strides=[N, 1],
+                block_shape=[M_BLOCK, N_BLOCK],
+            )
+
+            moffset = tl.program_id(0) * M_BLOCK
+            noffset = tl.program_id(1) * N_BLOCK
+
+            value = desc.load([moffset, noffset])
+            desc.store([moffset, noffset], tl.abs(value))
+
+        # TMA descriptors require a global memory allocation
+        def alloc_fn(size: int, alignment: int, stream: Optional[int]):
+            return torch.empty(size, device="cuda", dtype=torch.int8)
+
+        triton.set_allocator(alloc_fn)
+
+        M, N = 256, 256
+        x = torch.randn(M, N, device="cuda")
+        M_BLOCK, N_BLOCK = 32, 32
+        grid = (M // M_BLOCK, N // N_BLOCK)
+        inplace_abs[grid](x, M, N, M_BLOCK, N_BLOCK)
+
+    """
+    return semantic.make_tensor_descriptor(base, shape, strides, block_shape, _builder)

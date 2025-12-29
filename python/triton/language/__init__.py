@@ -6,7 +6,7 @@ from . import extra
 from .standard import (
     argmax,
     argmin,
-    cdiv,
+    # cdiv,
     cumprod,
     cumsum,
     flip,
@@ -19,6 +19,7 @@ from .standard import (
     sort,
     sum,
     swizzle2d,
+    topk,
     xor_sum,
     zeros,
     zeros_like,
@@ -28,6 +29,9 @@ from .core import (
     TRITON_MAX_TENSOR_NUMEL,
     _experimental_descriptor_load,
     _experimental_descriptor_store,
+    make_tensor_descriptor,
+    load_tensor_descriptor,
+    store_tensor_descriptor,
     add,
     advance,
     arange,
@@ -107,7 +111,7 @@ from .core import (
     where,
 )
 from .math import (umulhi, exp, exp2, fma, log, log2, cos, rsqrt, sin, sqrt, sqrt_rn, abs, fdiv, div_rn, erf, floor,
-                   ceil)
+                   ceil, cdiv)
 from .random import (
     pair_uniform_to_normal,
     philox,
@@ -239,6 +243,7 @@ __all__ = [
     "sum",
     "swizzle2d",
     "tensor",
+    "topk",
     "trans",
     "triton",
     "uint16",

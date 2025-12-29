@@ -31,94 +31,96 @@
 #include "triton/Tools/Sys/GetEnv.hpp"
 #include "llvm/Support/SourceMgr.h"
 
+#include "ir.h"
 namespace {
 
 namespace py = pybind11;
 using namespace mlir;
 using namespace triton;
 
+// FIXME:modify community
 // A custom op builder that keeps track of the last location
-class TritonOpBuilder {
-public:
-  TritonOpBuilder(MLIRContext *context) {
-    builder = std::make_unique<OpBuilder>(context);
-    lastLoc = std::make_unique<Location>(builder->getUnknownLoc());
-  }
+// class TritonOpBuilder {
+// public:
+//   TritonOpBuilder(MLIRContext *context) {
+//     builder = std::make_unique<OpBuilder>(context);
+//     lastLoc = std::make_unique<Location>(builder->getUnknownLoc());
+//   }
 
-  OpBuilder &getBuilder() { return *builder; }
+//   OpBuilder &getBuilder() { return *builder; }
 
-  bool isLineInfoEnabled() { return lineInfoEnabled; }
+//   bool isLineInfoEnabled() { return lineInfoEnabled; }
 
-  void setLastLoc(Location loc) {
-    if (lineInfoEnabled)
-      lastLoc = std::make_unique<Location>(loc);
-  }
+//   void setLastLoc(Location loc) {
+//     if (lineInfoEnabled)
+//       lastLoc = std::make_unique<Location>(loc);
+//   }
 
-  void setLastLoc(const std::string &fileName, int line, int column) {
-    auto context = builder->getContext();
-    setLastLoc(FileLineColLoc::get(context, fileName, line, column));
-  }
+//   void setLastLoc(const std::string &fileName, int line, int column) {
+//     auto context = builder->getContext();
+//     setLastLoc(FileLineColLoc::get(context, fileName, line, column));
+//   }
 
-  Location getLastLoc() {
-    assert(lastLoc);
-    return *lastLoc;
-  }
+//   Location getLastLoc() {
+//     assert(lastLoc);
+//     return *lastLoc;
+//   }
 
-  void setInsertionPointToStart(Block &block) {
-    if (!block.empty())
-      setLastLoc(block.begin()->getLoc());
-    else
-      setLastLoc(builder->getUnknownLoc());
-    builder->setInsertionPointToStart(&block);
-  }
+//   void setInsertionPointToStart(Block &block) {
+//     if (!block.empty())
+//       setLastLoc(block.begin()->getLoc());
+//     else
+//       setLastLoc(builder->getUnknownLoc());
+//     builder->setInsertionPointToStart(&block);
+//   }
 
-  void setInsertionPointToEnd(Block &block) {
-    if (!block.empty())
-      setLastLoc(block.back().getLoc());
-    else
-      setLastLoc(builder->getUnknownLoc());
-    builder->setInsertionPointToEnd(&block);
-  }
+//   void setInsertionPointToEnd(Block &block) {
+//     if (!block.empty())
+//       setLastLoc(block.back().getLoc());
+//     else
+//       setLastLoc(builder->getUnknownLoc());
+//     builder->setInsertionPointToEnd(&block);
+//   }
 
-  void setInsertionPointAfter(Operation &op) {
-    setLastLoc(op.getLoc());
-    builder->setInsertionPointAfter(&op);
-  }
+//   void setInsertionPointAfter(Operation &op) {
+//     setLastLoc(op.getLoc());
+//     builder->setInsertionPointAfter(&op);
+//   }
 
-  void restoreInsertionPoint(OpBuilder::InsertPoint pt) {
-    if (pt.isSet() && pt.getPoint() != pt.getBlock()->end())
-      setLastLoc(pt.getPoint()->getLoc());
-    else
-      setLastLoc(builder->getUnknownLoc());
-    builder->restoreInsertionPoint(pt);
-  }
+//   void restoreInsertionPoint(OpBuilder::InsertPoint pt) {
+//     if (pt.isSet() && pt.getPoint() != pt.getBlock()->end())
+//       setLastLoc(pt.getPoint()->getLoc());
+//     else
+//       setLastLoc(builder->getUnknownLoc());
+//     builder->restoreInsertionPoint(pt);
+//   }
 
-  template <typename OpTy, typename... Args> OpTy create(Args &&...args) {
-    auto loc = getLastLoc();
-    return builder->create<OpTy>(loc, std::forward<Args>(args)...);
-  }
+//   template <typename OpTy, typename... Args> OpTy create(Args &&...args) {
+//     auto loc = getLastLoc();
+//     return builder->create<OpTy>(loc, std::forward<Args>(args)...);
+//   }
 
-  // Overload to create or fold a single result operation.
-  template <typename OpTy, typename... Args>
-  std::enable_if_t<OpTy::template hasTrait<OpTrait::OneResult>(), Value>
-  createOrFold(Args &&...args) {
-    auto loc = getLastLoc();
-    return builder->createOrFold<OpTy>(loc, std::forward<Args>(args)...);
-  }
+//   // Overload to create or fold a single result operation.
+//   template <typename OpTy, typename... Args>
+//   std::enable_if_t<OpTy::template hasTrait<OpTrait::OneResult>(), Value>
+//   createOrFold(Args &&...args) {
+//     auto loc = getLastLoc();
+//     return builder->createOrFold<OpTy>(loc, std::forward<Args>(args)...);
+//   }
 
-  // Overload to create or fold a zero result operation.
-  template <typename OpTy, typename... Args>
-  std::enable_if_t<OpTy::template hasTrait<OpTrait::ZeroResults>(), OpTy>
-  createOrFold(Args &&...args) {
-    auto loc = getLastLoc();
-    return builder->createOrFold<OpTy>(loc, std::forward<Args>(args)...);
-  }
+//   // Overload to create or fold a zero result operation.
+//   template <typename OpTy, typename... Args>
+//   std::enable_if_t<OpTy::template hasTrait<OpTrait::ZeroResults>(), OpTy>
+//   createOrFold(Args &&...args) {
+//     auto loc = getLastLoc();
+//     return builder->createOrFold<OpTy>(loc, std::forward<Args>(args)...);
+//   }
 
-private:
-  std::unique_ptr<OpBuilder> builder;
-  std::unique_ptr<Location> lastLoc;
-  bool lineInfoEnabled = !triton::tools::getBoolEnv("TRITON_DISABLE_LINE_INFO");
-};
+// private:
+//   std::unique_ptr<OpBuilder> builder;
+//   std::unique_ptr<Location> lastLoc;
+//   bool lineInfoEnabled = !triton::tools::getBoolEnv("TRITON_DISABLE_LINE_INFO");
+// };
 
 std::string locationToString(Location loc) {
   std::string str;
@@ -140,6 +142,15 @@ void outputWarning(Location loc, const std::string &msg) {
 /*****************************************************************************/
 /* Python bindings for ir                                                    */
 /*****************************************************************************/
+
+namespace ir {
+
+// Pointer to the TritonOpBuilder class, used to register IR ops for third-party
+// dialects.
+static py::class_<TritonOpBuilder> *builderClassPtr = nullptr;
+py::class_<TritonOpBuilder> *getBuilderClass() { return builderClassPtr; }
+
+}
 
 void init_triton_ir(py::module &&m) {
   using ret = py::return_value_policy;
@@ -211,6 +222,8 @@ void init_triton_ir(py::module &&m) {
       .value("E2M3", F8F6F4Type::E2M3)
       .value("E3M2", F8F6F4Type::E3M2)
       .value("E2M1", F8F6F4Type::E2M1)
+      .value("BF16", F8F6F4Type::BF16)
+      .value("FP16", F8F6F4Type::FP16)
       .export_values();
 
   py::class_<MLIRContext>(m, "context", py::module_local())
@@ -373,6 +386,9 @@ void init_triton_ir(py::module &&m) {
   py::class_<Attribute>(m, "attribute", py::module_local());
   py::class_<IntegerAttr, Attribute>(m, "integer_attr", py::module_local());
   py::class_<BoolAttr, Attribute>(m, "bool_attr", py::module_local());
+  py::class_<UnitAttr, Attribute>(m, "unit_attr", py::module_local());
+  py::class_<StringAttr, Attribute>(m, "str_attr", py::module_local());
+  py::class_<ArrayAttr, Attribute>(m, "array_attr", py::module_local());
 
   // Ops
   py::class_<OpState>(m, "OpState", py::module_local())
@@ -581,9 +597,10 @@ void init_triton_ir(py::module &&m) {
 
   py::class_<OpBuilder::InsertPoint>(m, "InsertPoint", py::module_local());
 
-  py::class_<TritonOpBuilder>(m, "builder", py::module_local(),
-                              py::dynamic_attr())
-      .def(py::init<MLIRContext *>())
+  static py::class_<TritonOpBuilder> builderClass(
+      m, "builder", py::module_local(), py::dynamic_attr());
+  ir::builderClassPtr = &builderClass;
+  builderClass.def(py::init<MLIRContext *>())
       // getters
       .def("create_module",
            [](TritonOpBuilder &self) -> ModuleOp {
@@ -625,6 +642,18 @@ void init_triton_ir(py::module &&m) {
            [](TritonOpBuilder &self, int32_t value) {
              return self.getBuilder().getI32IntegerAttr(value);
            })
+      .def("get_str_attr",
+           [](TritonOpBuilder &self, std::string value) {
+             return self.getBuilder().getStringAttr(value);
+           })
+      .def("get_unit_attr",
+          [](TritonOpBuilder &self) {
+            return self.getBuilder().getUnitAttr();
+          })
+      .def("get_i64_array_attr",
+          [](TritonOpBuilder &self, const std::vector<int64_t>& array) {
+            return self.getBuilder().getI64ArrayAttr(array);
+          })
       // Use arith.ConstantOp to create constants
       // Constants
       .def("get_int1",
@@ -1259,19 +1288,27 @@ void init_triton_ir(py::module &&m) {
              self.create<StoreOp>(ptrs, val, mask, cacheModifier,
                                   evictionPolicy);
            })
+      .def("create_tensor_descriptor_type",
+           [](TritonOpBuilder &self, Type blockTy, bool isSigned) -> Type {
+               auto ctx = self.getBuilder().getContext();
+               return triton::TensorDescType::get(ctx, cast<RankedTensorType>(blockTy), isSigned);
+           })
       .def("create_descriptor_load",
-           [](TritonOpBuilder &self, Value desc_ptr,
-              std::vector<Value> &indices, Type type,
-              CacheModifier cacheModifier,
+           [](TritonOpBuilder &self, Value desc, std::vector<Value> &indices, CacheModifier cacheModifier,
               EvictionPolicy evictionPolicy) -> Value {
-             return self.create<ExperimentalDescriptorLoadOp>(
-                 type, desc_ptr, indices, cacheModifier, evictionPolicy);
+                auto descTy = cast<triton::TensorDescType>(desc.getType());
+                auto resTy = descTy.getSignlessBlockType();
+                return self.create<DescriptorLoadOp>(resTy, desc, indices, cacheModifier, evictionPolicy);
            })
       .def("create_descriptor_store",
-           [](TritonOpBuilder &self, Value desc_ptr, Value value,
-              std::vector<Value> &indices) -> void {
-             self.create<ExperimentalDescriptorStoreOp>(desc_ptr, value,
-                                                        indices);
+           [](TritonOpBuilder &self, Value desc, Value value, std::vector<Value> &indices) -> void {
+               self.create<DescriptorStoreOp>(desc, value, indices);
+           })
+        // Make a tensor descriptor
+      .def("create_make_tensor_descriptor",
+           [](TritonOpBuilder &self, Value &base, std::vector<Value> &shape, std::vector<Value> &strides,
+              std::vector<int32_t> &tensorShape, bool isSignedInteger) -> Value {
+                return self.create<MakeTensorDescOp>(base, shape, strides, tensorShape, isSignedInteger);
            })
       .def("create_tensormap_create",
            [](TritonOpBuilder &self, Value desc_ptr, Value global_address,
@@ -1559,6 +1596,9 @@ void init_triton_ir(py::module &&m) {
                      IntegerType::get(operand.getContext(), 32)),
                  operand);
            })
+      .def("create_gather",
+           [](TritonOpBuilder &self, Value src, Value indices, int axis)
+               -> Value { return self.create<GatherOp>(src, indices, axis); })
       // Force GPU barrier
       .def("create_barrier",
            [](TritonOpBuilder &self) { self.create<mlir::gpu::BarrierOp>(); })

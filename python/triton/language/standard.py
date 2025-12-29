@@ -26,18 +26,18 @@ def _is_power_of_two(i: core.constexpr):
 # -----------------------
 
 
-@core._tensor_member_fn
-@jit
-def cdiv(x, div):
-    """
-    Computes the ceiling division of :code:`x` by :code:`div`
+# @core._tensor_member_fn
+# @jit
+# def cdiv(x, div):
+#     """
+#     Computes the ceiling division of :code:`x` by :code:`div`
 
-    :param x: the input number
-    :type x: Block
-    :param div: the divisor
-    :type div: Block
-    """
-    return (x + div - 1) // div
+#     :param x: the input number
+#     :type x: Block
+#     :param div: the divisor
+#     :type div: Block
+#     """
+#     return (x + div - 1) // div
 
 
 @core._tensor_member_fn
@@ -158,16 +158,20 @@ def _argmax_combine_tie_break_fast(value1, index1, value2, index2):
     return _argmax_combine(value1, index1, value2, index2, False)
 
 
+
 @jit
-def _elementwise_max(a, b):
+def _elementwise_max_default(a, b):
     return core.maximum(a, b)
 
+@jit
+def _elementwise_max_propagate_nan(a, b):
+    return core.maximum(a, b, propagate_nan = core.PropagateNan.ALL)
 
 @core._tensor_member_fn
 @jit
 @core._add_reduction_docstr("maximum", return_indices_arg="return_indices",
                             tie_break_arg="return_indices_tie_break_left")
-def max(input, axis=None, return_indices=False, return_indices_tie_break_left=True, keep_dims=False):
+def max(input, axis=None, return_indices=False, return_indices_tie_break_left=True, keep_dims=False, propagate_nan = False):
     input = core._promote_bfloat16_to_float32(input)
     if return_indices:
         if return_indices_tie_break_left:
@@ -181,7 +185,10 @@ def max(input, axis=None, return_indices=False, return_indices_tie_break_left=Tr
             else:
                 assert input.dtype.is_int(), "Expecting input to be integer type"
                 input = input.to(core.int32)
-        return core.reduce(input, axis, _elementwise_max, keep_dims=keep_dims)
+        if not propagate_nan:
+            return core.reduce(input, axis, _elementwise_max_default, keep_dims=keep_dims)
+        else:
+            return core.reduce(input, axis, _elementwise_max_propagate_nan, keep_dims=keep_dims)
 
 
 @core._tensor_member_fn
@@ -320,6 +327,13 @@ def cumprod(input, axis=0, reverse=False):
 
 
 @jit
+def _indicator(n_dims: core.constexpr, j: core.constexpr):
+    ar = core.arange(0, 2)
+    ar = core.reshape(ar, [1] * (n_dims - j - 1) + [2] + [1] * j)
+    return ar
+
+
+@jit
 def _compare_and_swap(x, flip, i: core.constexpr, n_dims: core.constexpr):
     n_outer: core.constexpr = x.numel >> n_dims
     shape: core.constexpr = [n_outer * 2**i, 2, 2**(n_dims - i - 1)]
@@ -337,6 +351,47 @@ def _compare_and_swap(x, flip, i: core.constexpr, n_dims: core.constexpr):
     ix = x.to(idtype, bitcast=True)
     ret = ix ^ core.where((left > right) != flip, ileft ^ iright, zeros_like(ix))
     return ret.to(x.dtype, bitcast=True)
+
+
+@jit
+def _compare_and_swap_3_4(x, flip, i: core.constexpr):
+    # compare-and-swap on the ith *innermost* dimension
+    n_dims: core.constexpr = _log2(x.numel)
+
+    # flip along middle dimension (the bitwise XORs will be optimised away):
+    idtype = core.get_int_dtype(bitwidth=x.dtype.primitive_bitwidth, signed=True)
+    ix = x.to(idtype, bitcast=True)
+    iy = ix ^ xor_sum(ix, n_dims - 1 - i, True)
+    y = iy.to(x.dtype, bitcast=True)
+
+    # determines whether we are in the right (rather than left) position along the axis:
+    is_right = _indicator(n_dims, i)
+
+    # conditional swap:
+    ret = core.where((x > y) != (flip ^ is_right), y, x)
+    return ret
+
+
+@jit
+def _bitonic_merge_hypercube(x, stage: core.constexpr, order: core.constexpr):
+    '''
+    order_type 0 == ascending
+    order_type 1 == descending
+    order_type 2 == alternating
+    '''
+    # flip denotes whether to re-arrange sub-sequences of elements in ascending or
+    # descending order.
+    # if flip = 00000000... then all elements will be re-arranged ascendingly at this stage
+    # if flip = 00110011... then all the elements will be re-arranged alternatingly (with
+    # a stride of 2) at this stage
+    if order == 2:
+        flip = _indicator(_log2(x.numel), stage)
+    else:
+        flip = order
+    # perform `stage` rounds of `compare-and-swap`
+    for i in core.static_range(stage):
+        x = _compare_and_swap_3_4(x, flip, stage - 1 - i)
+    return x
 
 
 @jit
@@ -385,6 +440,52 @@ def sort(x, dim: core.constexpr = None, descending: core.constexpr = core.CONSTE
     for i in core.static_range(1, n_dims + 1):
         x = _bitonic_merge(x, i, 2 if i < n_dims else descending, n_dims)
     return x
+
+
+@jit
+def sort_impl(x, k: core.constexpr = None, dim: core.constexpr = None, descending: core.constexpr = core.CONSTEXPR_0):
+    """
+    Sorts a tensor along a specified dimension.
+
+    :param x: The input tensor to be sorted.
+    :type x: Tensor
+    :param dim: The dimension along which to sort the tensor. If None, the tensor is sorted along the last dimension. Currently, only sorting along the last dimension is supported.
+    :type dim: int, optional
+    :param k: the number of top elements to select. If none, assume k = x.shape[dim]
+    :type k: int, optional
+    :param descending: If set to True, the tensor is sorted in descending order. If set to False, the tensor is sorted in ascending order.
+    :type descending: bool, optional
+    """
+    # handle default dimension or check that it is the most minor dim
+    _dim: core.constexpr = len(x.shape) - 1 if dim is None else dim
+    core.static_assert(_dim == len(x.shape) - 1, "only minor dimension is currently supported")
+
+    log_n: core.constexpr = _log2(x.shape[_dim])
+    log_k: core.constexpr = log_n if k is None else _log2(k)
+
+    n_dims: core.constexpr = _log2(x.numel)
+
+    # reshape to hypercube:
+    h = core.reshape(x, [2] * n_dims)
+
+    # run first log_k bitonic sort iterations:
+    for i in core.static_range(1, log_k + 1):
+        h = _bitonic_merge_hypercube(h, i, 2 if i < log_n else descending)
+
+    # select top k elements using bitonic top-k
+    # https://www.doc.ic.ac.uk/~hlgr/pdfs/MassivelyParallelTopK.pdf
+    for i in core.static_range(log_k + 1, log_n + 1):
+        h = max(h, axis=(_log2(h.numel) - 1 - log_k)) if descending else min(h, axis=(_log2(h.numel) - 1 - log_k))
+        h = _bitonic_merge_hypercube(h, log_k, 2 if i < log_n else descending)
+
+    # reshape back:
+    x = core.reshape(h, x.shape[:-1] + [2**log_k])
+    return x
+
+
+@jit
+def topk(x, k: core.constexpr, dim: core.constexpr = None):
+    return sort_impl(x, k=k, dim=dim, descending=True)
 
 
 # flip

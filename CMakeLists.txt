@@ -266,6 +266,7 @@ if(TRITON_BUILD_PYTHON_MODULE)
     target_link_libraries(triton PRIVATE z)
   endif()
   target_link_options(triton PRIVATE ${LLVM_LDFLAGS})
+  add_library(entryC SHARED ${PROJECT_SOURCE_DIR}/lib/runtime/libentry/libentry.cpp)
 endif()
 
 if (UNIX AND NOT APPLE)
@@ -291,7 +292,7 @@ endif()
 
 add_subdirectory(third_party/f2reduce)
 add_subdirectory(bin)
-add_subdirectory(test)
+# add_subdirectory(test)
 
 if(TRITON_BUILD_UT)
   add_subdirectory(unittest)

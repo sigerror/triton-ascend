@@ -2,6 +2,7 @@ from . import core
 from . import semantic
 from functools import wraps
 from typing import List
+import numbers
 
 T = core.TypeVar('T')
 
@@ -22,8 +23,12 @@ def _check_dtype(dtypes: List[str]) -> T:
             # concatenate args and kwargs
             all_args = list(args) + list(kwargs.values())
             for arg in [a for a in all_args if isinstance(a, core.tensor)]:
-                if arg.type.scalar.name not in dtypes:
-                    raise ValueError(f"Expected dtype {dtypes} but got {arg.type.scalar.name}")
+                arg_type = arg.type.scalar.name
+                if hasattr(arg, 'was_bool_to_int8') and arg.was_bool_to_int8:
+                    # In Triton, int1 maps to the boolean type
+                    arg_type = 'int1'
+                if arg_type not in dtypes:
+                    raise ValueError(f"Expected dtype {dtypes} but got {arg_type}")
             return fn(*args, **kwargs)
 
         return check
@@ -93,7 +98,7 @@ def umulhi(x, y, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("exponential")
 @core._tensor_member_fn
 def exp(x, _builder=None):
@@ -102,7 +107,7 @@ def exp(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("exponential (base 2)")
 @core._tensor_member_fn
 def exp2(x, _builder=None):
@@ -111,7 +116,7 @@ def exp2(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("natural logarithm")
 @core._tensor_member_fn
 def log(x, _builder=None):
@@ -120,7 +125,7 @@ def log(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("logarithm (base 2)")
 @core._tensor_member_fn
 def log2(x, _builder=None):
@@ -129,7 +134,7 @@ def log2(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("cosine")
 @core._tensor_member_fn
 def cos(x, _builder=None):
@@ -138,7 +143,7 @@ def cos(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("sine")
 @core._tensor_member_fn
 def sin(x, _builder=None):
@@ -147,7 +152,7 @@ def sin(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("fast square root")
 @core._tensor_member_fn
 def sqrt(x, _builder=None):
@@ -156,7 +161,7 @@ def sqrt(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("precise square root (rounding to nearest wrt the IEEE standard)")
 @core._tensor_member_fn
 def sqrt_rn(x, _builder=None):
@@ -165,9 +170,9 @@ def sqrt_rn(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("inverse square root")
-@core._tensor_member_fn
+@core._tensor_member_fn 
 def rsqrt(x, _builder=None):
     x = semantic.to_tensor(x, _builder)
     return core.tensor(_builder.create_rsqrt(x.handle), x.type)
@@ -202,7 +207,7 @@ def fdiv(x, y, ieee_rounding=False, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_2arg_docstr("precise division (rounding to nearest wrt the IEEE standard)")
 def div_rn(x, y, _builder=None):
     x = semantic.to_tensor(x, _builder)
@@ -212,7 +217,7 @@ def div_rn(x, y, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("error function")
 @core._tensor_member_fn
 def erf(x, _builder=None):
@@ -221,7 +226,7 @@ def erf(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
+@_check_dtype(dtypes=["bf16", "fp16", "fp32", "fp8e4nv", "fp8e5", "fp64"])
 @_add_math_1arg_docstr("floor")
 @core._tensor_member_fn
 def floor(x, _builder=None):
@@ -230,12 +235,15 @@ def floor(x, _builder=None):
 
 
 @core.builtin
-@_check_dtype(dtypes=["fp32", "fp64"])
 @_add_math_1arg_docstr("ceil")
 @core._tensor_member_fn
 def ceil(x, _builder=None):
     x = semantic.to_tensor(x, _builder)
-    return core.tensor(_builder.create_ceil(x.handle), x.type)
+    if x.type.scalar.is_int():
+        return x
+    elif x.type.scalar.is_floating():
+        return core.tensor(_builder.create_ceil(x.handle), x.type)
+    raise ValueError("ceil does not support boolean type")
 
 
 @core.builtin
@@ -248,3 +256,48 @@ def fma(x, y, z, _builder=None):
     z, x = core.binary_op_type_legalization(z, x, _builder)
     z, y = core.binary_op_type_legalization(z, y, _builder)
     return core.tensor(_builder.create_fma(x.handle, y.handle, z.handle), x.type)
+
+@core.builtin
+@_check_dtype(dtypes=["bf16", "fp16", "fp32"])
+@_add_math_1arg_docstr("error function")
+@core._tensor_member_fn
+def tanh(x, _builder=None):
+    x = semantic.to_tensor(x, _builder)
+    return core.tensor(_builder.create_tanh(x.handle), x.type)
+
+@core.builtin
+@_add_math_2arg_docstr("cdiv")
+@core._tensor_member_fn
+def cdiv(x, div, _builder=None):
+    if isinstance(x, core.constexpr):
+        x = x.value
+    if isinstance(div, core.constexpr):
+        div = div.value
+    from math import ceil as py_ceil
+    if isinstance(x, numbers.Number) and isinstance(div, numbers.Number):
+        if isinstance(x, bool) or isinstance(div, bool):
+            raise ValueError("cdiv does not support boolean type")
+        elif isinstance(x, int) and isinstance(div, int):
+            res = x // div
+            rem = x % div
+            return res + (1 if rem != 0 else 0)
+        else:
+            return py_ceil(x / div)
+
+    x = semantic.to_tensor(x, _builder)
+    div = semantic.to_tensor(div, _builder)
+    x_scalar_type = x.type.scalar
+    div_scalar_type = div.type.scalar
+    if x_scalar_type.is_bool() or div_scalar_type.is_bool():
+        raise ValueError("cdiv does not support boolean type")
+    elif x_scalar_type.is_int() and div_scalar_type.is_int():
+        # integer cdiv: (x + div - 1) // div as before
+        return semantic.floordiv(
+            semantic.add(x, semantic.sub(div, 1, True, _builder), True, _builder),
+            div,
+            _builder
+        )
+    else:
+        div_res = semantic.truediv(x, div, _builder)
+        cdiv_res = core.tensor(_builder.create_ceil(div_res.handle), div_res.type)
+        return semantic.cast(cdiv_res, x_scalar_type, _builder)

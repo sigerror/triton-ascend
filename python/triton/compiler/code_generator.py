@@ -910,6 +910,11 @@ class CodeGenerator(ast.NodeVisitor):
             return
         num_stages = None
         loop_unroll_factor = None
+        disallow_acc_multi_buffer = False
+        flatten = False
+        warp_specialize = False
+        disable_licm = False
+        bind_sub_block = None
         if IteratorClass is language.range:
             iterator = IteratorClass(*iter_args, **iter_kwargs)
             # visit iterator arguments
@@ -920,6 +925,10 @@ class CodeGenerator(ast.NodeVisitor):
             step = iterator.step
             num_stages = iterator.num_stages
             loop_unroll_factor = iterator.loop_unroll_factor
+            disallow_acc_multi_buffer = iterator.disallow_acc_multi_buffer
+            flatten = iterator.flatten
+            warp_specialize = iterator.warp_specialize
+            disable_licm = iterator.disable_licm
         elif IteratorClass is range:
             # visit iterator arguments
             # note: only `range` iterator is supported now
@@ -992,6 +1001,14 @@ class CodeGenerator(ast.NodeVisitor):
                 for_op.set_attr("tt.num_stages", self.builder.get_int32_attr(num_stages))
             if loop_unroll_factor is not None:
                 for_op.set_attr("tt.loop_unroll_factor", self.builder.get_int32_attr(loop_unroll_factor))
+            if disallow_acc_multi_buffer:
+                for_op.set_attr("tt.disallow_acc_multi_buffer", self.builder.get_unit_attr())
+            if flatten:
+                for_op.set_attr("tt.flatten", self.builder.get_unit_attr())
+            if warp_specialize:
+                for_op.set_attr("tt.warp_specialize", self.builder.get_unit_attr())
+            if disable_licm:
+                for_op.set_attr("tt.disable_licm", self.builder.get_unit_attr())
 
             self.scf_stack.append(node)
             self.builder.set_insertion_point_to_start(for_op.get_body(0))
@@ -1075,7 +1092,7 @@ class CodeGenerator(ast.NodeVisitor):
                 generator.visit(fn.parse())
             except Exception as e:
                 # Wrap the error in the callee with the location of the call.
-                raise CompilationError(self.jit_fn.src, self.cur_node, None) from e
+                raise CompilationError(self.jit_fn.src, self.cur_node, repr(e)) from e
 
             callee_ret_type = generator.ret_type
             self.function_ret_types[fn_name] = callee_ret_type
@@ -1119,7 +1136,7 @@ class CodeGenerator(ast.NodeVisitor):
                 # itself).  But when calling a function, we raise as `from e` to
                 # preserve the traceback of the original error, which may e.g.
                 # be in core.py.
-                raise CompilationError(self.jit_fn.src, node, None) from e
+                raise CompilationError(self.jit_fn.src, node, repr(e)) from e
 
         if fn in self.builtin_namespace.values():
             args = map(_unwrap_if_constexpr, args)

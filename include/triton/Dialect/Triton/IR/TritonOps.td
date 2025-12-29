@@ -18,6 +18,7 @@ include "mlir/Interfaces/SideEffectInterfaces.td" // Pure
 include "mlir/Interfaces/CastInterfaces.td" // CastOpInterface
 include "mlir/Interfaces/CallInterfaces.td" // CallOpInterface
 include "triton/Dialect/Triton/IR/TritonTypeInterfaces.td"
+include "triton/Dialect/Triton/IR/TritonOpInterfaces.td"
 
 
 //
@@ -687,8 +688,8 @@ def TT_DotScaledOp : TT_Op<"dot_scaled", [Pure,
       ins
       // inputs are integer types as they are packed types and we currently
       // don't have a representation for those.
-      TT_IntTensor:$lhs,
-      TT_IntTensor:$rhs,
+      TT_FpIntTensor:$lhs,
+      TT_FpIntTensor:$rhs,
       TT_FloatTensor:$c,
       TT_IntTensor:$lhs_scale,
       Optional<TT_IntTensor>:$rhs_scale,
@@ -700,8 +701,9 @@ def TT_DotScaledOp : TT_Op<"dot_scaled", [Pure,
 
     // Not sure why I need to fully specify the optional group, but otherwise it complains when loading the mlir file
     let assemblyFormat = [{
-      $lhs `,` $lhs_scale `,` $rhs (`,`) : (`,` $rhs_scale^ `,`)? $c `lhs` `=` $lhs_type `rhs` `=` $rhs_type attr-dict
-      `:` type($lhs) `,` type($lhs_scale) `*` type($rhs) (`,` type($rhs_scale)^)? `->` type($d)
+      $lhs `,` $rhs `,` $c `,` $lhs_scale (`,` $rhs_scale^)?
+      `lhs` `=` $lhs_type `rhs` `=` $rhs_type attr-dict
+      `:` type($lhs) `,` type($rhs) `,` type($c) `,` type($lhs_scale) (`,` type($rhs_scale)^)? `->` type($d)
     }];
 }
 
@@ -867,6 +869,34 @@ def TT_HistogramOp : TT_Op<"histogram", [Pure]> {
     $src attr-dict `:` type($src) `->` type($result)
   }];
 }
+
+
+//
+// Gather Op
+//
+def TT_GatherOp : TT_Op<"gather", [Pure,
+    DeclareOpInterfaceMethods<InferTypeOpInterface>]> {
+  let summary = "local gather operation";
+  let description = [{
+    Gather elements from the input tensor using the indices tensor along a
+    single specified axis. The output tensor has the same shape as the indices
+    tensor. The input and indices tensors must have the same number of
+    dimension, and each dimension of the indices tensor that is not the gather
+    dimension cannot be greater than the corresponding dimension in the input
+    tensor.
+  }];
+
+  let arguments = (ins TT_Tensor:$src, TT_IntTensor:$indices, I32Attr:$axis);
+  let results = (outs TT_Tensor:$result);
+
+  let assemblyFormat = [{
+    $src `[` $indices `]` attr-dict `:`
+    functional-type(operands, results)
+  }];
+
+  let hasVerifier = 1;
+}
+
 
 //
 // Print Op
@@ -1254,6 +1284,89 @@ def TT_ExperimentalTensormapFenceproxyAcquireOp: TT_Op<
     let assemblyFormat = [{
       $desc_ptr attr-dict `:` qualified(type($desc_ptr))
     }];
+}
+//FIXME TODO: When upgrading to Triton 3.4.0, remove the commented line below
+//
+// Make Tensor Descriptor Op FIXME 
+//
+def TT_MakeTensorDescOp : TT_Op<"make_tensor_descriptor", [
+    Pure,
+    SameVariadicOperandSize,
+]> {
+  let summary = "Make a tensor descriptor type with meta information of the parent tensor and block size";
+
+  let description = [{
+      `tt.make_tensor_descriptor` takes both meta information of the parent tensor and the block size,
+      and returns a descriptor object which can be used to load/store from the tensor in global memory.
+  }];
+
+  let arguments = (ins
+    TT_Ptr:$base,
+    Variadic<I32>:$shape,
+    Variadic<I64>:$strides
+  );
+
+  let results = (outs TT_TensorDescType:$result);
+
+  let assemblyFormat = "$base `,` `[` $shape `]` `,` `[` $strides `]` attr-dict `:` type($base) `,` type($result)";
+
+  let builders = [
+    OpBuilder<(ins "Value":$base, "ValueRange":$shape, "ValueRange":$strides, "ArrayRef<int32_t>":$blockShape, "bool":$isSignedInteger)>
+  ];
+
+  let extraClassDeclaration = [{
+    ArrayRef<int64_t> getTensorShape() {
+      return getType().getBlockType().getShape();
+    }
+  }];
+}
+
+def TT_DescriptorLoadOp : TT_Op<"descriptor_load", [TT_DescriptorOpInterface]> {
+  let summary = "Load from descriptor";
+  let description = [{
+    This operation will be lowered to Nvidia TMA load operation on targets supporting it.
+    `desc` is a tensor descriptor object.
+    The destination tensor type and shape must match the descriptor otherwise the result is undefined.
+  }];
+  let arguments = (ins
+    Arg<TT_TensorDescType, "", [MemRead<GlobalMemory>]>:$desc,
+    Variadic<I32>:$indices,
+    DefaultValuedAttr<TT_CacheModifierAttr, "::mlir::triton::CacheModifier::NONE">:$cache,
+    DefaultValuedAttr<TT_EvictionPolicyAttr, "::mlir::triton::EvictionPolicy::NORMAL">:$evict
+  );
+
+  let results = (outs TT_Tensor:$result);
+
+  let assemblyFormat = [{
+    $desc `[` $indices `]`
+    oilist(
+      `cacheModifier` `=` $cache |
+      `evictionPolicy` `=` $evict
+    )
+    attr-dict `:` qualified(type($desc)) `->` type($result)
+  }];
+
+  let hasVerifier = 1;
+}
+
+def TT_DescriptorStoreOp : TT_Op<"descriptor_store", [TT_DescriptorStoreLikeOpInterface]> {
+  let summary = "store value based on descriptor";
+  let description = [{
+    This operation will be lowered to Nvidia TMA store operation on targets supporting it.
+    `desc` is a tensor descriptor object.
+    The shape and types of `src` must match the descriptor otherwise the result is undefined.
+  }];
+  let arguments = (ins
+    Arg<TT_TensorDescType, "", [MemRead<GlobalMemory>, MemWrite<GlobalMemory>]>:$desc,
+    TT_Tensor:$src,
+    Variadic<I32>:$indices
+  );
+
+  let assemblyFormat = [{
+    $desc `[` $indices `]` `,` $src
+    attr-dict `:` qualified(type($desc)) `,` type($src)
+  }];
+  let hasVerifier = 1;
 }
 
 
