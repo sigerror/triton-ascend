@@ -693,9 +693,31 @@ def get_git_commit_hash(length=8):
         return ""
 
 
+# temporary design
+# Using version.txt containing version and commitid will be better and
+# the version.txt will be converted to versin.py when compilation.
+def get_default_version():
+    version_file = Path(__file__).parent / "version.txt"
+    if version_file.exists():
+        return version_file.read_text().strip()
+    return "3.2.0"
+
+
+def get_version():
+    version = os.environ.get("TRITON_VERSION", get_default_version()) + os.environ.get(
+        "TRITON_WHEEL_VERSION_SUFFIX", ""
+    )
+    version += get_git_commit_hash()
+    return version
+
+
+def get_package_name():
+    return os.environ.get("TRITON_WHEEL_NAME", "triton_ascend")
+
+
 setup(
-    name=os.environ.get("TRITON_WHEEL_NAME", "triton"),
-    version="3.2.0" + os.environ.get("TRITON_WHEEL_VERSION_SUFFIX", ""),
+    name=get_package_name(),
+    version=get_version(),
     author="Philippe Tillet",
     author_email="phil@openai.com",
     description="A language and compiler for custom Deep Learning operations",
