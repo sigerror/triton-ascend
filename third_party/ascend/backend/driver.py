@@ -388,7 +388,7 @@ def generate_npu_header_src():
 #include <sys/syscall.h>
 #include <vector>
 #include <Python.h>
-#include "experiment/runtime/runtime/rt.h"
+#include "runtime/runtime/rt.h"
 #include <ATen/ATen.h>
 #include <acl/acl.h>
 #include <torch_npu/csrc/core/npu/NPUWorkspaceAllocator.h>
@@ -696,10 +696,10 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     #ifdef ENABLE_GRID_WARN_PRINT
       static bool warned = false;
       if (!warned && blockNum > (uint32_t){num_physical_blocks}) {{
-        printf("WARNING: Grid %u > physical limit {num_physical_blocks}, performance maybe reduced.\\n",blockNum); 
+        printf("WARNING: Grid %u > physical limit {num_physical_blocks}, performance maybe reduced.\\n",blockNum);
         warned = true;
     }}
-    #endif  
+    #endif
 
     {'blockNum = std::min(blockNum, (uint32_t)' + str(num_physical_blocks) + ');' if enable_auto_map_parallel_blocks else ''}
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}

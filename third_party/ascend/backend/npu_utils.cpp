@@ -31,7 +31,7 @@
 #include <fstream>
 #include <algorithm>
 
-#include "experiment/runtime/runtime/rt.h"
+#include "runtime/runtime/rt.h"
 
 // Use map to differentiate same name functions from different binary
 static std::unordered_map<std::string, size_t> registered_names;
@@ -150,11 +150,11 @@ static PyObject *createStream(PyObject *self, PyObject *args) {
 	}
 	uint64_t stream_uint64 = reinterpret_cast<uint64_t>(stream);
     PyObject* result = Py_BuildValue("K", stream_uint64);
-    
+
     if (result == NULL) {
         rtStreamDestroy(stream);
     }
-    
+
     return result;
 }
 
@@ -256,11 +256,11 @@ static PyObject* allocateHostMemory(PyObject* self, PyObject* args) {
 	}
 
     PyObject* result = Py_BuildValue("K", (uint64_t)host_ptr);
-    
+
     if (result == NULL) {
         rtFreeHost(host_ptr);
     }
-    
+
     return result;
 }
 
@@ -278,11 +278,11 @@ static PyObject* allocateDeviceMemory(PyObject* self, PyObject* args) {
 	}
 
     PyObject* result = Py_BuildValue("K", (uint64_t)device_ptr);
-    
+
     if (result == NULL) {
         rtFree(device_ptr);
     }
-    
+
     return result;
 }
 
@@ -325,7 +325,7 @@ static const std::unordered_map<std::string, rtLimitType_t> LimitTypeMap = {
 	{"DVG_WARP_STACK_SIZE", rtLimitType_t::RT_LIMIT_TYPE_SIMT_DVG_WARP_STACK_SIZE},
 	{"STACK_SIZE", rtLimitType_t::RT_LIMIT_TYPE_STACK_SIZE}
   };
-  
+
   static PyObject *setDeviceLimit(PyObject *self, PyObject *args) {
 	int device;              // device ID
 	const char *type_str;
@@ -333,13 +333,13 @@ static const std::unordered_map<std::string, rtLimitType_t> LimitTypeMap = {
 	if (!PyArg_ParseTuple(args, "isI", &device, &type_str, &val)) {
 	  return NULL;
 	}
-  
+
 	auto it = LimitTypeMap.find(type_str);
 	if (it == LimitTypeMap.end()) {
 	  printf("Invalid limit type: %s.\n", type_str);
 	  return NULL;
 	}
-  
+
 	rtError_t rtRet = rtDeviceSetLimit(device, it->second, val);
 	if (rtRet != RT_ERROR_NONE) {
 	  printf("rtDeviceSetLimit failed, 0x%x\n", rtRet);
