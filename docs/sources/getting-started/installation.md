@@ -225,7 +225,7 @@ git clone https://gitcode.com/Ascend/triton-ascend.git && cd triton-ascend && gi
 
   打开注释后重新构建项目即可解决该问题。
 
-2. 运行Triton示例
+## 运行Triton示例
 
    运行实例: [01-vector-add.py](../../../ascend/examples/tutorials/01-vector-add.py)
    ```bash
