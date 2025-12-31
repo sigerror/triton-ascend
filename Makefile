@@ -84,9 +84,7 @@ $(TRITON_WHL):
 	MAX_JOBS=$(NUM_PROCS) \
 	IS_MANYLINUX=$(IS_MANYLINUX) \
 	TRITON_WHEEL_VERSION_SUFFIX=$(TRITON_WHEEL_VERSION_SUFFIX) \
-	$(PYTHON) setup.py bdist_wheel; \
-	mkdir -p ../dist; \
-	cp dist/*.whl ../dist
+	$(PYTHON) setup.py bdist_wheel;
 
 
 .PHONY: rename-wheel
@@ -109,6 +107,8 @@ rename-wheel:
 	else \
 		echo "Wheel name unchanged: $$BASENAME"; \
 	fi
+	mkdir -p dist; \
+	cp python/dist/*.whl dist/;
 
 .PHONY: package
 package: $(TRITON_WHL) rename-wheel ## Build the Triton wheel package
