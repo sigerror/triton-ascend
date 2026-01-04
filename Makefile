@@ -135,10 +135,30 @@ upload-pypi: $(PYPI_CONFIG) install-deps ## Build and upload Triton wheel to PyP
 		WHEEL=$$(ls dist/*.whl); \
 		cp dist/*.whl pkg_cache; \
 		echo "Uploading $$WHEEL to $(PYPI_URL)..."; \
-		$$PY -m twine upload --repository $(PYPI_URL) $$WHEEL; \
-		[[ $$? -ne 0 ]] && exit 1; \
+		MAX_RETRIES=5; \
+		INITIAL_DELAY=1; \
+		RETRY_COUNT=0; \
+		UPLOAD_SUCCESS=0; \
+		while [ $$RETRY_COUNT -le $$MAX_RETRIES ]; do \
+			$$PY -m twine upload --repository $(PYPI_URL) $$WHEEL; \
+			if [ $$? -eq 0 ]; then \
+				UPLOAD_SUCCESS=1; \
+				break; \
+			fi; \
+			if [ $$RETRY_COUNT -lt $$MAX_RETRIES ]; then \
+				DELAY=$$((INITIAL_DELAY * (1 << RETRY_COUNT))); \
+				echo "Upload failed, retrying in $$DELAY seconds (retry $$((RETRY_COUNT+1))/$$MAX_RETRIES)..."; \
+				sleep $$DELAY; \
+			fi; \
+			RETRY_COUNT=$$((RETRY_COUNT+1)); \
+		done; \
+		if [ $$UPLOAD_SUCCESS -ne 1 ]; then \
+			echo "Error: Upload $$WHEEL failed after $$MAX_RETRIES retries"; \
+			exit 1; \
+		fi; \
 		rm -f .req_dev_installed; \
 	done
+
 
 # ======================
 # Build: LLVM
