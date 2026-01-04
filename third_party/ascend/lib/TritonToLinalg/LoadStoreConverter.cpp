@@ -281,16 +281,20 @@ LoadConverter::matchAndRewrite(triton::LoadOp op, OpAdaptor adaptor,
   Value allocOp;
   if (op->hasAttr(ConverterUtils::discreteAttrName)) {
     Operation *loop = op->getParentOp();
+    int extractedLoopCount = 1;
     for (auto parentOp = loop->getParentOp();
          parentOp->hasAttr("ExtractedLoadOrStore");
-         parentOp = parentOp->getParentOp())
+         parentOp = parentOp->getParentOp()) {
       loop = parentOp;
+      extractedLoopCount++;
+    }
     rewriter.setInsertionPoint(loop);
     auto loopOp = cast<scf::ForOp>(loop);
     auto fullMemRefShape =
         cast<RankedTensorType>(loopOp.getInitArgs()[0].getType()).getShape();
     auto fullMemRefType = MemRefType::get(fullMemRefShape, memRefElementType);
-    if (fullMemRefShape.size() == 2u)
+    bool isIndexSelectScenario = (extractedLoopCount == 1) && (fullMemRefShape.size() > 1u);
+    if (isIndexSelectScenario)
       loopOp->setAttr("hivm.parallel_loop", rewriter.getUnitAttr());
     allocOp = rewriter.create<memref::AllocOp>(loc, fullMemRefType);
     rewriter.setInsertionPointAfter(loop);
@@ -1002,6 +1006,27 @@ StoreConverter::matchAndRewrite(triton::StoreOp op, OpAdaptor adaptor,
   auto loc = op.getLoc();
   auto ptr = adaptor.getPtr();
   auto val = adaptor.getValue();
+
+  if (op->hasAttr(ConverterUtils::discreteAttrName)) {
+    Operation *loop = op->getParentOp();
+    int extractedLoopCount = 1;
+    for (auto parentOp = loop->getParentOp();
+         parentOp->hasAttr("ExtractedLoadOrStore");
+         parentOp = parentOp->getParentOp()) {
+      loop = parentOp;
+      extractedLoopCount++;
+    }
+
+    auto valType = dyn_cast<RankedTensorType>(val.getType());
+    if (valType) {
+      auto valShape = valType.getShape();
+      bool isIndexPutScenario = (extractedLoopCount == 1) && (valShape.size() > 1u);
+      if (isIndexPutScenario) {
+        auto loopOp = cast<scf::ForOp>(loop);
+        loopOp->setAttr("hivm.parallel_loop", rewriter.getUnitAttr());
+      }
+    }
+  }
 
   // 1. boundary size check
   auto boundaryCheck = op.getBoundaryCheck();
