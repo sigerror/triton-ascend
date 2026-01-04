@@ -58,7 +58,7 @@ class AutoTilingTuner(Autotuner):
     ):
         """
         :param key: a list of argument name, where the change of arguments in value will triger re-generating candidates configs and evaluating.
-            The parameters in the list will be assigned axis names in sequence, with the axis name being in 
+            The parameters in the list will be assigned axis names in sequence, with the axis name being in
             {'x','y','z','w','v','t','rx','ry','rz','rw','rv','rt}, where the prefix 'r' means a reduction axis.
             Only the axis name in this param should add perfix 'r' if it's a reduction axis.
         :type key: List[str]
@@ -234,7 +234,10 @@ class AutoTilingTuner(Autotuner):
 
     def _batch_bench(self, *args, configs, **kwargs):
         kernel_dict = {config: self._tiling_kernel(*args, config=config, **kwargs) for config in configs}
-        return self._batch_benchmark(kernel_dict=kernel_dict, quantiles=(0.5, 0.2, 0.8))
+        tiling_dict = self._batch_benchmark(kernel_dict=kernel_dict, quantiles=(0.5, 0.2, 0.8))
+        if self.print_autotuning:
+            print(f"triton configs: {tiling_dict}")
+        return tiling_dict
 
     def _tiling_kernel(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
@@ -280,57 +283,16 @@ class AutoTilingTuner(Autotuner):
             :type quantiles: list[float], optional
         """
         assert len(kernel_dict) > 0, f"ERROR: length of kernel_dict is empty."
-
-        import threading
-        import psutil
-        from concurrent.futures import ThreadPoolExecutor
-
-        from triton.compiler.errors import (
-            CompilationError,
-            CompileTimeAssertionFailure,
-            MLIRCompilationError,
-        )
+        from triton.compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError, CompilationError
         from triton.runtime.errors import OutOfResources
-
-        kernel_dict_temp_lock = threading.Lock()
-        tiling_dict_lock = threading.Lock()
-        tiling_dict = {}
-        kernel_dict_temp = {}
-
-        def run_fn(config, fn):
-            try:
-                with kernel_dict_temp_lock:
-                    fn()
-                    kernel_dict_temp[config] = fn
-            except (CompileTimeAssertionFailure, MLIRCompilationError, CompilationError) as ex:
-                with tiling_dict_lock:
-                    tiling_dict[config] = [float('inf')]
-                raise ex
-
-        def run_all_fns():
-            max_workers = psutil.cpu_count(logical=False)
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = []
-                for config, fn in kernel_dict.items():
-                    future = executor.submit(run_fn, config, fn)
-                    futures.append(future)
-                for future in futures:
-                    try:
-                        future.result()
-                    except Exception as ex:
-                        logging.info(f"Exception raised while benchmarking function.{ex}")
-
-        run_all_fns()
-
         if self.do_bench.__module__ == "triton.testing":
             enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() == 'npu'
             if enable_bench_npu:
                 from ..testing import do_bench_multiple_kernel_npu
-
-                tiling_dict_temp = do_bench_multiple_kernel_npu(kernel_dict_temp, active=max(30, rep), prof_dir=None, keep_res=False)
-                tiling_dict.update(tiling_dict_temp)
+                tiling_dict = do_bench_multiple_kernel_npu(kernel_dict, active=max(30, rep), prof_dir=None, keep_res=False)
                 return tiling_dict
-        for config, kernel_call in kernel_dict_temp.items():
+        tiling_dict = {}
+        for config, kernel_call in kernel_dict.items():
             try:
                 tiling_dict[config] = self.do_bench(kernel_call, quantiles=quantiles)
             except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as ex:
@@ -344,10 +306,10 @@ class AutoTilingTuner(Autotuner):
         do_bench_npu(
             kernel_call, prof_dir=self.auto_profile_dir, keep_res=True
         )
-    
+
     def autoparse_split_params(self, candidates_params: List[str]) -> Dict[str, str]:
         """
-        Extracts the split axis parameters from triton kernel code. 
+        Extracts the split axis parameters from triton kernel code.
         """
         if self.print_autotuning:
             print(f"Triton autotuning: Starting split params parsing...")
@@ -360,7 +322,7 @@ class AutoTilingTuner(Autotuner):
                 f"Split params: {split_axes}"
             )
         return split_axes
-    
+
     def autoparse_tiling_params(self, candidates_params: List[str]) -> Dict[str, str]:
         """
         Extracts the tiling axis parameters from triton kernel code.
@@ -376,7 +338,7 @@ class AutoTilingTuner(Autotuner):
                 f"Tiling params: {tiling_axes}"
             )
         return tiling_axes
-    
+
     def autoparse_low_dims(self) -> List[str]:
         """
         Extracts the low dimension axis from triton kernel code.
@@ -392,7 +354,7 @@ class AutoTilingTuner(Autotuner):
                 f"Keys: {self.keys}, Low dims: {low_dims}"
             )
         return low_dims
-    
+
     def autoparse_ptr_nums(self, miss_params: List[str]) -> int:
         """
         Counts the number of pointer parameters from triton kernel code.
