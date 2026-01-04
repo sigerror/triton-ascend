@@ -47,6 +47,7 @@
 #include "mlir/IR/ValueRange.h"
 
 #include "bishengir/Dialect/Annotation/IR/Annotation.h"
+#include "bishengir/Dialect/HFusion/IR/HFusion.h"
 
 namespace TTOpConverters {
 using namespace mlir;
@@ -314,6 +315,54 @@ BitcastCanonicalizer::matchAndRewrite(triton::BitcastOp bitcastOp,
     return success();
   }
   return failure();
+}
+
+LogicalResult FpToFpCanonicalizer::matchAndRewrite(
+    triton::FpToFpOp op, PatternRewriter &rewriter) const {
+  auto loc = op.getLoc();
+  Value input = op.getSrc();
+  auto resultType = op.getResult().getType();
+
+  // Check if rounding mode is specified
+  auto roundingMode = op.getRounding();
+  if (roundingMode.has_value() && roundingMode.value() != triton::RoundingMode::RTNE) {
+    // Non-RTNE rounding modes (e.g., RTZ) should be handled by TritonToHFusion pass
+    // Return failure here so this pattern doesn't match
+    return failure();
+  }
+
+  // Handle RTNE (default) rounding mode with arith.truncf/extf
+  auto srcType = cast<RankedTensorType>(input.getType());
+  auto dstType = cast<RankedTensorType>(resultType);
+  auto srcElemType = srcType.getElementType();
+  auto dstElemType = dstType.getElementType();
+  if (!isa<FloatType>(srcElemType) || !isa<FloatType>(dstElemType)) {
+    return op.emitError("FpToFp expects floating point types");
+  }
+
+  unsigned srcBitwidth = srcElemType.getIntOrFloatBitWidth();
+  unsigned dstBitwidth = dstElemType.getIntOrFloatBitWidth();
+
+  // Create round_mode attribute (RINT for RTNE)
+  auto roundModeAttr = hfusion::RoundModeAttr::get(
+      rewriter.getContext(), hfusion::RoundMode::RINT);
+
+  if (srcBitwidth > dstBitwidth) {
+    // Downcast: use arith.truncf with round_mode=rint
+    auto truncOp = rewriter.create<arith::TruncFOp>(loc, dstType, input);
+    truncOp->setAttr("round_mode", roundModeAttr);
+    rewriter.replaceOp(op, truncOp.getResult());
+  } else if (srcBitwidth < dstBitwidth) {
+    // Upcast: use arith.extf with round_mode=rint
+    auto extOp = rewriter.create<arith::ExtFOp>(loc, dstType, input);
+    extOp->setAttr("round_mode", roundModeAttr);
+    rewriter.replaceOp(op, extOp.getResult());
+  } else {
+    // Same bitwidth, should not happen but handle gracefully
+    rewriter.replaceOp(op, input);
+  }
+
+  return success();
 }
 
 void rewriteUserWithNewOrder(mlir::OpOperand *use, PatternRewriter &rewriter, llvm::SmallVector<int64_t, 8> &blkShapeI64, // 8: container size
