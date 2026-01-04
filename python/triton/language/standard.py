@@ -66,7 +66,7 @@ def ravel(x):
     :param x: the input tensor
     :type x: Block
     """
-    return core.reshape(x, [x.numel], can_reorder=True)
+    return core.reshape(x, [x.numel], can_reorder=False)
 
 
 @jit
