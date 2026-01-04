@@ -753,6 +753,7 @@ void replacePtrLoopArguments(Operation *rootOp,
                     yieldOp.getLoc(),
                     constructOperands(yieldOp.getOperands(), tempVar, mapping));
               });
+          newOp->setAttrs(op->getAttrs());
         } else if (auto whileOp = dyn_cast<scf::WhileOp>(op.getOperation())) {
           newOp = rewriter.create<scf::WhileOp>(
               whileOp.getLoc(), constructTypes(whileOp->getResultTypes()),

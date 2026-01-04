@@ -5,7 +5,11 @@ import sys
 import warnings
 import os
 import textwrap
+
 from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
+
+import triton.language.extra.cann.extension as extension
+
 from .. import language
 from .._C.libtriton import ir
 from ..language import constexpr, tensor, str_to_ty
@@ -915,7 +919,7 @@ class CodeGenerator(ast.NodeVisitor):
         warp_specialize = False
         disable_licm = False
         bind_sub_block = None
-        if IteratorClass is language.range:
+        if IteratorClass in [language.range, extension.parallel]:
             iterator = IteratorClass(*iter_args, **iter_kwargs)
             # visit iterator arguments
             # note: only `range` iterator is supported now
@@ -929,6 +933,8 @@ class CodeGenerator(ast.NodeVisitor):
             flatten = iterator.flatten
             warp_specialize = iterator.warp_specialize
             disable_licm = iterator.disable_licm
+            if (IteratorClass is extension.parallel):
+                bind_sub_block = iterator.bind_sub_block
         elif IteratorClass is range:
             # visit iterator arguments
             # note: only `range` iterator is supported now
@@ -1009,6 +1015,8 @@ class CodeGenerator(ast.NodeVisitor):
                 for_op.set_attr("tt.warp_specialize", self.builder.get_unit_attr())
             if disable_licm:
                 for_op.set_attr("tt.disable_licm", self.builder.get_unit_attr())
+            if (IteratorClass is extension.parallel):
+                for_op.set_attr("hivm.parallel_loop", self.builder.get_unit_attr())
 
             self.scf_stack.append(node)
             self.builder.set_insertion_point_to_start(for_op.get_body(0))
