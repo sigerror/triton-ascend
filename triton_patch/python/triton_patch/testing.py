@@ -396,7 +396,7 @@ def _collect_mul_prof_result(base_dir: str, kernel_dict, total, key: str = None)
         return tiling_dict
     df = pd.read_csv(kernel_details_file)
     # filter out l2 cache clear operation
-    filter_cond = ~df["Name"].str.contains(r"zero|ZerosLike", case=False, na=False)
+    filter_cond = ~df["Type"].str.contains(r"^ZerosLike$", case=False, na=False)
     filter_df = df[filter_cond]
     if key is not None:
         key_rows = filter_df[filter_df["Name"].str.contains(key, na=False)]
