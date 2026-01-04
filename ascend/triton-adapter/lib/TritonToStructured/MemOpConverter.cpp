@@ -332,14 +332,13 @@ Value MemOpTransformer::createNewPtr(Value oldPtr,
     // then the stride is the accumulated size of all dimensions on the right side
     // ie. for shape [1, 128], sizes [1, 128], originally stride is [0, 1],
     // after normalization, stride is [128, 1]
-    OpFoldResult dimSize = rewriter.getIndexAttr(1);
+    OpFoldResult maxStride = rewriter.getIndexAttr(1);
     for (auto it = ptrState.stateInfo.rbegin(); it != ptrState.stateInfo.rend(); ++it) {
-        if ((TritonToStructured::isEqual(it->shape, ptrState.sizes[it->dimIndex]) ||
-            TritonToStructured::isOne(it->shape)) &&
+        if (TritonToStructured::isOne(it->shape) &&
             isZero(it->stride)) {
-            it->stride = dimSize;
+            it->stride = maxStride;
         }
-        dimSize = mulOpFoldResult(dimSize, it->shape, loc, rewriter);
+        maxStride = maxOpFoldResult(maxStride, it->stride, loc, rewriter);
     }
 
     ptrState.analyzePermute();
