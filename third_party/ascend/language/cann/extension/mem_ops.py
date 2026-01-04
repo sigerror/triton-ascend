@@ -505,8 +505,16 @@ def scatter_ub_to_out(
             tl.void
         )
 
+    def _is_ranked_tensor(x):
+        return isinstance(x, tensor) and x.shape and len(x.shape) > 0
+
     dim = _constexpr_to_value(dim)
     index_boundary = _constexpr_to_value(index_boundary)
+    value = _constexpr_to_value(value)
+
+    if not _is_ranked_tensor(value) or isinstance(value, constexpr):
+        element_ty = ptr.type.scalar.element_ty
+        value = real_semantic.full(index.shape, value, element_ty, _builder)
     return scatter_ub_to_out_impl(ptr, value, index, index_boundary, dim,
                                   dst_stride, end_offset, start_offset, _builder)
 
