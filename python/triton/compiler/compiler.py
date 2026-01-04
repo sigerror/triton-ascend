@@ -11,6 +11,7 @@ from ..runtime.driver import driver
 from ..tools.disasm import get_sass
 # TODO: this shouldn't be here
 from .code_generator import ast_to_ttir
+from .errors import MLIRCompilationError
 from pathlib import Path
 import re
 import functools
@@ -276,7 +277,18 @@ def compile(src, target=None, options=None):
         raise
     use_ir_loc = os.environ.get("USE_IR_LOC", None)
     for ext, compile_ir in list(stages.items())[first_stage:]:
-        next_module = compile_ir(module, metadata)
+        try:
+            next_module = compile_ir(module, metadata)
+        except Exception as e:
+            if (ext == "ttadapter"):
+                stage_name = "ConvertTritonIRToLinalgIR"
+            elif (ext == "npubin"):
+                stage_name = "ConvertLinalgRToBinary"
+            else:
+                stage_name = "MLIRCompile"
+            error_detail = e.stderr.decode('utf-8') if hasattr(e, 'stderr') and e.stderr else str(e)
+            error_detail += f"\n\n[INFO]: The compiled kernel cache is in {fn_cache_manager.cache_dir}\n\n"
+            raise MLIRCompilationError(stage_name, error_detail) from e
         ir_filename = f"{file_name}.{ext}"
         if (fn_override_manager is not None and (full_name := fn_override_manager.get_file(ir_filename)) is not None):
             print(f"\nOverriding kernel with file {full_name}")
