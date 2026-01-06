@@ -986,7 +986,7 @@ class tensor(_value):
         assert False, "Transposition must be created by the AST Visitor"
 
     @builtin
-    def to(self, dtype: dtype, fp_downcast_rounding: Optional[str] = None, bitcast: bool = False, _builder=None):
+    def to(self, dtype: dtype, fp_downcast_rounding: Optional[str] = None, bitcast: bool = False, overflow_mode: Optional[str] = None, _builder=None):
         """
         Alias for :py:func:`tensor.cast`.
         """
@@ -996,7 +996,7 @@ class tensor(_value):
         bitcast = _unwrap_if_constexpr(bitcast)
         if bitcast:
             return semantic.bitcast(self, dtype, _builder)
-        return semantic.cast(self, dtype, _builder, fp_downcast_rounding)
+        return semantic.cast(self, dtype, _builder, fp_downcast_rounding, overflow_mode)
 
     # Type stubs for functions added by the _tensor_member_fn decorator.
     # (Unfortunately these can't be created automatically.)

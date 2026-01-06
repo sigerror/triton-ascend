@@ -877,7 +877,7 @@ def bitcast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder) -> tl.tenso
 
 
 def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
-         fp_downcast_rounding: Optional[str] = None) -> tl.tensor:
+         fp_downcast_rounding: Optional[str] = None, overflow_mode: Optional[str] = None) -> tl.tensor:
     src_ty = input.type
     if isinstance(dst_ty, tl.constexpr):
         dst_ty = dst_ty.value
@@ -947,6 +947,10 @@ def cast(input: tl.tensor, dst_ty: tl.dtype, builder: ir.builder,
             ty = input.dtype.to_ir(builder)
             _0 = tl.tensor(builder.get_null_value(ty), input.dtype)
             return not_equal(input, _0, builder)
+        elif overflow_mode == "saturate" and \
+            (src_sca_ty.is_int_unsigned() or dst_sca_ty.is_int_unsigned()) and \
+            src_sca_ty.int_bitwidth >= dst_sca_ty.int_bitwidth:
+            return cast(cast(input, tl.float32, builder), dst_sca_ty, builder)
         else:
             return tl.tensor(builder.create_int_cast(input.handle, dst_ty.to_ir(builder), sign_extend), dst_ty)
 
