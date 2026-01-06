@@ -197,6 +197,7 @@ public:
     auto valueType = elemTypes[0];
     // tl.argmin reorder
     auto block = op.getBody();
+    bool isUnsigned = false;
     if (isa<mlir::FloatType>(valueType)) {
       arith::CmpFOp cmpFOp;
       block->walk([&](arith::CmpFOp cmpOp) {
@@ -220,6 +221,10 @@ public:
       arith::CmpIOp cmpIOp;
       block->walk([&](arith::CmpIOp cmpOp) {
         auto pred = cmpOp.getPredicate();
+        if (pred == arith::CmpIPredicate::ugt ||
+            pred == arith::CmpIPredicate::ult) {
+            isUnsigned = true;
+        }
         if (pred == arith::CmpIPredicate::eq ||
             pred == arith::CmpIPredicate::ne) {
           return WalkResult::advance();
@@ -242,9 +247,13 @@ public:
     if (isa<mlir::FloatType>(valueType)) {
       valueAttr = rewriter.getFloatAttr(valueType, T::getBaseReductionValue());
     } else if (isa<mlir::IntegerType>(valueType)) {
-      // TODO: support other type of int
-      valueAttr =
-          rewriter.getIntegerAttr(valueType, T::getBaseReductionIntValue());
+      if (isUnsigned) {
+        valueAttr =
+            rewriter.getIntegerAttr(valueType, T::getBaseReductionUIntValue());
+      } else {
+        valueAttr =
+            rewriter.getIntegerAttr(valueType, T::getBaseReductionIntValue());
+      }
     }
 
     auto valuesAccBaseVal =
@@ -315,6 +324,7 @@ public:
   static float getBaseReductionValue();
 
   static int8_t getBaseReductionIntValue();
+  static uint8_t getBaseReductionUIntValue();
 
   ArgMinConverter(MLIRContext *context) : ArgMinMaxBaseConverter(context) {}
 };
@@ -330,6 +340,7 @@ public:
   static float getBaseReductionValue();
 
   static int8_t getBaseReductionIntValue();
+  static uint8_t getBaseReductionUIntValue();
 
   ArgMaxConverter(MLIRContext *context) : ArgMinMaxBaseConverter(context) {}
 };
