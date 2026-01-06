@@ -135,8 +135,8 @@ upload-pypi: $(PYPI_CONFIG) install-deps ## Build and upload Triton wheel to PyP
 		echo "Building wheel for $$PY..."; \
 		rm -rf build dist; \
 		make package-pypi PYTHON=$$PY IS_MANYLINUX=True; \
-		WHEEL=$$(ls dist/*.whl); \
-		cp dist/*.whl pkg_cache; \
+		WHEEL=$$(ls python/dist/*.whl); \
+		cp python/dist/*.whl pkg_cache; \
 		rm -f .req_dev_installed; \
 	done
 
