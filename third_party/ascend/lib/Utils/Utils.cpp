@@ -847,99 +847,110 @@ OpFoldResult maxOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
 
 LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter, linalg::ReduceOp reduceOp)
 {
-    // To verify whether the operation of the reduceOp is ReduceWithIndex
-    // TODO: maybe a better way of judging?
     Block &body = reduceOp.getCombiner().front();
     auto yieldOp = dyn_cast<linalg::YieldOp>(body.getTerminator());
-
     auto yieldValue = yieldOp.getValues();
     if (yieldValue.size() == 0) {
-        return failure();
+      return failure();
+    }
+    else if (yieldValue.size() != 2) {
+      return success();
     }
 
     const StringRef reduceRef = "reduce_mode";
     const StringRef tieBreakLeftRef = "tie_break_left";
-    // INT
-    // Composite predicate to pick index of min (or max) element have to be
-    // written in following form: value1 < value2 or (value1 == value2 and index1
-    // < index2) - for leftmost element (value1 == value2 and index1 < index2) or
-    // value1 < value2 - for leftmost element value1 < value2 or (value1 == value2
-    // and index1 > index2) - for rightmost element (value1 == value2 and index1 >
-    // index2) or value1 < value2 - for rightmost element table below encodes all
-    // possible cases of sequences of predicates for min/max and
-    // leftmost/rightmost elements
-    std::map<std::vector<arith::CmpIPredicate>, std::pair<std::string, std::string>> m {
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt, arith::CmpIPredicate::sgt}, {"max_with_index", "false"}},
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt, arith::CmpIPredicate::slt}, {"min_with_index", "false"}},
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::slt, arith::CmpIPredicate::sgt}, {"max_with_index", "true"}},
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::slt, arith::CmpIPredicate::slt}, {"min_with_index", "true"}},
-        {{arith::CmpIPredicate::sgt, arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt}, {"max_with_index", "false"}},
-        {{arith::CmpIPredicate::slt, arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt}, {"min_with_index", "false"}},
-        {{arith::CmpIPredicate::sgt, arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}, {"max_with_index", "true"}},
-        {{arith::CmpIPredicate::slt, arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}, {"min_with_index", "true"}},
 
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::ugt, arith::CmpIPredicate::ugt}, {"max_with_index", "false"}},
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::ugt, arith::CmpIPredicate::ult}, {"min_with_index", "false"}},
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::ult, arith::CmpIPredicate::ugt}, {"max_with_index", "true"}},
-        {{arith::CmpIPredicate::eq, arith::CmpIPredicate::ult, arith::CmpIPredicate::ult}, {"min_with_index", "true"}},
-        {{arith::CmpIPredicate::ugt, arith::CmpIPredicate::eq, arith::CmpIPredicate::ugt}, {"max_with_index", "false"}},
-        {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::ugt}, {"min_with_index", "false"}},
-        {{arith::CmpIPredicate::ugt, arith::CmpIPredicate::eq, arith::CmpIPredicate::ult}, {"max_with_index", "true"}},
-        {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::ult}, {"min_with_index", "true"}},
-
-        {{arith::CmpIPredicate::ugt, arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt}, {"max_with_index", "false"}},
-        {{arith::CmpIPredicate::ugt, arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}, {"max_with_index", "true"}},
-        {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::sgt}, {"min_with_index", "false"}},
-        {{arith::CmpIPredicate::ult, arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}, {"min_with_index", "true"}},
+    // Unify signed/unsigned and int/float predicate
+    enum class Predicate { Undefined = 0, lt = 1, gt = 2, eq = 3 };
+    auto unifyPredicateI = [](arith::CmpIPredicate p)
+      -> Predicate {
+        switch(p) {
+         case arith::CmpIPredicate::slt:
+         case arith::CmpIPredicate::ult:
+          return Predicate::lt;
+         case arith::CmpIPredicate::sgt:
+         case arith::CmpIPredicate::ugt:
+          return Predicate::gt;
+         case arith::CmpIPredicate::eq:
+          return Predicate::eq;
+         default:
+          return Predicate::Undefined;
+        }
+    };
+    auto unifyPredicateF = [](arith::CmpFPredicate p)
+      -> Predicate {
+        switch(p) {
+         case arith::CmpFPredicate::OLT:
+         case arith::CmpFPredicate::ULT:
+          return Predicate::lt;
+         case arith::CmpFPredicate::OGT:
+         case arith::CmpFPredicate::UGT:
+          return Predicate::gt;
+         case arith::CmpFPredicate::OEQ:
+         case arith::CmpFPredicate::UEQ:
+          return Predicate::eq;
+         default:
+          return Predicate::Undefined;
+        }
     };
 
-    std::vector<arith::CmpIPredicate> preds;
-    using arith::CmpIPredicate;
-    std::unordered_set<arith::CmpIPredicate> allowed {arith::CmpIPredicate::slt, arith::CmpIPredicate::sgt,
-                                                      arith::CmpIPredicate::eq, arith::CmpIPredicate::ult,
-                                                      arith::CmpIPredicate::ugt};
-    // collect predicates under consideration
+    // Composite predicate to pick index of min (or max) element have to be
+    // written in following form: (v means value and i means index)
+    // For leftmost element:
+    //    (new_v == old_v and new_i < old_i) or new_v < old_v
+    //    new_v < old_v or (new_v == old_v and new_i < old_i)
+    //    new_v < old_v // python3.11 ttir
+    //    (new_v == old_v and new_i < old_i) or new_v > old_v
+    //    new_v > old_v or (new_v == old_v and new_i < old_i)
+    //    new_v > old_v // python3.11 ttir
+    // For rightmost element:
+    //    (new_v == old_v and new_i > old_i) or new_v < old_v
+    //    new_v < old_v or (new_v == old_v and new_i > old_i)
+    //    (new_v == old_v and new_i > old_i) or new_v > old_v
+    //    new_v > old_v or (new_v == old_v and new_i > old_i)
+
+    std::map<std::vector<Predicate>, std::pair<std::string, std::string>> m {
+        // leftmost
+        {{Predicate::eq, Predicate::lt, Predicate::lt}, {"min_with_index", "true"}},
+        {{Predicate::lt, Predicate::eq, Predicate::lt}, {"min_with_index", "true"}},
+        {{Predicate::lt}, {"min_with_index", "true"}},
+        {{Predicate::eq, Predicate::lt, Predicate::gt}, {"max_with_index", "true"}},
+        {{Predicate::gt, Predicate::eq, Predicate::lt}, {"max_with_index", "true"}},
+        {{Predicate::gt}, {"max_with_index", "true"}},
+        // rightmost
+        {{Predicate::eq, Predicate::gt, Predicate::lt}, {"min_with_index", "false"}},
+        {{Predicate::lt, Predicate::eq, Predicate::gt}, {"min_with_index", "false"}},
+        {{Predicate::eq, Predicate::gt, Predicate::gt}, {"max_with_index", "false"}},
+        {{Predicate::gt, Predicate::eq, Predicate::gt}, {"max_with_index", "false"}},
+    };
+
+    std::vector<Predicate> preds;
+    // A better way is to trace the arith.select
+    // Checking the operations one by one is hacky :(
     for (auto it = body.begin(); it != body.end(); ++it) {
+        Predicate pred = Predicate::Undefined;
         if (auto op = dyn_cast<arith::CmpIOp>(*it)) {
-            auto pred = op.getPredicate();
-            if (allowed.find(pred) == allowed.end()) {
-                continue;
-            }
+            auto predi = op.getPredicate();
+            pred = unifyPredicateI(predi);
+        }
+        if (auto op = dyn_cast<arith::CmpFOp>(*it)) {
+            auto predf = op.getPredicate();
+            pred = unifyPredicateF(predf);
+        }
+        if (pred != Predicate::Undefined) {
             preds.push_back(pred);
         }
     }
+
     // check if sequence of predicates matches any sequence for min/max
     // leftmost/rightmost
-    if (m.find(preds) != m.end()) {
-        auto [type, tie_break] = m[preds];
-        reduceOp->setAttr(reduceRef, rewriter.getStringAttr(type));
-        reduceOp->setAttr(tieBreakLeftRef, rewriter.getStringAttr(tie_break));
+    if (m.find(preds) == m.end()) {
+        return failure();
     }
 
-    // FLOAT
-    // For float case it's enough to check for OGT/OLT (comparison of elements)
-    // and for sgt/slt (comparison for indices)
-    std::string floatType;
-    std::string tieBreakLeftFloat;
-    for (auto it = body.begin(); it != body.end(); ++it) {
-        if (auto op = dyn_cast<arith::CmpFOp>(*it)) {
-            if (op.getPredicate() != arith::CmpFPredicate::OGT && op.getPredicate() != arith::CmpFPredicate::OLT) {
-                continue;
-            }
-            floatType = op.getPredicate() == arith::CmpFPredicate::OGT ? "max_with_index" : "min_with_index";
-        }
-        if (auto op = dyn_cast<arith::CmpIOp>(*it)) {
-            if (op.getPredicate() != arith::CmpIPredicate::sgt && op.getPredicate() != arith::CmpIPredicate::slt) {
-                continue;
-            }
-            tieBreakLeftFloat = op.getPredicate() == arith::CmpIPredicate::sgt ? "false" : "true";
-        }
-    }
-    if (!floatType.empty() && !tieBreakLeftFloat.empty()) {
-        reduceOp->setAttr(reduceRef, rewriter.getStringAttr(floatType));
-        reduceOp->setAttr(tieBreakLeftRef, rewriter.getStringAttr(tieBreakLeftFloat));
-    }
-
+    auto [type, tie_break] = m.at(preds);
+    reduceOp->setAttr(reduceRef, rewriter.getStringAttr(type));
+    reduceOp->setAttr(tieBreakLeftRef, rewriter.getStringAttr(tie_break));
     return success();
 }
 
