@@ -1644,13 +1644,6 @@ LogicalResult DevicePrintConverter::matchAndRewrite(
 LogicalResult DeviceAssertConverter::matchAndRewrite(
     triton::AssertOp op, OpAdaptor adaptor,
     mlir::ConversionPatternRewriter &rewriter) const {
-  // Ascend910_95 does not support DeviceAssert. Thus for now
-  // we directly removes this op.
-  if(compileOn91095Flag){
-    rewriter.eraseOp(op);
-    return success();
-  }
-
   auto msgAttr = op.getMessageAttr();
   // Filter out automatically inserted assert ops
   if (auto strAttr = mlir::dyn_cast<mlir::StringAttr>(msgAttr)) {
