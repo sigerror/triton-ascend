@@ -111,8 +111,7 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         enable_linearize = metadata.get("enable_linearize")
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
-        if enable_linearize:
-            ascend.passes.ttir.add_triton_linearize(pm)
+        ascend.passes.ttir.add_triton_to_structure(pm)
         ascend.passes.ttir.add_discrete_mask_access_conversion(
             pm,
             compile_on_910_95,

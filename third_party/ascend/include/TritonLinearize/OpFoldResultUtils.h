@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -31,13 +32,6 @@
 namespace mlir {
 
 class OpBuilder;
-
-Value materializeValue(OpBuilder &builder, Location loc, OpFoldResult ofr);
-
-// Return integer if ofr is an IntegerAttr. Note that this function differs
-// from getConstantIntValue, which returns an integer if ofr is the constant
-// result of an operation too.
-std::optional<int64_t> getIntAttr(const OpFoldResult ofr);
 
 // Return if ofr contains a constant zero, either represented by an integer
 // attribute or a constant value.

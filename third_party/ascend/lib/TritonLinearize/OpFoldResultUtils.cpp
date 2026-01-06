@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -27,32 +28,9 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "Utils/Utils.h"
 
 namespace mlir {
-
-Value materializeValue(OpBuilder &builder, Location loc, OpFoldResult ofr) {
-  if (auto val = ofr.dyn_cast<Value>()) { 
-    return val; 
-  }
-  
-  auto intVal = getIntAttr(ofr);
-  if (intVal.has_value()) {
-    return builder.create<arith::ConstantOp>(loc, builder.getI32IntegerAttr(intVal.value()));
-  }
-  assert(intVal.has_value());
-  return Value();
-
-  // return builder.create<arith::ConstantIndexOp>(
-  //     loc, dyn_cast<IntegerAttr>(attr).getInt());
-}  
-
-std::optional<int64_t> getIntAttr(const OpFoldResult ofr) {
-  if (ofr.is<Attribute>() && isa<IntegerAttr>(ofr.get<Attribute>()))
-    return dyn_cast<IntegerAttr>(ofr.get<Attribute>()).getInt();
-  
-
-  return std::nullopt;
-}
 
 bool hasConstZero(const OpFoldResult ofr) {
   auto intAttr = getIntAttr(ofr);

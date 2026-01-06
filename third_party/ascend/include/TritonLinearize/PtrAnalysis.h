@@ -34,6 +34,8 @@
 
 #include "triton/Dialect/Triton/IR/Dialect.h"
 #include "Dialect/TritonStructured/IR/TritonStructuredDialect.h"
+#include "TritonLinearize/OpFoldResultUtils.h"
+#include "TritonLinearize/MaskAnalysis.h"
 
 #include <cstddef>
 #include <set>
