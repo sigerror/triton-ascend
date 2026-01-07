@@ -96,7 +96,6 @@ class KernelMeta:
             prefix = ""
             if name.startswith("r"):
                 prefix = "r"
-                name = name[1:]
 
             is_split_axis = name in split_params
             is_tiling_axis = name in tiling_params

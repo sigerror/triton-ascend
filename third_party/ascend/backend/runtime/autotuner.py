@@ -31,7 +31,7 @@ from typing import Dict, List
 from triton.runtime.autotuner import Autotuner, Config
 
 from .utils import get_byte_per_numel, is_valid_axis_name, valid_axis_names
-from .autoparser import SplitAxesParser, TilingAxesParser, LowDimsAxesParser, PtrNumsParser
+from .autoparser import SplitAxesParser, TilingAxesParser, ReductionAxesParser, LowDimsAxesParser, PtrNumsParser
 
 
 class AutoTilingTuner(Autotuner):
@@ -88,10 +88,11 @@ class AutoTilingTuner(Autotuner):
 
         self.split_params = None
         self.tiling_params = None
-        self.low_dims = None
+        self.low_dim_axes = None
+        self.reduction_axes = None
         self.dual_reduction = False
         self.persistent_reduction = False
-        self.input_ptr_num = 0
+        self.input_ptr_num = -1
         if len(key) > len(valid_axis_names):
             raise ValueError("Number of parameters exceeds the number of available axes.")
         self.keys = {axis: param for axis, param in zip(valid_axis_names, key)}
@@ -116,7 +117,7 @@ class AutoTilingTuner(Autotuner):
             axis_sizes,
             self.split_params,
             self.tiling_params,
-            self.low_dims,
+            self.low_dim_axes,
             dtype,
             self.persistent_reduction,
             self.dual_reduction,
@@ -155,8 +156,7 @@ class AutoTilingTuner(Autotuner):
         # generate key
         all_args = {**self.nargs, **kwargs}
         _args = {k: v for (k, v) in all_args.items() if k in self.arg_names}
-        _kv_dict = {k: _args[v] for k, v in self.keys.items() if v in _args}
-        key = list(_kv_dict.values())
+        key = [_args[v] for _, v in self.keys.items() if v in _args]
 
         # Currently, we use the dtype with maximum byte length
         dtype = None
@@ -175,11 +175,24 @@ class AutoTilingTuner(Autotuner):
         if key not in self.cache:
             miss_params = [arg for arg in self.arg_names if arg not in all_args.keys()]
             # parse pointer params nums
-            self.input_ptr_nums = self.autoparse_ptr_nums(miss_params)
-
+            if self.input_ptr_num == -1:
+                self.input_ptr_num = self.autoparse_ptr_nums(miss_params)
+            
             # parse autotiling axes
-            if not self.low_dims:
-                self.low_dims = self.autoparse_low_dims()
+            # reduction axis must be parsed before other axes. it will alter the key
+            if not self.reduction_axes:
+                self.reduction_axes = self.autoparse_reduction_axes()
+            if len(self.reduction_axes) >= 2:
+                self.dual_reduction = True
+
+            if not self.low_dim_axes:
+                self.low_dim_axes = self.autoparse_low_dim_axes()
+
+            if len(self.reduction_axes) == 1 and \
+               self.reduction_axes[0] == self.low_dim_axes[0] and \
+               all_args.get(self.keys[self.reduction_axes[0]]) < 1024:
+                self.persistent_reduction = True
+
             if not self.split_params:
                 self.split_params = self.autoparse_split_params(miss_params)
             miss_params = [arg for arg in miss_params if arg not in self.split_params.values()]
@@ -194,6 +207,7 @@ class AutoTilingTuner(Autotuner):
                 )
 
             # prune configs
+            _kv_dict = {k: _args[v] for k, v in self.keys.items() if v in _args}
             self.configs = self._gen_tile_configs(_kv_dict, dtype)
             pruned_configs = self.prune_configs(kwargs)
             if len(pruned_configs) > 1:
@@ -338,8 +352,28 @@ class AutoTilingTuner(Autotuner):
                 f"Tiling params: {tiling_axes}"
             )
         return tiling_axes
+    
+    def autoparse_reduction_axes(self) -> List[str]:
+        """
+        Extracts the reduction axis parameters from triton kernel code.
+        """
+        if self.print_autotuning:
+            print(f"Triton autotuning: Starting reduction params parsing...")
+        func_ast = self.fn.parse()
+        parser = ReductionAxesParser(func_ast, self.keys)
+        reduction_axes = parser.parse()
+        for axis in reduction_axes:
+            self.keys[f"r{axis}"] = self.keys.pop(axis)
+        reduction_axes = [f"r{axis}" for axis in reduction_axes]
 
-    def autoparse_low_dims(self) -> List[str]:
+        if self.print_autotuning:
+            print(
+                f"Triton autotuning: Reduction params parsing complete. "
+                f"Reduction params: {reduction_axes}"
+            )
+        return reduction_axes
+
+    def autoparse_low_dim_axes(self) -> List[str]:
         """
         Extracts the low dimension axis from triton kernel code.
         """
@@ -347,14 +381,14 @@ class AutoTilingTuner(Autotuner):
             print(f"Triton autotuning: Starting Low dims axes parsing...")
         func_ast = self.fn.parse()
         parser = LowDimsAxesParser(func_ast, self.keys)
-        low_dims = parser.parse()
+        low_dim_axes = parser.parse()
         if self.print_autotuning:
             print(
                 f"Triton autotuning: Low dims axes parsing complete. "
-                f"Keys: {self.keys}, Low dims: {low_dims}"
+                f"Keys: {self.keys}, Low dims: {low_dim_axes}"
             )
-        return low_dims
-
+        return low_dim_axes
+    
     def autoparse_ptr_nums(self, miss_params: List[str]) -> int:
         """
         Counts the number of pointer parameters from triton kernel code.
@@ -362,7 +396,7 @@ class AutoTilingTuner(Autotuner):
         if self.print_autotuning:
             print(f"Triton autotuning: Starting ptr nums parsing...")
         func_ast = self.fn.parse()
-        parser = PtrNumsParser(func_ast, miss_params)
+        parser = PtrNumsParser(func_ast, self.keys, miss_params)
         ptr_nums, ptr_params = parser.parse()
         if self.print_autotuning:
             print(
