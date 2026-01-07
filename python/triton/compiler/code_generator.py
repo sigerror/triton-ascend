@@ -12,6 +12,7 @@ import triton.language.extra.cann.extension as extension
 
 from .. import language
 from .._C.libtriton import ir
+from .._C.libtriton.ascend import ir as ascend_ir
 from ..language import constexpr, tensor, str_to_ty
 from ..language.core import _unwrap_if_constexpr, nv_tma_desc_type, _value
 from ..runtime.jit import _normalize_ty, get_jit_fn_file_line
@@ -19,6 +20,14 @@ from ..runtime.jit import _normalize_ty, get_jit_fn_file_line
 from ..runtime import JITFunction
 from .errors import (CompilationError, CompileTimeAssertionFailure, UnsupportedLanguageConstruct)
 from types import ModuleType
+
+# Central registry for all 'with' statement handlers
+WITH_DISPATCH = {}
+
+# Import and register Ascend extension dispatch handlers
+from triton.language.extra.cann.extension.dispatch import ASCEND_WITH_DISPATCH
+from triton.language.extra.cann.extension.builder import setup_unified_builder
+WITH_DISPATCH.update(ASCEND_WITH_DISPATCH)
 
 
 def mangle_ty(ty):
@@ -205,6 +214,12 @@ class CodeGenerator(ast.NodeVisitor):
         self.begin_line = begin_line - 1
         self.builder.set_loc(file_name, begin_line, 0)
         self.builder.options = options
+        
+        # Set up unified builder interface with methods from specialized builders
+        self.ascend_builder = ascend_ir.ascendnpu_ir_builder(context)
+        self.ascend_builder.set_loc(file_name, begin_line, 0)
+        setup_unified_builder(self.builder, self.ascend_builder)
+        
         # dict of functions provided by the backend. Below are the list of possible functions:
         # Convert custom types not natively supported on HW.
         # convert_custom_types(intput_tensor, dtype, fp_downcast_rounding=None, _builder=None)
@@ -766,6 +781,21 @@ class CodeGenerator(ast.NodeVisitor):
 
     def visit_Pass(self, node):
         pass
+
+    def visit_With(self, node):
+        """Handle 'with' statements using dispatch pattern."""
+        assert len(node.items) == 1
+        context = node.items[0].context_expr
+
+        # Check if context is a Call and dispatch to registered handler
+        if isinstance(context, ast.Call):
+            withitemClass = self.visit(context.func)
+            handler = WITH_DISPATCH.get(withitemClass)
+            if handler:
+                return handler(self, node)
+
+        # Fall back to visiting body for unhandled cases
+        return self.visit_compound_statement(node.body)
 
     def visit_Compare(self, node):
         if not (len(node.comparators) == 1 and len(node.ops) == 1):

@@ -15,9 +15,8 @@ else()
   unset(FETCHCONTENT_SOURCE_DIR_ASCENDNPU_IR)
 endif()
 
-set(ASCENDNPU_IR_TAG "master")  # Specify the desired tag or branch
 if(NOT ${ASCENDNPU_IR_TAG})
-  set(ASCENDNPU_IR_TAG "master")
+  set(ASCENDNPU_IR_TAG "1861ff6a90b97ffea4e9c207a1ac5ce922358cff")
 endif()
 include(FetchContent)
 FetchContent_Declare(
@@ -53,9 +52,12 @@ add_subdirectory(lib)
 
 add_triton_plugin(TritonAscend
   ${CMAKE_CURRENT_SOURCE_DIR}/triton_ascend.cc
+  ${CMAKE_CURRENT_SOURCE_DIR}/ascend_ir.cc
 
   LINK_LIBS
   TritonToLinalg
+  BiShengIRScopeDialect
+  BiShengIRHIVMDialect
 )
 
 # target_link_libraries(TritonAscend PRIVATE Python3::Module pybind11::headers)

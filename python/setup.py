@@ -476,6 +476,11 @@ class CMakeBuild(build_ext):
             # unit test builds fetch googletests from GitHub
             cmake_args += ["-DTRITON_BUILD_UT=OFF"]
 
+        # Allow specifying AscendNPU-IR tag/commit via environment variable
+        ascendnpu_ir_tag = os.getenv("ASCENDNPU_IR_TAG")
+        if ascendnpu_ir_tag is not None:
+            cmake_args += [f"-DASCENDNPU_IR_TAG={ascendnpu_ir_tag}"]
+
         cmake_args_append = os.getenv("TRITON_APPEND_CMAKE_ARGS")
         if cmake_args_append is not None:
             cmake_args += shlex.split(cmake_args_append)

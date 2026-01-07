@@ -4,6 +4,10 @@ try:
 except Exception as e:
     is_compile_on_910_95 = False
 
+from .core import builtin, is_builtin
+
+from .scope import scope
+
 from .math_ops import (
     atan2,
     isfinited,
@@ -37,6 +41,13 @@ from .mem_ops import (
 )
 
 __all__ = [
+    # core
+    "builtin",
+    "is_builtin",
+
+    # scope
+    "scope",
+
     # math ops
     "atan2",
     "isfinited",

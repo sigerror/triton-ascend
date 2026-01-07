@@ -363,6 +363,9 @@ void init_triton_ascend_passes_ttir(py::module &&m) {
     pm.addPass(mlir::triton::createBubbleUpOperationPass());});
 }
 
+// Forward declaration for ascend_ir bindings (defined in ascend_ir.cc)
+void init_ascend_ir(py::module &&m);
+
 void init_triton_ascend(py::module &&m) {
   auto passes = m.def_submodule("passes");
   // load dialects
@@ -375,4 +378,7 @@ void init_triton_ascend(py::module &&m) {
 
   init_triton_ascend_passes_ttir(passes.def_submodule("ttir"));
   init_triton_ascend_ir(m.def_submodule("ascend_ir"));
+  
+  // Initialize ascend IR bindings (ascendnpu_ir_builder, scope/hivm dialects)
+  init_ascend_ir(m.def_submodule("ir"));
 }
