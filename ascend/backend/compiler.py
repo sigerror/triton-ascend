@@ -432,6 +432,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             metadata["required_ub_bits"] = int(match.group(1))
         if Path(callback_path).is_file():
             lib = ctypes.CDLL(callback_path)
+            __get_metadata_attr_by_callback(lib, "_infer_task_type_function", metadata, "bs_task_type")
             __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_num_function", metadata, "lock_num")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_init_function", metadata, "lock_init_val")
@@ -552,6 +553,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
             metadata["required_ub_bits"] = int(match.group(1))
         if Path(callback_path).is_file():
             lib = ctypes.CDLL(callback_path)
+            __get_metadata_attr_by_callback(lib, "_infer_task_type_function", metadata, "bs_task_type")
             __get_metadata_attr_by_callback(lib, "_infer_workspace_shape_function", metadata, "workspace_size")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_num_function", metadata, "lock_num")
             __get_metadata_attr_by_callback(lib, "_infer_sync_block_lock_init_function", metadata, "lock_init_val")

@@ -406,6 +406,7 @@ def generate_npu_wrapper_src(constants, signature, metadata):
                           if hasattr(metadata, 'lock_init_value') else 0
     lock_num = int(metadata.lock_num) \
                           if hasattr(metadata, 'lock_num') else -1
+    bs_task_type = metadata.bs_task_type if hasattr(metadata, 'bs_task_type') else 0
     mix_mode = metadata.mix_mode
     compile_on_910_95 = metadata.compile_on_910_95
     parallel_mode = metadata.parallel_mode
@@ -457,6 +458,24 @@ def generate_npu_wrapper_src(constants, signature, metadata):
             "int64_t": "L",
         }[ty]
 
+    def _format_of_msprof_task_type_ratio(bs_task_type, mix_mode):
+        # Default fallback based on mix_mode
+        default_task_type = "MSPROF_GE_TASK_TYPE_AIV" if mix_mode == "aiv" else "MSPROF_GE_TASK_TYPE_AI_CORE"
+
+        if not bs_task_type:
+            return default_task_type, 0
+
+        task_type_num, mix_block_dim_ratio = divmod(int(bs_task_type), 10)
+        task_type_map = {
+            1: "MSPROF_GE_TASK_TYPE_AIV",
+            2: "MSPROF_GE_TASK_TYPE_AI_CORE",
+            3: "MSPROF_GE_TASK_TYPE_MIX_AIC",
+            4: "MSPROF_GE_TASK_TYPE_MIX_AIV",
+        }
+
+        task_type = task_type_map.get(task_type_num, default_task_type)
+        return task_type, mix_block_dim_ratio
+
     arg_decls = ', '.join(f"{_ty_to_cpp(ty)} arg{i}" for i, ty in signature.items())
     """
     args:
@@ -484,7 +503,8 @@ def generate_npu_wrapper_src(constants, signature, metadata):
     npu_utils = NPUUtils()
     num_physical_blocks = npu_utils.get_aivector_core_num(
     ) if mix_mode == "aiv" else npu_utils.get_aicore_num()
-    task_type = "MSPROF_GE_TASK_TYPE_AIV" if mix_mode == "aiv" else "MSPROF_GE_TASK_TYPE_AI_CORE"
+    task_type, mix_block_dim_ratio = _format_of_msprof_task_type_ratio(bs_task_type, mix_mode)
+    is_mix_task_type = "true" if ("MIX" in task_type) else "false"
     LINE_CHANGE_CHAR = chr(10)  # it is \n
     alloc_success_code = 'return 1;'
     sync_lock_fail_code = 'fprintf(stderr, "Error: syncBlockLock allocation failed\\n"); return;'
@@ -603,10 +623,10 @@ extern "C" {
       nodeBasicInfo.data.nodeBasicInfo.opName = opNameHashID;
       nodeBasicInfo.data.nodeBasicInfo.opType = opNameHashID;
       nodeBasicInfo.data.nodeBasicInfo.taskType = {task_type};
-      nodeBasicInfo.data.nodeBasicInfo.blockDim = blockNum;
+      nodeBasicInfo.data.nodeBasicInfo.blockDim = nodeBasicBlockDim;
       MsprofReportCompactInfo(0, static_cast<void *>(&nodeBasicInfo), sizeof(MsprofCompactInfo));
-      // workspace > 0 indicates a 'mix' kernel, which requires reporting the ctxID
-      if ({workspace_size} > 0) {{
+      // 'mix' kernel need to report the ctxID
+      if ({is_mix_task_type}) {{
         MsprofAdditionalInfo info;
         info.level = MSPROF_REPORT_NODE_LEVEL;
         info.type = MSPROF_REPORT_NODE_CONTEXT_ID_INFO_TYPE;
@@ -622,7 +642,7 @@ extern "C" {
         if (copyLen > MSPROF_ADDTIONAL_INFO_DATA_LENGTH) {{
           copyLen = MSPROF_ADDTIONAL_INFO_DATA_LENGTH;
         }}
-        std::memcpy(info.data, &ctxId, copyLen);
+        memcpy(info.data, &ctxId, copyLen);
         MsprofReportAdditionalInfo(false, static_cast<void *>(&info), sizeof(MsprofAdditionalInfo));
       }}
 
@@ -722,6 +742,10 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     #endif  
 
     {'blockNum = std::min(blockNum, (uint32_t)' + str(num_physical_blocks) + ');' if enable_auto_map_parallel_blocks else ''}
+    // set mixBlockNumRation for nodeBasicBlockDim for msprof report
+    uint32_t mixBlockNumRation = {mix_block_dim_ratio};
+    uint32_t nodeBasicBlockDim = (mixBlockNumRation << 16) + blockNum;
+
     {'cce::internal::DebugTunnelData *DTData = cce::internal::DebugTunnel::Open(blockNum);' if enable_device_print else ''}
     rtError_t ret;
     {'void *ffts_addr = NULL; uint32_t ffts_len; ret = rtGetC2cCtrlAddr((uint64_t*)&ffts_addr, &ffts_len);' if target_support_ffts else ''}
