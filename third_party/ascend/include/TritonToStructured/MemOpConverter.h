@@ -44,24 +44,38 @@ using namespace triton;
 
 class LoadConverter : public OpRewritePattern<triton::LoadOp> {
 public:
-    explicit LoadConverter(MLIRContext* context)
-        : OpRewritePattern<triton::LoadOp>(context){};
+    explicit LoadConverter(MLIRContext* context, bool optimizeDynamicOffset = false,
+                           bool enableMaskFallbackConversion = false)
+        : OpRewritePattern<triton::LoadOp>(context),
+          optimizeDynamicOffset(optimizeDynamicOffset),
+          enableMaskFallbackConversion(enableMaskFallbackConversion) {};
 
     using OpRewritePattern<triton::LoadOp>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(triton::LoadOp op,
                                   PatternRewriter& rewriter) const override;
+
+private:
+    bool optimizeDynamicOffset;
+    bool enableMaskFallbackConversion;
 };
 
 class StoreConverter : public OpRewritePattern<triton::StoreOp> {
 public:
-    explicit StoreConverter(MLIRContext* context)
-        : OpRewritePattern<triton::StoreOp>(context){};
+    explicit StoreConverter(MLIRContext* context, bool optimizeDynamicOffset = false,
+                            bool enableMaskFallbackConversion = false)
+        : OpRewritePattern<triton::StoreOp>(context),
+          optimizeDynamicOffset(optimizeDynamicOffset),
+          enableMaskFallbackConversion(enableMaskFallbackConversion) {};
 
     using OpRewritePattern<triton::StoreOp>::OpRewritePattern;
 
     LogicalResult matchAndRewrite(triton::StoreOp op,
                                   PatternRewriter& rewriter) const override;
+
+private:
+    bool optimizeDynamicOffset;
+    bool enableMaskFallbackConversion;
 };
 
 class MemOpTransformer {
@@ -71,9 +85,12 @@ public:
 
     enum class MemType { load, store, deafaultType };
 
+    bool optimizeDynamicOffset;
+
     MemType currentType = MemType::deafaultType;
 
-    MemOpTransformer(MemType memType) : currentType(memType) {}
+    MemOpTransformer(MemType memType, bool optimizeDynamicOffset = false)
+        : currentType(memType), optimizeDynamicOffset(optimizeDynamicOffset) {}
 
     Value materializeImplicitBroadcast(Value srcTensor, const Location loc,
                                        PatternRewriter& rewriter);

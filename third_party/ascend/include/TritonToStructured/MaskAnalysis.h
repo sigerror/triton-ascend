@@ -39,28 +39,29 @@ using namespace mlir;
 using namespace triton;
 
 struct dimInfo {
-    OpFoldResult start;
-    OpFoldResult end;
+    OpFoldResult offset;
     OpFoldResult shape;
+    OpFoldResult rhs;
     size_t dimIndex;
     bool hasBroadCast = false;
 
-    enum class CompareType { slt, sge, ult, uge, defaultType };
+    enum class CompareType { slt, sge, ult, uge, deafaultType };
 
-    CompareType currentType = CompareType::defaultType;
+    CompareType currentType = CompareType::deafaultType;
 
     dimInfo(size_t dimIndex = 0, bool hasBroadCast = false)
         : dimIndex(dimIndex), hasBroadCast(hasBroadCast) {}
         
-    dimInfo(OpFoldResult start, OpFoldResult end, OpFoldResult shape,
+    dimInfo(OpFoldResult offset, OpFoldResult shape,
             size_t dimIndex = 0, bool hasBroadCast = false,
-            CompareType Type = CompareType::defaultType)
-        : start(start),
-          end(end),
+            CompareType Type = CompareType::deafaultType,
+            OpFoldResult rhs = nullptr)
+        : offset(offset),
           shape(shape),
           dimIndex(dimIndex),
           hasBroadCast(hasBroadCast),
-          currentType(Type) {}
+          currentType(Type),
+          rhs(rhs) {}
 
     bool setType(arith::CmpIPredicate Type);
     bool compareTypeIsLess() const;

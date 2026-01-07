@@ -101,11 +101,14 @@ bool dimInfo::compareTypeIsLess() const {
 }
 
 void dimInfo::dump() const {
+    llvm::dbgs() << "----------------------------------------------\n";
     llvm::dbgs() << "MaskDimInfo: \n";
-    llvm::dbgs() << "start = " << start << "\n";
-    llvm::dbgs() << "end =  " << end << "\n";
+    llvm::dbgs() << "offset = " << offset << "\n";
     llvm::dbgs() << "shape = " << shape << "\n";
+    llvm::dbgs() << "rhs = " << rhs << "\n";
     llvm::dbgs() << "isLessMode = " << compareTypeIsLess() << "\n";
+    llvm::dbgs() << "hasBroadCast = " << hasBroadCast << "\n";
+    llvm::dbgs() << "----------------------------------------------\n";
 };
 
 void MaskState::dump() const {
@@ -115,11 +118,14 @@ void MaskState::dump() const {
     llvm::dbgs() << "stateInfo.size = " << stateInfo.size() << "\n";
     for (auto info : stateInfo)
         info.dump();
+    llvm::dbgs() << "----------------------------------------------\n";
 };
 
 LogicalResult MaskState::parse(Value operand, const Location loc,
                                OpBuilder &builder) {
-    if (auto op = operand.getDefiningOp<arith::ConstantOp>()) {
+    if (isa<IntegerType>(operand.getType())) {
+        return this->parseIntScalar(operand, loc, builder);
+    } else if (auto op = operand.getDefiningOp<arith::ConstantOp>()) {
         return this->parseConstant(op, loc, builder);
     }  else if (auto op = operand.getDefiningOp<arith::AddIOp>()) {
         return this->parseAdd(op, loc, builder);
@@ -141,8 +147,6 @@ LogicalResult MaskState::parse(Value operand, const Location loc,
         return this->parseRem(op, loc, builder);
     } else if (auto op = operand.getDefiningOp<arith::DivSIOp>()) {
         return this->parseDiv(op, loc, builder);
-    } else if (isa<IntegerType>(operand.getType())) {
-        return this->parseIntScalar(operand, loc, builder);
     }
     InFlightDiagnostic diag =
         emitWarning(loc)
@@ -197,27 +201,27 @@ LogicalResult MaskState::parseIntScalar(Value scalar, const Location loc,
 LogicalResult MaskState::parseMakeRange(triton::MakeRangeOp rangeOp,
                                         const Location loc,
                                         OpBuilder &builder) {
-  if (!this->isEmpty()) {
-      rangeOp.emitError("MaskAnalysis: MaskState should be empty when visiting make_range");
-      return failure();
-  }
+    if (!this->isEmpty()) {
+        rangeOp.emitError("MaskAnalysis: MaskState should be empty when visiting make_range");
+        return failure();
+    }
 
-  auto shape = cast<ShapedType>(rangeOp.getType()).getShape();
-  auto start = rangeOp.getStart();
-  auto end = rangeOp.getEnd();
-  auto stride = (end - start + shape[0] - 1) / shape[0];
+    auto shape = cast<ShapedType>(rangeOp.getType()).getShape();
+    auto start = rangeOp.getStart();
+    auto end = rangeOp.getEnd();
+    auto stride = (end - start + shape[0] - 1) / shape[0];
 
-  if (stride != 1) {
-    InFlightDiagnostic diag =
-        emitError(loc)
-        << "stride must be 1 for make_range whose result is used "
-           "as load or store masks";
-    return failure();
-  }
+    if (stride != 1) {
+        InFlightDiagnostic diag =
+            emitError(loc)
+            << "stride must be 1 for make_range whose result is used "
+            "as load or store masks";
+        return failure();
+    }
 
-  stateInfo.emplace_back(builder.getIndexAttr(start),
-                         builder.getIndexAttr(end + 1), builder.getIndexAttr(shape[0]));
-  return success();
+    stateInfo.emplace_back(builder.getIndexAttr(start),
+                           builder.getIndexAttr(shape[0]));
+    return success();
 }
 
 LogicalResult MaskState::parseExtSI(arith::ExtSIOp op, const Location loc,
@@ -252,7 +256,7 @@ LogicalResult MaskState::parseSplat(triton::SplatOp splatOp, const Location loc,
     auto zeroAttr = builder.getIndexAttr(0);
     for (auto [i, shape] : llvm::enumerate(dstShape)) {
         auto shapeAttr = builder.getIndexAttr(shape);
-        stateInfo.emplace_back(zeroAttr, zeroAttr,
+        stateInfo.emplace_back(zeroAttr,
                                shapeAttr, i, true);
     }
   
@@ -291,7 +295,7 @@ LogicalResult MaskState::parseExpandDims(triton::ExpandDimsOp expandDimsOp,
             ++insertPos;
     }
 
-    dimInfo insertInfo(zeroAttr, zeroAttr, defaultShape, axis, true);
+    dimInfo insertInfo(zeroAttr, defaultShape, axis, true);
     stateInfo.insert(stateInfo.begin() + insertPos, insertInfo);
 
     return success();
@@ -341,10 +345,8 @@ LogicalResult MaskState::addStateScalar(const MaskState &state,
                                         const OpFoldResult scalar, Location loc,
                                         OpBuilder &builder) {
     for (auto info : state.stateInfo) {
-        auto newStart = addOpFoldResult(info.start, scalar, loc, builder);
-        auto newEnd = addOpFoldResult(info.end, scalar, loc, builder);
-        this->stateInfo.emplace_back(newStart, newEnd,
-                                     info.shape, info.dimIndex, info.hasBroadCast);
+        info.offset = addOpFoldResult(info.offset, scalar, loc, builder);
+        this->stateInfo.emplace_back(info);
     }
     return success();
 }
@@ -471,13 +473,7 @@ LogicalResult MaskState::parseCmp(arith::CmpIOp cmpOp, const Location loc,
             cmpOp.emitWarning("MaskAnalysis: Unsupported cmpi type");
             return failure();
         }
-        if (info.compareTypeIsLess()) {
-            info.end = minOpFoldResult(info.end, rhsState.scalar, loc, builder);
-            info.end = maxOpFoldResult(info.start, info.end, loc, builder);
-        } else {
-            info.start = maxOpFoldResult(info.start, rhsState.scalar, loc, builder);
-            info.start = minOpFoldResult(info.start, info.end, loc, builder);
-        }
+        info.rhs = rhsState.scalar;
     }
     this->stateInfo = lhsState.stateInfo;
 
@@ -538,11 +534,10 @@ LogicalResult MaskState::parseRem(arith::RemSIOp remOp, const Location loc,
         }
 
         if (staticNonContiguousSize.value() != 0)
-            newStateInfo.emplace_back(zeroAttr, zeroAttr, nonContiguousSize, info.dimIndex, true);
+            newStateInfo.emplace_back(zeroAttr, nonContiguousSize, info.dimIndex, true);
 
-        auto newStart = remOpFoldResult(info.start, divisorAttr, loc, builder);
-        auto newEnd = remOpFoldResult(info.end, divisorAttr, loc, builder);
-        newStateInfo.emplace_back(newStart, newEnd, nonContiguousSize, info.dimIndex);
+        auto newOffset = remOpFoldResult(info.offset, divisorAttr, loc, builder);
+        newStateInfo.emplace_back(newOffset, nonContiguousSize, info.dimIndex);
     }
 
     this->stateInfo = newStateInfo;
@@ -557,6 +552,11 @@ LogicalResult MaskState::parseDiv(arith::DivSIOp divOp, const Location loc,
         return failure();
     }
 
+    LLVM_DEBUG({
+        llvm::dbgs() << "----------------------------------------------\n";
+        llvm::dbgs() << "Parsing DIV operation: " << divOp << "\n";
+    });
+
     MaskState lhsState;
     if (failed(lhsState.parse(divOp.getLhs(), loc, builder)))
         return failure();
@@ -564,6 +564,14 @@ LogicalResult MaskState::parseDiv(arith::DivSIOp divOp, const Location loc,
     MaskState rhsState;
     if (failed(rhsState.parse(divOp.getRhs(), loc, builder)))
         return failure();
+
+    LLVM_DEBUG({
+        llvm::dbgs() << "LHS MaskState: \n";
+        lhsState.dump();
+        llvm::dbgs() << "RHS MaskState: \n";
+        rhsState.dump();
+        llvm::dbgs() << "----------------------------------------------\n";
+    });
 
     if (lhsState.scalar || !rhsState.scalar) {
         divOp.emitRemark("MaskAnalysis: Unsupported DIVSI scenario");
@@ -599,13 +607,20 @@ LogicalResult MaskState::parseDiv(arith::DivSIOp divOp, const Location loc,
         }
 
         if (staticContiguousSize.value() != 0) {
-            auto newStart = divOpFoldResult(info.start, divisorAttr, loc, builder);
-            auto newEnd = divOpFoldResult(info.end, divisorAttr, loc, builder);
-            newStateInfo.emplace_back(newStart, newEnd, contiguousSize, info.dimIndex);
+            auto newOffset = divOpFoldResult(info.offset, divisorAttr, loc, builder);
+            newStateInfo.emplace_back(newOffset, contiguousSize, info.dimIndex);
         }
 
-        newStateInfo.emplace_back(zeroAttr, zeroAttr, nonContiguousSize, info.dimIndex, true);
+        newStateInfo.emplace_back(zeroAttr, nonContiguousSize, info.dimIndex, true);
     }
+
+    this->stateInfo = newStateInfo;
+
+    LLVM_DEBUG({
+        llvm::dbgs() << "After DIV MaskState: \n";
+        this->dump();
+        llvm::dbgs() << "----------------------------------------------\n";
+    });
     return success();
 }
 
@@ -652,7 +667,7 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location loc,
             !isMultiple(rIt->shape, lIt->shape)) {
             lhsState.dump();
             rhsState.dump();
-            andOp.emitError("MaskAnalysis: the and operation have incompatible sizes");
+            andOp.emitError("MaskAnalysis: the add operation have incompatible sizes");
             return failure();
         }
 
@@ -668,8 +683,8 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location loc,
             return failure();
         }
         newInfo.currentType = lIt->hasBroadCast ? rIt->currentType : lIt->currentType;
-        if (lIt->currentType != dimInfo::CompareType::defaultType &&
-            rIt->currentType != dimInfo::CompareType::defaultType &&
+        if (lIt->currentType != dimInfo::CompareType::deafaultType &&
+            rIt->currentType != dimInfo::CompareType::deafaultType &&
             lIt->currentType != rIt->currentType) {
             andOp.emitError("MaskAnalysis: do not suppport different compare mode within"
                              "the same dimension.");
@@ -677,16 +692,17 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location loc,
         }
 
         if (lIt->hasBroadCast) {
-            newInfo.start = rIt->start;
-            newInfo.end = rIt->end;
+            newInfo.offset = rIt->offset;
+            newInfo.rhs = rIt->rhs;
             newInfo.hasBroadCast = rIt->hasBroadCast;
         } else if (rIt->hasBroadCast) {
-            newInfo.start = lIt->start;
-            newInfo.end = lIt->end;
+            newInfo.offset = lIt->offset;
+            newInfo.rhs = lIt->rhs;
             newInfo.hasBroadCast = lIt->hasBroadCast;
         } else {
-            newInfo.start = maxOpFoldResult(lIt->start, rIt->start, loc, builder);
-            newInfo.end = minOpFoldResult(lIt->end, rIt->end, loc, builder);
+            andOp.emitError("MaskAnalysis: do not suppport "
+                             "and in the same dimension.");
+            return failure();
         }
 
         newStateInfo.emplace_back(newInfo);
@@ -759,7 +775,6 @@ Value MaskState::createNewMask(const Location loc, OpBuilder &builder) {
         }
         shape.emplace_back(staticShape.value());
     }
-
     SmallVector<Value> cacheResults;
     auto maskShape = RankedTensorType::get(shape, builder.getI1Type());
 
@@ -776,7 +791,6 @@ Value MaskState::createNewMask(const Location loc, OpBuilder &builder) {
         }
         return rhsValue;
     };
-
     for (size_t i = 0; i < stateInfo.size(); ++i) {
         auto info = stateInfo[i];
         if (info.hasBroadCast) {
@@ -786,25 +800,22 @@ Value MaskState::createNewMask(const Location loc, OpBuilder &builder) {
         Value newMask = builder.create<triton::MakeRangeOp>(loc, indexI32RowType, 0,
                                                             shape[i]);
 
-        if (info.compareTypeIsLess()) {
-            Value rhsValue = createRhsValue(info.start);
-            if (rhsValue.getType().isIndex()) {
-                rhsValue = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(),
-                                                              rhsValue);
-            }
-            Value splatRhs = builder.create<triton::SplatOp>(
-                loc, indexI32RowType, rhsValue);
-            newMask = builder.create<arith::AddIOp>(
-                loc, newMask,
-                splatRhs);
+        Value newOffset = createRhsValue(info.offset);
+        if (newOffset.getType().isIndex()) {
+            newOffset = builder.create<arith::IndexCastOp>(loc, builder.getI32Type(),
+                                                           newOffset);
         }
-        auto rhsValue =
-            createRhsValue(info.compareTypeIsLess() ? info.end : info.start);
+        Value splatRhs = builder.create<triton::SplatOp>(
+            loc, indexI32RowType, newOffset);
+        newMask = builder.create<arith::AddIOp>(
+            loc, newMask,
+            splatRhs);
 
+        auto rhsValue = createRhsValue(info.rhs);
         auto splatOp =
             builder.create<triton::SplatOp>(loc, indexI32RowType, rhsValue);
 
-        if (info.currentType == dimInfo::CompareType::defaultType) {
+        if (info.currentType == dimInfo::CompareType::deafaultType) {
             InFlightDiagnostic diag = emitError(loc)
                                       << "MaskAnalysis: cannot generate mask when "
                                          "compare type is not set\n";

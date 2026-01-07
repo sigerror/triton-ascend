@@ -80,13 +80,20 @@ void TritonToStructuredPass::getDependentDialects(DialectRegistry &registry) con
 }
 
 void TritonToStructuredPass::populateTritonToStructuredCanonicalizationPatterns(RewritePatternSet &patterns) {
-    patterns.add<CannonicalizerConverter::LoopConverter<scf::ForOp>>(patterns.getContext());
-    patterns.add<CannonicalizerConverter::LoopConverter<scf::WhileOp>>(patterns.getContext());
+    // TODO enable this optimization after fixing the bisheng bug it causes in current version
+    // patterns.add<CannonicalizerConverter::CmpConverter>(patterns.getContext());
+    patterns.add<CannonicalizerConverter::PromotePointerIterArgsPattern>(patterns.getContext());
 }
 
-void TritonToStructuredPass::populateTritonToStructuredPatterns(RewritePatternSet &patterns) {
-    patterns.add<MemOpConverter::LoadConverter>(patterns.getContext());
-    patterns.add<MemOpConverter::StoreConverter>(patterns.getContext());
+void TritonToStructuredPass::populateTritonToStructuredPatterns(
+    RewritePatternSet &patterns, bool optimizeDynamicOffset,
+    bool enableMaskFallbackConversion) {
+    patterns.add<MemOpConverter::LoadConverter>(
+        patterns.getContext(), optimizeDynamicOffset,
+        enableMaskFallbackConversion);
+    patterns.add<MemOpConverter::StoreConverter>(
+        patterns.getContext(), optimizeDynamicOffset,
+        enableMaskFallbackConversion);
 }
 
 void TritonToStructuredPass::runOnOperation() {
@@ -95,13 +102,15 @@ void TritonToStructuredPass::runOnOperation() {
     RewritePatternSet canonicalizerPatterns(&getContext());
 
     this->populateTritonToStructuredCanonicalizationPatterns(canonicalizerPatterns);
-    if (failed(applyPartialConversion(moduleOp, target,
-                                      std::move(canonicalizerPatterns)))) {
+    if (failed(applyPatternsAndFoldGreedily(moduleOp,
+                                            std::move(canonicalizerPatterns)))) {
         moduleOp.emitWarning("Canonicalize failed");
     }
 
     RewritePatternSet tritonToStructuredPatterns(&getContext());
-    populateTritonToStructuredPatterns(tritonToStructuredPatterns);
+    populateTritonToStructuredPatterns(tritonToStructuredPatterns,
+                                       optimizeDynamicOffset,
+                                       enableMaskFallbackConversion);
     if (failed(applyPatternsAndFoldGreedily(moduleOp,
                                             std::move(tritonToStructuredPatterns)))) {
         LLVM_DEBUG({
@@ -113,10 +122,17 @@ void TritonToStructuredPass::runOnOperation() {
     pm.addPass(createCSEPass());
     pm.addPass(createCanonicalizerPass());
     if (failed(runPipeline(pm, getOperation()))) {
-      moduleOp->emitWarning("Canonicalize failed");
+        moduleOp->emitWarning("Canonicalize failed");
     }
 }
 
 std::unique_ptr<OperationPass<ModuleOp>> triton::createTritonToStructuredPass() {
   return std::make_unique<TritonToStructuredPass>();
+}
+
+std::unique_ptr<OperationPass<ModuleOp>>
+triton::createTritonToStructuredPass(
+  bool enableMaskFallbackConversion, bool optimizeDynamicOffset) {
+  return std::make_unique<TritonToStructuredPass>(
+    enableMaskFallbackConversion, optimizeDynamicOffset);
 }

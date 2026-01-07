@@ -323,8 +323,10 @@ void init_triton_ascend_passes_ttir(py::module &&m) {
   m.def("add_triton_linearize", [](mlir::PassManager &pm) {
     pm.addPass(mlir::triton::createTritonLinearizePass());});
 
-  m.def("add_triton_to_structure", [](mlir::PassManager &pm) {
-    pm.addPass(mlir::triton::createTritonToStructuredPass());});
+  m.def("add_triton_to_structure", [](mlir::PassManager &pm,
+    bool enableMaskFallbackConversion, bool optimizeDynamicOffset) {
+    pm.addPass(mlir::triton::createTritonToStructuredPass(
+      enableMaskFallbackConversion, optimizeDynamicOffset));});
 
   m.def("add_triton_to_annotation", [](mlir::PassManager &pm) {
     pm.addPass(mlir::triton::createTritonToAnnotationPass());});

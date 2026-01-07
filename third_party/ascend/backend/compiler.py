@@ -108,10 +108,15 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         enable_select_analysis = metadata["enable_select_analysis"]
         compile_on_910_95 = metadata["compile_on_910_95"]
         force_simt_template = metadata["force_simt_template"]
-        enable_linearize = metadata.get("enable_linearize")
+        enable_mask_fallback_conversion = metadata["enable_mask_fallback_conversion"]
+        optimize_dynamic_offset = metadata["optimize_dynamic_offset"]
         pm = ir.pass_manager(mod.context)
         pm.enable_debug()
-        ascend.passes.ttir.add_triton_to_structure(pm)
+        ascend.passes.ttir.add_triton_to_structure(
+            pm,
+            enable_mask_fallback_conversion,
+            optimize_dynamic_offset
+        )
         ascend.passes.ttir.add_discrete_mask_access_conversion(
             pm,
             compile_on_910_95,
@@ -607,6 +612,8 @@ class NPUOptions:
 
     compile_on_910_95: bool = is_compile_on_910_95
     enable_linearize: bool = False
+    optimize_dynamic_offset: bool = False
+    enable_mask_fallback_conversion: bool = False
     enable_warp_specialization: bool = False
     enable_nd2nz_on_vector: bool = False
     enable_persistent: bool = False

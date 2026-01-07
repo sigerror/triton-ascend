@@ -73,6 +73,7 @@
 namespace MemOpConverter {
 using namespace mlir;
 using namespace triton;
+using namespace TritonToStructured;
 
 LogicalResult
 LoadConverter::matchAndRewrite(triton::LoadOp op, 
@@ -82,7 +83,11 @@ LoadConverter::matchAndRewrite(triton::LoadOp op,
     auto oldMask = op.getMask();
     auto oldOther = op.getOther();
 
-    MemOpTransformer tf(MemOpTransformer::MemType::load);
+    MemOpTransformer tf(
+        MemOpTransformer::MemType::load,
+        optimizeDynamicOffset
+    );
+
     auto newPtr = tf.createNewPtr(oldPtr, loc, rewriter);
     auto newMask = tf.createNewMask(oldMask, loc, rewriter);
     auto newOther = tf.createNewOther(oldOther, loc, rewriter);
@@ -98,7 +103,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op,
         return failure();
     }
 
-    if (oldMask && !newMask) {
+    if (!enableMaskFallbackConversion && oldMask && !newMask) {
         InFlightDiagnostic diag =
         emitWarning(loc) << "MaskAnalysis: failed to analyze load mask.";
         return failure();
@@ -114,7 +119,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op,
         broadCastResult, loc, rewriter);
     auto reshapeResult = tf.materializeImplicitReshape(
         permuteResult, loc, rewriter);
-    auto selectResult = tf.MemOpTransformer::materializeImplicitSelect(
+    auto selectResult = tf.materializeImplicitSelect(
         reshapeResult, oldMask, oldOther, loc, rewriter);
 
     rewriter.replaceOp(op, selectResult);
@@ -129,7 +134,11 @@ StoreConverter::matchAndRewrite(triton::StoreOp op,
     auto oldMask = op.getMask();
     auto oldValue = op.getValue();
 
-    MemOpTransformer tf(MemOpTransformer::MemType::store);
+    MemOpTransformer tf(
+        MemOpTransformer::MemType::store,
+        optimizeDynamicOffset
+    );
+
     auto newPtr = tf.createNewPtr(oldPtr, loc, rewriter);
     auto newMask = tf.createNewMask(oldMask, loc, rewriter);
 
@@ -144,7 +153,7 @@ StoreConverter::matchAndRewrite(triton::StoreOp op,
         return failure();
     }
 
-    if (oldMask && !newMask) {
+    if (!enableMaskFallbackConversion && oldMask && !newMask) {
         InFlightDiagnostic diag =
         emitWarning(loc) << "MaskAnalysis: failed to analyze store mask.";
         return failure();
@@ -156,10 +165,10 @@ StoreConverter::matchAndRewrite(triton::StoreOp op,
         rewriter.create<hivm::SyncBlockLockOp>(loc, lockVar);
     }
     
-    auto reshapeResult = tf.materializeImplicitReshape(
-        oldValue, loc, rewriter);
     auto selectResult = tf.materializeImplicitSelect(
-        reshapeResult, oldMask, oldPtr, loc, rewriter);
+        oldValue, oldMask, oldPtr, loc, rewriter);
+    auto reshapeResult = tf.materializeImplicitReshape(
+        selectResult, loc, rewriter);
     auto permuteResult = tf.materializeImplicitPermute(
         reshapeResult, loc, rewriter);
 
@@ -315,15 +324,17 @@ Value MemOpTransformer::materializeImplicitPermute(Value srcTensor, const Locati
 
 Value MemOpTransformer::createNewPtr(Value oldPtr,
                                      const Location loc, PatternRewriter &rewriter) {
-    TritonToStructured::PtrAnalysis ptrAnalysis;
-    auto addptrOp = oldPtr.getDefiningOp<triton::AddPtrOp>();
-    if (!addptrOp) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "PteAnalysis: load pointer must originate from 'addptr' operation";
-        return oldPtr;
-    }
-    if (ptrAnalysis.visitOperandAddptr(addptrOp, ptrState, loc, rewriter).failed()) {
+    TritonToStructured::PtrAnalysis ptrAnalysis(optimizeDynamicOffset);
+
+    LLVM_DEBUG({
+        llvm::dbgs() << "----------------------------------------------\n";
+        llvm::dbgs() << "PtrAnalysis: analyzing load/store's ptr.\n";
+    });
+
+    if (ptrAnalysis.visitOperand(oldPtr, ptrState, loc, rewriter).failed()) {
         ptrState.shouldLinearize = false;
+        InFlightDiagnostic diag =
+        emitWarning(loc) << "PtranAlysis: failed to analyze load/store ptr.";
         return oldPtr;
     }
 
@@ -370,7 +381,66 @@ Value MemOpTransformer::createNewMask(Value oldMask,
     }
 
     SmallVector<TritonToStructured::dimInfo> newMaskInfo;
-    SmallVector<TritonToStructured::StateInfo> newStateInfo;
+    auto itPtr = ptrState.stateInfo.begin();
+    auto itMask = maskState.stateInfo.begin();
+
+    // match and create new mask info
+    while (itPtr != ptrState.stateInfo.end() &&
+           itMask != maskState.stateInfo.end()) {
+        // ptr'shape must be multiple of mask'shape or vice versa
+        if (!isMultiple(itMask->shape, itPtr->shape)) {
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: incompatible shapes between ptr and mask.";
+            LLVM_DEBUG({
+                llvm::dbgs() << "----------------------------------------------\n";
+                ptrState.dump();
+                llvm::dbgs() << "oldMask:" << oldMask << "\n";
+                maskState.dump();
+                llvm::dbgs() << "----------------------------------------------\n";
+            });
+            return nullptr;
+        }
+
+        auto newShape = minOpFoldResult(itMask->shape, itPtr->shape, loc, rewriter);
+        if (isLess(newShape, itMask->shape) && !itMask->hasBroadCast) {
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: the mask shape is incompatible with ptr shape.";
+            return nullptr;
+        }
+
+        TritonToStructured::dimInfo newInfo(
+            itMask->offset, newShape, itMask->dimIndex,
+            itMask->hasBroadCast, itMask->currentType,
+            itMask->rhs
+        );
+
+        if (!isZero(itPtr->stride)) {
+            newMaskInfo.emplace_back(newInfo);
+        }
+        
+        ++itPtr;
+        if (isEqual(itMask->shape, newShape)) {
+            ++itMask;
+        }
+    }
+
+    if (itPtr != ptrState.stateInfo.end() ||
+        itMask != maskState.stateInfo.end()) {
+        LLVM_DEBUG({
+            llvm::dbgs() << "----------------------------------------------\n";
+            llvm::dbgs() << "MaskAnalysis: failed to apply permute on mask.\n";
+            ptrState.dump();
+            llvm::dbgs() << "oldMask:" << oldMask << "\n";
+            maskState.dump();
+            llvm::dbgs() << "----------------------------------------------\n";
+        });
+        InFlightDiagnostic diag =
+        emitWarning(loc) << "MaskAnalysis: incompatible number of dimensions between ptr and mask.";
+        return nullptr;
+    }
+
+    maskState.stateInfo = newMaskInfo;
+
     if (ptrState.isPermuted && !applyPermuteOnMask()) {
         LLVM_DEBUG({
             llvm::dbgs() << "----------------------------------------------\n";
@@ -384,39 +454,15 @@ Value MemOpTransformer::createNewMask(Value oldMask,
         emitWarning(loc) << "MaskAnalysis: failed to apply permute on mask.";
         return nullptr;
     }
-    for (auto id : ptrState.permuteIds) {
-        newStateInfo.push_back(ptrState.stateInfo[id]);
-    }
-    
-    auto itPtr = newStateInfo.begin();
-    auto itMask = maskState.stateInfo.begin();
 
-    // match and create new mask info
-    while (itPtr != newStateInfo.end() &&
-           itMask != maskState.stateInfo.end()) {
-        if (TritonToStructured::isZero(itPtr->stride)) {
-            return nullptr;
+     LLVM_DEBUG({
+        llvm::dbgs() << "After matching MaskState: \n";
+        for (auto info : newMaskInfo) {
+            info.dump();
         }
-        // ptr'shape must be multiple of mask'shape or vice versa
-        if (!TritonToStructured::isMultiple(itPtr->shape, itMask->shape) &&
-            !TritonToStructured::isMultiple(itMask->shape, itPtr->shape)) {
-            InFlightDiagnostic diag =
-            emitWarning(loc) << "MaskAnalysis: incompatible shapes between ptr and mask.";
-            return nullptr;
-        }
+        llvm::dbgs() << "----------------------------------------------\n";
+    });
 
-        if ((!TritonToStructured::isEqual(itPtr->shape, itMask->shape))) {
-            InFlightDiagnostic diag =
-            emitWarning(loc) << "MaskAnalysis: the add operation have incompatible sizes."
-                                 "Valid dimensions are split.";
-            return nullptr;
-        }
-
-        newMaskInfo.emplace_back(*itMask++);
-        ++itPtr;
-    }
-
-    maskState.stateInfo = newMaskInfo;
     auto newMask = maskState.createNewMask(loc, rewriter);
     return newMask;
 }

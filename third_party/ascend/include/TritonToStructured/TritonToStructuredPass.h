@@ -36,10 +36,11 @@ namespace triton {
 
 std::unique_ptr<OperationPass<ModuleOp>> createTritonToStructuredPass();
 
+std::unique_ptr<OperationPass<ModuleOp>>
+createTritonToStructuredPass(bool, bool);
+
 }  // namespace triton
 }  // namespace mlir
-
-namespace {
 
 using namespace mlir;
 using namespace triton;
@@ -47,15 +48,22 @@ using namespace triton;
 class TritonToStructuredPass
     : public TritonToStructuredBase<TritonToStructuredPass> {
 public:
+    TritonToStructuredPass() = default;
+
+    TritonToStructuredPass(bool enableMaskFallbackConversion, bool optimizeDynamicOffset) {
+        this->enableMaskFallbackConversion = enableMaskFallbackConversion; 
+        this->optimizeDynamicOffset = optimizeDynamicOffset;
+    };
     void getDependentDialects(DialectRegistry &registry) const override;
     void runOnOperation() override;
 
 private:
     void populateTritonToStructuredCanonicalizationPatterns(
         RewritePatternSet &patterns);
-    void populateTritonToStructuredPatterns(RewritePatternSet &patterns);
+    
+    void populateTritonToStructuredPatterns(
+        RewritePatternSet &patterns, bool optimizeDynamicOffset,
+        bool enableMaskFallbackConversion);
 };
-
-}  // namespace
 
 #endif  // TRITON_ADAPTER_CONVERSION_TRITONTOSTRUCTURED_H

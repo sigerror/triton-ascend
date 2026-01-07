@@ -644,7 +644,6 @@ def test_linearize_rearrange(batch_size, buffer_len, dtype, sigtype):
     test_common.validate_cmp(sigtype, cache, cache_ref)
 
 
-@pytest.mark.skip(reason="mask load still has issues to be fixed by bisheng")
 @pytest.mark.parametrize('dtype,sigtype', types)
 @pytest.mark.parametrize('batch_size,buffer_len', cache_shapes)
 def test_linearize_jump_load_with_mask(batch_size, buffer_len, dtype, sigtype):
@@ -667,7 +666,6 @@ def test_linearize_jump_load_with_mask(batch_size, buffer_len, dtype, sigtype):
     test_common.validate_cmp(sigtype, buffer, buffer_ref)
 
 
-@pytest.mark.skip(reason="mask still has issues to be fixed")
 @pytest.mark.parametrize('dtype,sigtype', types)
 @pytest.mark.parametrize('batch_size,buffer_len', cache_shapes)
 def test_linearize_rearrange_with_mask(batch_size, buffer_len, dtype, sigtype):
