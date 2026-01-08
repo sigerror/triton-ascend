@@ -1129,7 +1129,11 @@ def _load_legacy(ptr, mask, other, boundary_check, padding, cache, eviction, is_
                          "use block pointers (defined by `make_block_ptr`) instead")
 
     if mask is not None and other is None and care_padding == True:
-        other = to_tensor(0, builder)
+        # Get element type to determine default padding value
+        elt_ty = ptr.type.scalar.element_ty
+        # Use 0.0 for floating point types, 0 for integer types
+        default_value = 0.0 if elt_ty.is_floating() else 0
+        other = to_tensor(default_value, builder)
     # For a pointer of scalar, check the type of `mask` and `other`
     if not ptr.type.is_block():
         if mask and mask.type.is_block():

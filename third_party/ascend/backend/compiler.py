@@ -622,8 +622,10 @@ class NPUOptions:
     optimize_epilogue: bool = False
     enable_fp_fusion: bool = True
     allow_fp8e4nv: bool = False
+    supported_fp8_dtypes: Tuple[str] = ("fp8e5", "fp8e4b15", "fp8e4nv", "fp8e4b8", "fp8e5b16")
+    deprecated_fp8_dtypes: Tuple[str] = ()
     allowed_dot_input_precisions: Tuple[str] = ("ieee", "hf32")
-    max_num_imprecise_acc_default: bool = None
+    max_num_imprecise_acc_default: int = 0
     extern_libs: dict = None
 
     multibuffer: bool = not is_compile_on_910_95
@@ -681,7 +683,7 @@ class CPUOptions:
     optimize_epilogue: bool = False
     enable_fp_fusion: bool = True
     allow_fp8e4nv: bool = False
-    max_num_imprecise_acc_default: bool = None
+    max_num_imprecise_acc_default: int = 0
     extern_libs: dict = None
 
     def hash(self):
