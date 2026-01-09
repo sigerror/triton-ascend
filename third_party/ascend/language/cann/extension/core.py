@@ -20,10 +20,24 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
-from typing import TypeVar
+__all__ = [
+    "ascend_address_space"
+]
+
+from typing import TypeVar, List
 from functools import wraps
 
-__all__ = []
+from triton._C.libtriton import ir
+from triton._C.libtriton.ascend import ir as ascend_ir
+import triton.language.core as tl
+
+import triton.extension.buffer.language as bl
+from triton.language.core import (
+    _constexpr_to_value
+)
+
+from . import semantic as semantic
+
 
 T = TypeVar("T")
 
@@ -32,7 +46,7 @@ ASCEND_BUILTIN = "__ascend_builtin__"
 
 
 def builtin(fn: T) -> T:
-    """Mark a function as a ascend language builtin."""
+    """Mark a function as a buffer language builtin."""
     assert callable(fn)
 
     @wraps(fn)
@@ -53,3 +67,25 @@ def is_builtin(fn) -> bool:
     """Is this a registered ascend language builtin function?"""
     return getattr(fn, ASCEND_BUILTIN, False)
 
+
+class ascend_address_space_base(bl.address_space):
+    def __init__(self, address_space_value: ascend_ir.AddressSpace) -> None:
+        super().__init__()
+        self.real_address_space = address_space_value
+
+    def to_ir(self, builder: ir.builder) -> ir.attribute:
+        return builder.get_target_attribute(self.real_address_space)
+
+
+class ascend_address_space_group:
+
+    def __init__(self):
+        for k, v in {
+            k: v
+            for k, v in ascend_ir.AddressSpace.__dict__.items()
+            if isinstance(v, ascend_ir.AddressSpace)
+        }.items():
+            setattr(self, k, ascend_address_space_base(v))
+
+
+ascend_address_space = ascend_address_space_group()

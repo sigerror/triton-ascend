@@ -9,9 +9,10 @@ import textwrap
 from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
 
 import triton.language.extra.cann.extension as extension
+from triton.extension.buffer.language.builder import setup_unified_builder_with_buffer_builder
 
 from .. import language
-from .._C.libtriton import ir
+from .._C.libtriton import ir, buffer_ir
 from .._C.libtriton.ascend import ir as ascend_ir
 from ..language import constexpr, tensor, str_to_ty
 from ..language.core import _unwrap_if_constexpr, nv_tma_desc_type, _value
@@ -20,7 +21,6 @@ from ..runtime.jit import _normalize_ty, get_jit_fn_file_line
 from ..runtime import JITFunction
 from .errors import (CompilationError, CompileTimeAssertionFailure, UnsupportedLanguageConstruct)
 from types import ModuleType
-
 # Central registry for all 'with' statement handlers
 WITH_DISPATCH = {}
 
@@ -219,6 +219,9 @@ class CodeGenerator(ast.NodeVisitor):
         self.ascend_builder = ascend_ir.ascendnpu_ir_builder(context)
         self.ascend_builder.set_loc(file_name, begin_line, 0)
         setup_unified_builder(self.builder, self.ascend_builder)
+        self.buffer_builder = buffer_ir.buffer_builder(context)
+        self.buffer_builder.set_loc(file_name, begin_line, 0)
+        setup_unified_builder_with_buffer_builder(self.builder, self.buffer_builder)
         
         # dict of functions provided by the backend. Below are the list of possible functions:
         # Convert custom types not natively supported on HW.

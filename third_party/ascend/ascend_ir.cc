@@ -42,6 +42,14 @@ struct AscendNPUIROpBuilder : public TritonOpBuilder {
 };
 
 void init_ascend_ir(py::module &&m) {
+  py::enum_<hivm::AddressSpace>(m, "AddressSpace", py::module_local())
+      .value("L1", hivm::AddressSpace::L1)
+      .value("UB", hivm::AddressSpace::UB)
+      .value("L0A", hivm::AddressSpace::L0A)
+      .value("L0B", hivm::AddressSpace::L0B)
+      .value("L0C", hivm::AddressSpace::L0C)
+      .export_values();
+
   m.def("load_dialects", [](MLIRContext &context) {
     // Allow unregistered dialects so we can parse HACC attributes without
     // registering the dialect
@@ -84,6 +92,12 @@ void init_ascend_ir(py::module &&m) {
            [](AscendNPUIROpBuilder &self,
               std::vector<Value> operands) -> OpState {
              return self.create<scope::ReturnOp>(ValueRange(operands));
+           })
+      .def("get_target_attribute",
+           [](AscendNPUIROpBuilder &self,
+              hivm::AddressSpace &addressSpace) -> Attribute {
+             return hivm::AddressSpaceAttr::get(self.getBuilder().getContext(),
+                                                addressSpace);
            });
 }
 

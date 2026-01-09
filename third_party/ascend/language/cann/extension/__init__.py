@@ -4,9 +4,10 @@ try:
 except Exception as e:
     is_compile_on_910_95 = False
 
-from .core import builtin, is_builtin
+from .core import builtin, is_builtin, ascend_address_space
 
 from .scope import scope
+
 
 from .math_ops import (
     atan2,
@@ -44,6 +45,9 @@ __all__ = [
     # core
     "builtin",
     "is_builtin",
+
+    # address space
+    "ascend_address_space",
 
     # scope
     "scope",
