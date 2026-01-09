@@ -11,6 +11,8 @@ import tarfile
 import zipfile
 import urllib.request
 import json
+import glob
+
 from io import BytesIO
 from distutils.command.clean import clean
 from pathlib import Path
@@ -27,6 +29,9 @@ from setuptools.command.egg_info import egg_info
 from wheel.bdist_wheel import bdist_wheel
 
 import pybind11
+
+
+triton_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 @dataclass
@@ -163,6 +168,14 @@ def get_json_package_info():
     return Package("json", "", url, "JSON_INCLUDE_DIR", "", "JSON_SYSPATH")
 
 
+def is_linux_os(os_id):
+    if os.path.exists("/etc/os-release"):
+        with open("/etc/os-release", "r") as f:
+            os_release_content = f.read()
+            return f'ID="{os_id}"' in os_release_content
+    return False
+
+
 # llvm
 def get_llvm_package_info():
     system = platform.system()
@@ -173,7 +186,9 @@ def get_llvm_package_info():
     if system == "Darwin":
         system_suffix = f"macos-{arch}"
     elif system == "Linux":
-        if arch == 'arm64':
+        if arch == 'arm64' and is_linux_os('almalinux'):
+            system_suffix = 'almalinux-arm64'
+        elif arch == "arm64":
             system_suffix = 'ubuntu-arm64'
         elif arch == 'x64':
             vglibc = tuple(map(int, platform.libc_ver()[1].split('.')))
@@ -207,7 +222,7 @@ def get_llvm_package_info():
     with open(llvm_hash_path, "r") as llvm_hash_file:
         rev = llvm_hash_file.read(8)
     name = f"llvm-{rev}-{system_suffix}"
-    url = f"https://oaitriton.blob.core.windows.net/public/llvm-builds/{name}.tar.gz"
+    url = f"https://triton-ascend-artifacts.obs.myhuaweicloud.com/llvm-builds/{name}.tar.gz"
     return Package("llvm", name, url, "LLVM_INCLUDE_DIRS", "LLVM_LIBRARY_DIR", "LLVM_SYSPATH")
 
 
@@ -633,6 +648,33 @@ class plugin_egginfo(egg_info):
         egg_info.run(self)
 
 
+class BuildWheel(bdist_wheel):
+    def run(self):
+        add_links()
+        bdist_wheel.run(self)
+
+        if is_manylinux:
+            file = glob.glob(os.path.join(self.dist_dir, "*-linux_*.whl"))[0]
+
+            auditwheel_cmd = [
+                "auditwheel",
+                "-v",
+                "repair",
+                "--plat",
+                f"manylinux_2_27_{platform.machine()}",
+                "--plat",
+                f"manylinux_2_28_{platform.machine()}",
+                "-w",
+                self.dist_dir,
+                file,
+            ]
+
+            try:
+                subprocess.run(auditwheel_cmd, check=True, stdout=subprocess.PIPE)
+            finally:
+                os.remove(file)
+
+
 package_data = {
     "triton/tools": ["compile.h", "compile.c"], **{f"triton/backends/{b.name}": b.package_data
                                                    for b in backends}, "triton/language/extra": sum(
@@ -715,12 +757,22 @@ def get_version():
     version = os.environ.get("TRITON_VERSION", get_default_version()) + os.environ.get(
         "TRITON_WHEEL_VERSION_SUFFIX", ""
     )
-    version += get_git_commit_hash()
+    if not is_manylinux:
+        version += get_git_commit_hash()
+
     return version
 
 
 def get_package_name():
     return os.environ.get("TRITON_WHEEL_NAME", "triton_ascend")
+
+
+is_manylinux = check_env_flag("IS_MANYLINUX", "FALSE")
+readme = os.path.join(triton_dir, "README.md")
+if not os.path.exists(readme):
+    raise FileNotFoundError("Unable to find 'README.md'")
+with open(readme, encoding="utf-8") as fdesc:
+    long_description = fdesc.read()
 
 
 setup(
@@ -729,7 +781,7 @@ setup(
     author="Philippe Tillet",
     author_email="phil@openai.com",
     description="A language and compiler for custom Deep Learning operations",
-    long_description="",
+    long_description=long_description,
     packages=get_packages(),
     entry_points=get_entry_points(),
     package_data=package_data,
@@ -741,13 +793,13 @@ setup(
         "clean": CMakeClean,
         "install": plugin_install,
         "develop": plugin_develop,
-        "bdist_wheel": plugin_bdist_wheel,
+        "bdist_wheel": BuildWheel,
         "egg_info": plugin_egginfo,
     },
     zip_safe=False,
     # for PyPI
     keywords=["Compiler", "Deep Learning"],
-    url="https://github.com/triton-lang/triton/",
+    url="https://gitcode.com/Ascend/triton-ascend/",
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
