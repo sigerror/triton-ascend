@@ -66,6 +66,7 @@ def setup_unified_builder_with_buffer_builder(main_builder, buffer_builder):
     buffer_methods = [
         'get_null_attr',
         'allocate_local_buffer',
+        'to_tensor',
     ]
     attach_builder_methods_with_buffer_builder(main_builder, buffer_builder, buffer_methods)
 

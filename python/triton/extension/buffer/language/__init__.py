@@ -33,6 +33,9 @@ __all__ = [
 
     # alloc
     "alloc",
+
+    # to_tensor
+    "to_tensor",
 ]
 
-from .core import builtin, is_builtin, address_space, buffer, alloc
+from .core import builtin, is_builtin, address_space, buffer, alloc, to_tensor

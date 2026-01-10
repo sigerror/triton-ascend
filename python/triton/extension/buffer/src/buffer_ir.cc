@@ -26,6 +26,7 @@
 #include <pybind11/stl.h>
 
 #include "ir.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 
 using namespace mlir;
@@ -38,6 +39,7 @@ void init_buffer_ir(py::module &&m)
   m.def("load_dialects", [](MLIRContext &context) {
     DialectRegistry registry;
     registry.insert<memref::MemRefDialect>();
+    registry.insert<bufferization::BufferizationDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   });
@@ -52,5 +54,20 @@ void init_buffer_ir(py::module &&m)
              auto memrefType = MemRefType::get(
                  shape, type, MemRefLayoutAttrInterface{}, addressSpace);
              return self.create<memref::AllocOp>(memrefType);
+           })
+      .def("to_tensor",
+           [](BufferOpBuilder &self, Value &src, bool writable) -> Value {
+             const auto &memrefType = mlir::cast<MemRefType>(src.getType());
+             auto hasAddressSpace = memrefType.getMemorySpace();
+             if (hasAddressSpace) {
+               return self.create<bufferization::ToTensorOp>(
+                   self.create<memref::MemorySpaceCastOp>(
+                       MemRefType::get(memrefType.getShape(),
+                                       memrefType.getElementType(),
+                                       memrefType.getLayout()),
+                       src),
+                   true, writable);
+             }
+             return self.create<bufferization::ToTensorOp>(src, true, writable);
            });
 }

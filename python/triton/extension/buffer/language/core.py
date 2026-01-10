@@ -23,7 +23,8 @@
 __all__ = [
     "address_space",
     "alloc",
-    "buffer"
+    "buffer",
+    "to_tensor",
 ]
 
 import importlib
@@ -113,6 +114,11 @@ class buffer(tl._value):
             res += ', ' + str(self.space)
         return res + '>'
 
+    @builtin
+    def to_tensor(self, writable=True, _builder=None):
+        """Convert this buffer to a tl.tensor"""
+        return to_tensor(self, writable=writable, _builder=_builder)
+
 
 semantic = importlib.import_module(".semantic", package=__package__)
 
@@ -137,3 +143,20 @@ def alloc(
     return semantic.alloc(
         etype, shape, _address_space, _builder
     )
+
+
+@builtin
+def to_tensor(
+    memref: buffer,
+    writable: bool = True,
+    _builder=None
+) -> tl.tensor:
+    """
+    Create a tl.tensor from a bl.buffer.
+
+    :param memref: the input bl.buffer object.
+    :memref type: bl.buffer
+    :param writable: If set true, the resultant tensor is considered "writable" during bufferization.
+    :type writable: bool
+    """
+    return semantic.to_tensor(memref, writable, _builder)

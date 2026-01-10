@@ -48,3 +48,14 @@ def alloc(
     addr_space_attr = address_space.to_ir(builder) if address_space else builder.get_null_attr()
     return bl.buffer(builder.allocate_local_buffer(element_ty, shape, addr_space_attr),
                      dtype=etype, shape=shape, space=address_space)
+
+
+def to_tensor(
+    memref: bl.buffer,
+    writable: bool,
+    builder: ir.builder
+) -> tl.tensor:
+    if not isinstance(memref, bl.buffer):
+        raise TypeError("memref must be bl.buffer")
+    tensor_type = tl.block_type(memref.dtype, memref.shape)
+    return tl.tensor(builder.to_tensor(memref.handle, writable), tensor_type)
