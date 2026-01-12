@@ -5,40 +5,8 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/lib)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # Triton Ascend is dependent on AscendNPU IR
-set(ASCENDNPU_IR_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/ascendnpu_ir")
-set(ASCENDNPU_IR_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/ascendnpu_ir")
-if(EXISTS ${ASCENDNPU_IR_SRC_DIR})
-  message("Using existing AscendNPU-IR source directory: ${ASCENDNPU_IR_SRC_DIR}")
-  set(FETCHCONTENT_SOURCE_DIR_ASCENDNPU_IR ${ASCENDNPU_IR_SRC_DIR})
-else()
-  message("AscendNPU-IR source directory does not exist. It will be fetched from remote.")
-  unset(FETCHCONTENT_SOURCE_DIR_ASCENDNPU_IR)
-endif()
-
-if(NOT ${ASCENDNPU_IR_TAG})
-  set(ASCENDNPU_IR_TAG "1861ff6a90b97ffea4e9c207a1ac5ce922358cff")
-endif()
-include(FetchContent)
-FetchContent_Declare(
-  ascendnpu_ir
-  GIT_REPOSITORY https://gitcode.com/Ascend/AscendNPU-IR.git
-  GIT_TAG ${ASCENDNPU_IR_TAG}
-  SOURCE_DIR ${ASCENDNPU_IR_SRC_DIR}
-  BINARY_DIR ${ASCENDNPU_IR_BINARY_DIR}
-  GIT_SUBMODULES ""
-  GIT_SHALLOW TRUE
-  GIT_PROGRESS TRUE
-)
-
-message("Start to fetch AscendNPU-IR repository.")
-FetchContent_Populate(ascendnpu_ir)
-# TODO: Check NPU IR version compatibility
-FetchContent_GetProperties(ascendnpu_ir
-  POPULATED is_ascendnpu_ir_populated
-)
-if (NOT is_ascendnpu_ir_populated)
-  message(FATAL_ERROR "Failed to fetch AscendNPU-IR repository.")
-endif()
+set(ASCENDNPU_IR_SRC_DIR "${CMAKE_CURRENT_SOURCE_DIR}/AscendNPU-IR")
+set(ASCENDNPU_IR_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/AscendNPU-IR")
 
 set(BISHENGIR_BUILD_STANDALONE_IR_ONLY ON)
 
@@ -48,7 +16,6 @@ include_directories(${ASCENDNPU_IR_BINARY_DIR}/bishengir/include) # Tablegen'd f
 
 add_subdirectory(include)
 add_subdirectory(lib)
-
 
 add_triton_plugin(TritonAscend
   ${CMAKE_CURRENT_SOURCE_DIR}/triton_ascend.cc
