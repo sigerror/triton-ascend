@@ -1,72 +1,48 @@
-Welcome to Triton's documentation!
-==================================
+Welcome to Triton-Ascend Documentation!
+=======================================
 
-Triton_ is a language and compiler for parallel programming. It aims to provide a Python-based programming environment for productively writing custom DNN compute kernels capable of running at maximal throughput on modern GPU hardware.
-
-
-Getting Started
----------------
-
-- Follow the :doc:`installation instructions <getting-started/installation>` for your platform of choice.
-- Take a look at the :doc:`tutorials <getting-started/tutorials/index>` to learn how to write your first Triton program.
+`Triton <https://gitcode.com/Ascend/triton-ascend>`_ is a language and compiler for parallel programming.
 
 .. toctree::
-   :maxdepth: 1
-   :caption: Getting Started
+   :maxdepth: 2
    :hidden:
+   :caption: Getting Started
 
-   getting-started/installation
-   getting-started/tutorials/index
-
-
-Python API
-----------
-
-- :doc:`triton <python-api/triton>`
-- :doc:`triton.language <python-api/triton.language>`
-- :doc:`triton.testing <python-api/triton.testing>`
-- :doc:`Triton semantics <python-api/triton-semantics>`
-
+   sources/getting-started/installation.md
+   sources/getting-started/tutorials/index
 
 .. toctree::
    :maxdepth: 1
    :caption: Python API
    :hidden:
 
-   python-api/triton
-   python-api/triton.language
-   python-api/triton.testing
-   python-api/triton-semantics
-
-
-Triton MLIR Dialects and Ops
---------------------
-
-- :doc:`Triton MLIR Dialects and Ops <dialects/dialects>`
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Triton MLIR Dialects
-   :hidden:
-
-   dialects/dialects
-
-Going Further
--------------
-
-Check out the following documents to learn more about Triton and how it compares against other DSLs for DNNs:
-
-- Chapter 1: :doc:`Introduction <programming-guide/chapter-1/introduction>`
-- Chapter 2: :doc:`Related Work <programming-guide/chapter-2/related-work>`
-- Chapter 3: :doc:`Debugging <programming-guide/chapter-3/debugging>`
+   sources/python-api/outline.md
+   sources/python-api/triton
+   sources/python-api/triton.language
+   sources/python-api/triton.testing
 
 .. toctree::
    :maxdepth: 1
    :caption: Programming Guide
    :hidden:
 
-   programming-guide/chapter-1/introduction
-   programming-guide/chapter-2/related-work
-   programming-guide/chapter-3/debugging
+   sources/programming-guide/introduction.md
 
-.. _Triton: https://github.com/triton-lang/triton
+Getting Started
+---------------
+
+- Follow the :doc:`installation instructions <sources/getting-started/installation>` for your platform of choice.
+- Take a look at the :doc:`tutorials <sources/getting-started/tutorials/index>` to learn how to write your first Triton program.
+
+Python API
+----------
+
+- :doc:`triton outline <sources/python-api/outline>`
+- :doc:`triton <sources/python-api/triton>`
+- :doc:`triton.language <sources/python-api/triton.language>`
+- :doc:`triton.testing <sources/python-api/triton.testing>`
+
+Programming Guide
+-----------------
+
+- Chapter 1: :doc:`Introduction <sources/programming-guide/introduction>`

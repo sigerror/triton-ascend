@@ -1,397 +1,84 @@
-<div align="center">
-  <img src="https://lh5.googleusercontent.com/wzQKEsTFkrgNQO9JjhGH5wFvslJr1saLtLaJ_a6Fp_gNENpvt3VG7BmztwngU9hFJaU4CPwGiw1opQtDvTkLrxWRbO_a12Q-pdESWHgtmheIHcPbOL5ZMC4TSiJVe5ty1w=w3517" alt="Triton logo">
-</div>
+# Triton Ascend
 
-The Triton Conference is happening again on September 17th, 2024 in Fremont (CA)!
+Triton是近几年来受到开发者青睐的Python化编程语言。开发者仅需关注Tile/Block的切分方式以及基于Tile/Block的运算逻辑，编译器将在Triton代码的编译过程中结合底层硬件特点自动完成内存分配、数据搬运、数据计算、流水并行等，因此，算子的开发难度大幅降低、开发效率显著提升。
 
-If you are interested in attending, please fill up [this form](https://docs.google.com/forms/d/e/1FAIpQLSecHC1lkalcm0h3JDUbspekDX5bmBvMxgVTLaK3e-61bzDDbg/viewform).
+Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton代码能够在昇腾硬件上高效运行。目前，Triton Ascend还在不断完善中，我们将不断提升Triton Python API完备度、数据类型支持度、访存方式灵活性等，并持续优化编译器的自动优化能力，提升Triton Ascend整体的功能与性能泛化性。
 
 
-| **`Documentation`** | **`Nightly Wheels`** |
-|-------------------- | -------------------- |
-| [![Documentation](https://github.com/triton-lang/triton/actions/workflows/documentation.yml/badge.svg)](https://triton-lang.org/) | [![Wheels](https://github.com/triton-lang/triton/actions/workflows/wheels.yml/badge.svg?branch=release/2.0.x)](https://github.com/triton-lang/triton/actions/workflows/wheels.yml) |
+- #### RoadMap
 
+| 里程碑 | 重要特性更新情况 | 状态 |
+|------|------|------|
+| 2025.11.14 | triton-ascend 3.2.0rc4预发布版本上线 | ✅ |
+| 2025.09.30 | 完善Scan/Sort类Triton Python API，支持非连续访存，完成vLLM、sglang开源仓中重点Triton算子适配 | ✅ |
+| 2025.08.15 | 完善Atomic类Triton Python API支持，完成Flaggems开源仓重点Triton算子适配，提供Matmul等简单算子高性能实现参考用例 | ✅ |
+| 2025.06.30 | 支持85% Triton Python API，支持连续访存，覆盖基本使用场景需求 | ✅ |
+| 2025.05.20 | Triton Ascend开源，Gitcode代码仓Alive！ | ✅ |
 
-# Triton
+- #### 已支持平台
 
-This is the development repository of Triton, a language and compiler for writing highly efficient custom Deep-Learning primitives. The aim of Triton is to provide an open-source environment to write fast code at higher productivity than CUDA, but also with higher flexibility than other existing DSLs.
+昇腾设备：Atlas 800T/I A2产品
 
-The foundations of this project are described in the following MAPL2019 publication: [Triton: An Intermediate Language and Compiler for Tiled Neural Network Computations](http://www.eecs.harvard.edu/~htk/publication/2019-mapl-tillet-kung-cox.pdf). Please consider citing this work if you use Triton!
+主机CPU架构：x86/ARM
 
-The [official documentation](https://triton-lang.org) contains installation instructions and tutorials.  See also these third-party [Triton puzzles](https://github.com/srush/Triton-Puzzles), which can all be run using the Triton interpreter -- no GPU required.
+主机操作系统：Linux Ubuntu
 
-# Quick Installation
+## 帮助文档
 
-You can install the latest stable release of Triton from pip:
+欢迎广大开发者试用，但在您开始使用之前，建议您先根据您的开发需求浏览下列文档，希望能够帮助您快速上手！如果您在使用过程中遇到了问题，请您提交Issue反馈相关信息，我们将竭尽全力处理，感谢您的支持！
 
-```bash
-pip install triton
-```
-Binary wheels are available for CPython 3.8-3.12 and PyPy 3.8-3.9.
+- #### Triton Ascend 安装
+详细安装步骤请参考 [安装指南](./docs/sources/getting-started/installation.md) 。
 
-And the latest nightly release:
+- #### Triton Ascend Dockerfile开发环境
+我们为开发者提供了Dockerfile，帮助开发者快速构建开发环境。Dockerfile文件请参考[Dockerfile](./docker/Dockerfile) 。
 
-```bash
-pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
-```
+- #### Triton Python API支持情况与约束
+目前Triton Ascend已经使能了85%以上Triton社区官方提供的Python API，详细的功能支持情况（包括数据类型支持度、使用约束等）请参考 [API 支持情况总览](./docs/sources/python-api/outline.md) 。
 
-# Install from source
+- #### Triton算子开发指南（入门级）
+在昇腾平台上开发Triton算子的方式与在GPU平台上基本相同。我们提供了下列算子的示例源码与配套说明来解释如何开发Triton算子的设备侧Kernel函数、主机侧调用代码以及算子功能验证代码。
+此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/07-accuracy-comparison.md) 与 [参考样例Python文件](./ascend/examples/tutorials/14-accuracy-comparison.py) 。
 
-```
-git clone https://github.com/triton-lang/triton.git;
-cd triton;
+| 算子名称 | 开发指南 | 可执行Python文件 |
+|------|------|------|
+| VectorAdd |  [VectorAdd开发指南](./docs/sources/getting-started/tutorials/01-vector-add.md) | [VectorAdd Python文件](./ascend/examples/tutorials/01-vector-add.py) |
+| Softmax |  [Softmax开发指南](./docs/sources/getting-started/tutorials/02-fused-softmax.md) | [Softmax Python文件](./ascend/examples/tutorials/02-fused-softmax.py) |
+| LayerNorm |  [LayerNorm开发指南](./docs/sources/getting-started/tutorials/03-layer-norm.md) | [LayerNorm Python文件](./ascend/examples/tutorials/03-layer-norm.py) |
+| FlashAttention |  [FlashAttention开发指南](./docs/sources/getting-started/tutorials/04-fused-attention.md) | [FlashAttention Python文件](./ascend/examples/tutorials/04-fused-attention.py) |
+| Matmul |  [Matmul开发指南](./docs/sources/getting-started/tutorials/05-matrix-multiplication.md) | [Matmul Python文件](./ascend/examples/tutorials/05-matrix-multiplication.py) |
 
-pip install ninja cmake wheel pybind11; # build-time dependencies
-pip install -e python
-```
+- #### Triton算子自动寻优指南（入门级）
+Triton Ascend支持Triton原生的Autotune能力。通过对Tile/Block的形状配置进行搜索寻优，开发者可以在不改变Triton算子写法的条件下获得更优的性能。
+此外，配合Triton Ascend编译器自有的自动优化算法，我们也额外提供了新的可调优参数，开发者可以按需选用。关于Triton算子自动寻优，详情请参考
+[Autotune性能寻优指南](./docs/sources/getting-started/tutorials/06-autotune.md) 。
 
-Or with a virtualenv:
+- #### 高性能Triton算子编程开发指南（进阶级）
+为能获得更好的执行性能，除了利用Autotune之外，开发者在编写Triton算子时需要结合昇腾平台的软硬件特点进行开发。我们总结梳理了一些通用优化思路与方法，包括Tile/Block切分方式、高效访存方式以及如何与编译器开展协同优化等，详情请参考[高性能Triton算子编程指南](./docs/HighPerformanceGuide.md) 。
 
-```
-git clone https://github.com/triton-lang/triton.git;
-cd triton;
+- #### 非昇腾平台Triton算子快速迁移指南
+目前，许多开源仓已经提供了面向GPU等平台开发的Triton算子。因为昇腾平台在内存大小、运行时接口功能上与GPU等平台存在差异，将这些算子迁移到昇腾平台运行需要完成少量必要的代码修改，具体修改方法请参考[非昇腾平台Triton算子迁移指南](./docs/sources/programming-guide/migration.md) 。
 
-python -m venv .venv --prompt triton;
-source .venv/bin/activate;
+- #### 开源仓Triton算子适配与支持情况
+我们也正逐步将主流开源仓中的GPU Triton算子适配到昇腾平台，当前已适配的算子请参见 [已适配开源仓算子列表](./docs/OPLIST.md) 。
 
-pip install ninja cmake wheel pybind11; # build-time dependencies
-pip install -e python
-```
+- #### Triton Ascend调试调优工具使用指南
+为了简化用户编程难度，助力开发者低成本完成高性能算子开发，MindStudio算子开发工具已适配Triton算子调试调优。  
+  1） msProf op: 算子性能调优工具，支持Triton算子上板性能数据采集、内存热力图、仿真流水图生成等，详情参考：[MindStudio 算子性能调优工具使用参考](./docs/sources/mindstudio-guide/01-msProf_op.md)   
+  2） msSanitizer: 算子内存检测工具，支持Triton算子异常行为检测，包括内存、竞争、未初始化异常检测，可精准定位异常代码行，详情参考：[MindStudio 算子异常检测工具使用参考](./docs/sources/mindstudio-guide/02-msSanitizer.md)  
 
-# Building with a custom LLVM
 
-Triton uses LLVM to generate code for GPUs and CPUs.  Normally, the Triton build
-downloads a prebuilt LLVM, but you can also build LLVM from source and use that.
+- #### Triton Ascend环境变量
+Triton Ascend支持Triton原生的环境变量，此外，面向昇腾平台上的新功能特性进行了拓展。Triton Ascend涉及的全量环境变量，请参考 [环境变量总览](./docs/ENVIRONMENT.md) 。
 
-LLVM does not have a stable API, so the Triton build will not work at an
-arbitrary LLVM version.
+- #### Triton Ascend贡献指南
+Triton Ascend贡献指南请参考 [贡献指南](CONTRIBUTING.zh.md) 。
 
-1. Find the version of LLVM that Triton builds against.  Check
-`cmake/llvm-hash.txt` to see the current version. For example, if it says:
-       49af6502c6dcb4a7f7520178bd14df396f78240c
+- #### Triton Ascend常见报错与应对方案
+针对在开发或迁移Triton算子时经常遇到的报错信息与解决方案，我们正在汇总并梳理相关文档供大家参考。该文档正在开发中，将于近期发布，敬请期待。
 
-   This means that the version of Triton you have builds against
-   [LLVM](https://github.com/llvm/llvm-project) 49af6502.
+## 安全声明
+我们重视开发者在使用Triton Ascend时的信息安全，安全防护建议与相关信息请见 [安全声明](./SECURITYNOTE.md) 。
 
-2. `git checkout` LLVM at this revision.  Optionally, make additional
-   modifications to LLVM.
-
-3. [Build LLVM](https://llvm.org/docs/CMake.html).  For example, you might run
-
-       $ cd $HOME/llvm-project  # your clone of LLVM.
-       $ mkdir build
-       $ cd build
-       $ cmake -G Ninja -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=ON ../llvm -DLLVM_ENABLE_PROJECTS="mlir;llvm" -DLLVM_TARGETS_TO_BUILD="host;NVPTX;AMDGPU"
-       $ ninja
-
-4. Grab a snack, this will take a while.
-
-5. Build Triton as above, but set the following environment variables.
-
-       # Modify as appropriate to point to your LLVM build.
-       $ export LLVM_BUILD_DIR=$HOME/llvm-project/build
-
-       $ cd <triton install>
-       $ LLVM_INCLUDE_DIRS=$LLVM_BUILD_DIR/include \
-         LLVM_LIBRARY_DIR=$LLVM_BUILD_DIR/lib \
-         LLVM_SYSPATH=$LLVM_BUILD_DIR \
-         pip install -e python
-
-# Tips for building
-
-- Set `TRITON_BUILD_WITH_CLANG_LLD=true` as an environment variable to use clang
-  and lld.  lld in particular results in faster builds.
-
-- Set `TRITON_BUILD_WITH_CCACHE=true` to build with ccache.
-
-- Set `TRITON_HOME=/some/path` to change the location of the `.triton`
-  directory where Triton's cache is located and downloads are stored
-  during the build. By default, this is the user's home directory. It
-  can be changed anytime.
-
-- Pass `--no-build-isolation` to `pip install` to make nop builds faster.
-  Without this, every invocation of `pip install` uses a different symlink to
-  cmake, and this forces ninja to rebuild most of the `.a` files.
-
-- vscode intellisense has some difficulty figuring out how to build Triton's C++
-  (probably because, in our build, users don't invoke cmake directly, but
-  instead use setup.py).  Teach vscode how to compile Triton as follows.
-
-    - Do a local build. Run command `pip install -e python`
-    - Get the full path to the `compile_commands.json` file produced by the build:
-      `find python/build -name 'compile_commands.json' | xargs readlink -f`.
-      You might get a full path similar to `/Users/{username}/triton/python/build/cmake.macosx-11.1-arm64-cpython-3.12/compile_commands.json`
-    - In vscode, install the
-      [C/C++
-      extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode.cpptools),
-      then open the command palette (`Shift + Command + P` on Mac, or `Shift +
-      Ctrl + P` on Windows/Linux) and open `C/C++: Edit Configurations (UI)`.
-    - Open "Advanced Settings" and paste the full path to
-      `compile_commands.json` into the "Compile Commands" textbox.
-
-# Running tests
-
-There currently isn't a turnkey way to run all the Triton tests, but you can
-follow the following recipe.
-
-```shell
-# One-time setup.  Note we have to reinstall local Triton because torch
-# overwrites it with the public version.
-$ pip install scipy numpy torch pytest lit pandas matplotlib && pip install -e python
-
-# Run Python tests using your local GPU.
-$ python3 -m pytest python/test/unit
-
-# Move to builddir.  Fill in <...> with the full path, e.g.
-# `cmake.linux-x86_64-cpython-3.11`.
-$ cd python/build/cmake<...>
-
-# Run C++ unit tests.
-$ ctest -j32
-
-# Run lit tests.
-$ lit test
-```
-
-You may find it helpful to make a symlink to the builddir and tell your local
-git to ignore it.
-
-```
-$ ln -s python/build/cmake<...> build
-$ echo build >> .git/info/exclude
-```
-
-Then you can e.g. rebuild and run lit with the following command.
-
-```
-$ ninja -C build && ( cd build ; lit test )
-```
-
-# Tips for hacking
-
-For detailed instructions on how to debug Triton's frontend, please refer to this [tutorial](https://triton-lang.org/main/programming-guide/chapter-3/debugging.html). The following includes additional tips for hacking on Triton's backend.
-
-**Helpful environment variables**
-
-- `MLIR_ENABLE_DUMP=1` dumps the IR before every MLIR pass Triton runs, for all
-   kernels. Use `MLIR_ENABLE_DUMP=kernelName` to dump for a specific kernel only.
-  - Triton cache can interfere with the dump. In cases where `MLIR_ENABLE_DUMP=1` does not work, try cleaning your triton cache: `rm -r ~/.triton/cache/*`
-- `LLVM_IR_ENABLE_DUMP=1` dumps the IR before every pass run over the LLVM IR.
-- `TRITON_INTERPRET=1` uses the Triton interpreter instead of running on the
-  GPU.  You can insert Python breakpoints in your kernel code!
-- `TRITON_ENABLE_LLVM_DEBUG=1` passes `-debug` to LLVM, printing a lot of
-  debugging information to stdout.  If this is too noisy, run with just
-  `TRITON_LLVM_DEBUG_ONLY` instead to limit the output.
-
-  An alternative way to reduce output noisiness is running with
-  `LLVM_IR_ENABLE_DUMP=1`, extract the IR before the LLVM pass of interest, and
-  then run LLVM's `opt` standalone, perhaps passing `-debug-only=foo` on the
-  command line.
-- `TRITON_LLVM_DEBUG_ONLY=<comma-separated>` is the equivalent of LLVM's
-  `-debug-only` command-line option. This limits the LLVM debug output to
-  specific pass or component names (which are specified using `#define
-  DEBUG_TYPE` throughout LLVM and Triton) in order to allow the debug output to
-  be less noisy. `TRITON_LLVM_DEBUG_ONLY` allows for one or more comma
-  separated values to be specified (eg
-  `TRITON_LLVM_DEBUG_ONLY="tritongpu-remove-layout-conversions` or
-  `TRITON_LLVM_DEBUG_ONLY="tritongpu-remove-layout-conversions,regalloc"`).
-- `USE_IR_LOC={ttir,ttgir}` reparses the IR such that the location information
-  will be the line number of the IR file with that particular extension,
-  instead of line number of the python file. This can provide a direct mapping
-  from the IR to llir/ptx. When used with performance tools, it can provide a
-  breakdown on IR instructions.
-- `TRITON_PRINT_AUTOTUNING=1` prints out the best autotuning config and total time
-  spent for each kernel after autotuning is complete.
-- `DISABLE_LLVM_OPT` will disable llvm optimizations for make_llir and make_ptx
-  if its value is true when parsing as Bool. Otherwise, it will be parsed as a list
-  of flags to disable llvm optimizations. One usage case is
-  `DISABLE_LLVM_OPT="disable-lsr"`
-  Loop strength reduction is known to cause up to 10% performance changes for
-  certain kernels with register pressure.
-- `TRITON_ALWAYS_COMPILE=1` forces to compile kernels regardless of cache hit.
-- `MLIR_ENABLE_TIMING` dumps the timing information for each MLIR pass.
-- `LLVM_ENABLE_TIMING` dumps the timing information for each LLVM pass.
-- `TRITON_DEFAULT_FP_FUSION` overrides the default behavior of allowing fp fusion (mul+add->fma).
-- `MLIR_ENABLE_REMARK` enables the performance warnings that are emitted as remarks.
-
-# Changelog
-
-Version 2.0 is out! New features include:
-- Many, many bug fixes
-- Performance improvements
-- Backend rewritten to use MLIR
-- Support for kernels that contain back-to-back matmuls (e.g., flash attention)
-
-# Contributing
-
-Community contributions are more than welcome, whether it be to fix bugs or to add new features at [github](https://github.com/triton-lang/triton/). For more detailed instructions, please visit our [contributor's guide](CONTRIBUTING.md).
-
-
-# Compatibility
-
-Supported Platforms:
-  * Linux
-
-Supported Hardware:
-  * NVIDIA GPUs (Compute Capability 7.0+)
-  * AMD GPUs (ROCm 5.2+)
-  * Under development: CPUs
-
-
-
-# Warp Specialization Support
-
-
-Warp specialization enhances kernel performance by utilizing an asynchronous execution model, where different parts of the kernel are handled by separate hardware units. The data communication between these units, via shared memory on the H100, operates with high efficiency. With this in mind, we’ve developed an automatic warp specialization optimization that partitions a user kernel into asynchronous tasks (which map to warp groups on NVIDIA GPU), which naturally execute concurrently, leveraging the hardware’s multitasking warp scheduler. The following sections provide a breakdown of the compiler features developed to enable warp specialization.
-
-
-## Asynchronous Tasks
-
-Warp specialization is built on top of the concept of partitioning the user’s program into asynchronous tasks (referred to as "async tasks" or “tasks” in the following sections). Each async task will be executed by a standalone warp group on the supported hardware, to achieve instruction level parallelism. While optimally and automatically partitioning asynchronous tasks remains a challenge for compilers, our approach to automatic task partitioning has proven effective for kernels similar to typical examples like GEMM and Flash Attention.
-
-To enable warp specialization, user just needs to specify certain autotune flags, i.e., `num_consumer_groups` and `num_buffers_warp_spec`. For example, a warp-specialized GEMM implementation might look like below. You can find a complete example in 09-persistent-matmul.py.
-
-```python
-@triton.autotune(
-    configs=[
-        triton.Config(
-            {
-                "BLOCK_SIZE_M": 128,
-                "BLOCK_SIZE_N": 256,
-                "BLOCK_SIZE_K": 64,
-                "GROUP_SIZE_M": 8,
-            },
-            num_stages=2,
-            num_warps=4,
-            num_consumer_groups=2,
-            num_buffers_warp_spec=3,
-        ),
-    ],
-    key=["M", "N", "K"],
-)
-@triton.jit
-def matmul_persistent_ws_kernel(
-   a_ptr, b_ptr, c_ptr, M, N, K,
-   stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
-   BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-):
-   pid = tl.program_id(axis=0)
-   num_pid_m = tl.cdiv(M, BLOCK_M)
-   num_pid_n = tl.cdiv(N, BLOCK_N)
-   pid_m = pid // num_pid_m
-   pid_n = pid % num_pid_n
-   offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M)
-   offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N)
-   offs_k = tl.arange(0, BLOCK_K)
-   a_ptrs = a_ptr + (offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak)
-   b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn)
-   acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32)
-   for k in range(0, tl.cdiv(K, BLOCK_K)):
-       a = tl.load(a_ptrs)
-       b = tl.load(b_ptrs)
-       acc += tl.dot(a, b)
-       a_ptrs += BLOCK_K * stride_ak
-       b_ptrs += BLOCK_K * stride_bk
-   c = acc.to(tl.float16)
-   c_ptrs = c_ptr + stride_cm * offs_m[:, None] + stride_cn * offs_n[None, :]
-   tl.store(c_ptrs, c)
-```
-
-The compiler automatically determines how to utilize one producer warp group and two consumer warp groups to execute the kernel. It begins by assigning task IDs to certain anchor operations, which influence the task assignments for the remaining operations. Once the anchor tasks are annotated, the compiler assigns the non-anchor operations to tasks as follows:
-
-- Control dependencies exclusive to an anchor operation are included in the same task as the anchor operation.
-- Data dependencies exclusive to an anchor operation are included in the same task as the anchor operation, unless they are another anchor operation.
-- Control or data dependencies shared between tasks are included in all those tasks.
-
-For the GEMM example above, the compiler computes a task scheme and annotates it in the IR using MLIR attributes. To illustrate this more clearly, let's use source code annotations. After task propagation:
-
-
-```python
-@triton.jit
-def matmul_persistent_ws_kernel(
-   a_ptr, b_ptr, c_ptr, M, N, K,
-   stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
-   BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-):
-   pid = tl.program_id(axis=0) # async_task 0, 1
-   num_pid_m = tl.cdiv(M, BLOCK_M) # async_task 0, 1
-   num_pid_n = tl.cdiv(N, BLOCK_N) # async_task 0, 1
-   pid_m = pid // num_pid_m # async_task 0, 1
-   pid_n = pid % num_pid_n # async_task 0, 1
-   offs_m = pid_m * BLOCK_M + tl.arange(0, BLOCK_M) # async_task 0, 1
-   offs_n = pid_n * BLOCK_N + tl.arange(0, BLOCK_N) # async_task 0, 1
-   offs_k = tl.arange(0, BLOCK_K) # async_task 0
-   a_ptrs = a_ptr + (offs_m[:, None] * stride_am + offs_k[None, :] * stride_ak) # async_task 0
-   b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn) # async_task 0
-   acc = tl.zeros((BLOCK_M, BLOCK_N), dtype=tl.float32) # async_task 1
-   for k in range(0, tl.cdiv(K, BLOCK_K)): # async_task 0, 1
-       a = tl.load(a_ptrs)   # async_task 0
-       b = tl.load(b_ptrs)   # async_task 0
-       acc += tl.dot(a, b)   # async_task 1
-       a_ptrs += BLOCK_K * stride_ak # async_task 0
-       b_ptrs += BLOCK_K * stride_bk # async_task 0
-   c = acc.to(tl.float16) # async_task 1
-   c_ptrs = c_ptr + stride_cm * offs_m[:, None] + stride_cn * offs_n[None, :] # async_task 1
-   tl.store(c_ptrs, c) # async_task 1
-```
-
-
-## Data Partitioning
-
-To further improve performance, the compiler will split the same workload across two async tasks  This way, when one task is blocked on a heavy computation (e.g., the dot operation), the other group can execute other operations in parallel. The compiler determines how to divide the work between the two tasks to maximize performance. On the H100 GPU, the compiler will, by default, attempt to split the input tensor A along the M dimension so that each consumer computes half of the output tensor independently. This approach is known as cooperative partitioning. If this split is not advantageous—for instance, if it results in a smaller-than-native `wgmma` instruction—the compiler will instead attempt to split along the N dimension.
-
-The transformed code for the above GEMM kernel with a configured tile size [128, 256, 64] will look like below (using source annotations instead of IR for illustration).
-
-
-```python
-@triton.jit
-def matmul_persistent_ws_kernel(
-   a_ptr, b_ptr, c_ptr, M, N, K,
-   stride_am, stride_ak, stride_bk, stride_bn, stride_cm, stride_cn,
-   BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr, BLOCK_K: tl.constexpr,
-):
-   pid = tl.program_id(axis=0) # async_task 0, 1, 2
-   num_pid_m = tl.cdiv(M, BLOCK_M) # async_task 0, 1, 2
-   num_pid_n = tl.cdiv(N, BLOCK_N) # async_task 0, 1, 2
-   pid_m = pid // num_pid_m # async_task 0, 1, 2
-   pid_n = pid % num_pid_n # async_task 0, 1, 2
-   offs_m_1 = pid_m * BLOCK_M + tl.arange(0, BLOCK_M // 2) # async_task 0, 1, 2
-   offs_m_2 = pid_m * BLOCK_M + tl.arange(BLOCK_M // 2, BLOCK_M) # async_task 0, 1, 2
-   offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_N) # async_task 0, 1, 2
-   offs_k = tl.arange(0, BLOCK_K) # async_task 0
-   a_ptrs_1 = a_ptr + (offs_m_1[:, None] * stride_am + offs_k[None, :] * stride_ak) # async_task 0
-   a_ptrs_2 = a_ptr + (offs_m_2[:, None] * stride_am + offs_k[None, :] * stride_ak) # async_task 0
-   b_ptrs = b_ptr + (offs_k[:, None] * stride_bk + offs_n[None, :] * stride_bn) # async_task 0
-   acc_1 = tl.zeros((BLOCK_M // 2, BLOCK_N), dtype=tl.float32) # async_task 1
-   acc_1 = tl.zeros((BLOCK_M // 2, BLOCK_N), dtype=tl.float32) # async_task 2
-   for k in range(0, tl.cdiv(K, BLOCK_K)): # async_task 0, 1, 2
-       a_1 = tl.load(a_ptrs_1)   # async_task 0
-       a_2 = tl.load(a_ptrs_2)   # async_task 0
-       b = tl.load(b_ptrs)   # async_task 0
-       acc_1 += tl.dot(a_1, b)   # async_task 1
-       acc_2 += tl.dot(a_2, b)   # async_task 2
-       a_ptrs_1 += BLOCK_K * stride_ak # async_task 0
-       a_ptrs_2 += BLOCK_K * stride_ak # async_task 0
-       b_ptrs += BLOCK_K * stride_bk # async_task 0
-   c_1 = acc_1.to(tl.float16) # async_task 1
-   c_2 = acc_2.to(tl.float16) # async_task 2
-   c_ptrs_1 = c_ptr_1 + stride_cm * offs_m_1[:, None] + stride_cn * offs_n[None, :] # async_task 1
-   c_ptrs_2 = c_ptr_2 + stride_cm * offs_m_2[:, None] + stride_cn * offs_n[None, :] # async_task 2
-   tl.store(c_ptrs_1, c_1) # async_task 1
-   tl.store(c_ptrs_2, c_2) # async_task 2
-```
-
-
-## Code Partitioning
-
-We assume all operations are already marked with a list of taskIds. We first find all communications required between warp groups. Each communication starts from a load operation with a single taskId, and ends at a direct user of the load which belongs to a different taskId. For `ForOps` containing a communication channel, we add additional arguments: `phase` and `bufferIndex`.
-
-We introduce a tuning configuration: `num_buffers_warp_spec`. For each communication channel, if it is within a `forOp`, we use an array of buffers in SMEM to save the results, and size of the array is determined by `num_buffers_warp_spec`. We also use an array of barriers for each communication channel that is inside a `ForOp`. At this pass, four new operations are introduced to correctly synchronize between the producer and the consumer: `ProducerAcquireOp`, `ProducerCommitOp`, `ConsumerWaitOp`, and `ConsumerReleaseOp`. Each of the four new ops take a token, a buffer Index. `ProducerAcquire` and `ConsumerWait` take an additional phase operand.
-
-
-For `ForOps` with multiple task Ids, we clone one copy for each taskId, each copy contains the operations with the specific taskId. In the end, we create multiple `IfOps`, one for each possible taskId. We go through the body of the function, clone the op for each attached task Id and put the cloned op in the right `IfOp`.
-
-To adjust register usage, we introduce two new ops: `RegAllocOp` and `RegDeallocOp`, both taking an integer operand. For each warp group, we decide to insert either `RegAllocOp` or `RegDeallocOp`. The current heuristic is simple: if the task Id is 0, we add `RegDeallocOp`, otherwise we use `RegAllocOp`. The amount of register adjustment can be tuned via `reg_dec_producer` and `reg_inc_consumer`.
-
-This pass also lowers `loadOp`s to `AsyncTMACopyGlobalToLocalOp` or `AsyncCopyGlobalToLocalOp`, so the communication can be expressed via SMEM. For TMA, the producer will become
-`ProducerAcquire` -> `barrier_expect` -> `AsyncTMACopyGlobalToLocalOp`, and the consumer will contain `wait_barrier` -> ops -> `ConsumerRelease`. For non-TMA loads, the producer will become `ProducerAcquire` -> `AsyncCopyGlobalToLocalOp` -> `ProducerCommitOp`, and the consumer will contain `ConsumerWaitOp` -> ops -> `ConsumerRelease`.
+## 许可证
+本项目代码与文档均采用 [MIT许可证](./LICENSE) 。
