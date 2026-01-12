@@ -41,3 +41,7 @@ def create_address_space(
     builder: ascend_ir.ascendnpu_ir_builder
 ) -> ir.attribute:
     return builder.get_target_attribute(address_space)
+
+
+def sub_vec_id(builder: ascend_ir.ascendnpu_ir_builder) -> tl.tensor:
+    return tl.tensor(builder.create_get_sub_vec_id(), tl.int64)

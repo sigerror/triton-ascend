@@ -21,7 +21,8 @@
 # THE SOFTWARE.
 
 __all__ = [
-    "ascend_address_space"
+    "ascend_address_space",
+    "sub_vec_id"
 ]
 
 from typing import TypeVar, List
@@ -89,3 +90,11 @@ class ascend_address_space_group:
 
 
 ascend_address_space = ascend_address_space_group()
+
+
+@builtin
+def sub_vec_id(_builder=None) -> tl.tensor:
+    """
+    Get the Vector Core index on the AI Core.
+    """
+    return semantic.sub_vec_id(_builder)

@@ -307,6 +307,8 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     """
     # --- Regular expressions and examples ---
 
+    DISABLE_AUTO_TILE_AND_BIND_SUBBLOCK_REGEX = r'hivm.disable_auto_tile_and_bind_subblock'
+
     # Example: mix_mode = "aiv" -> aiv
     MIX_MODE_REGEX = r'mix_mode\s*=\s*"([^"]+)"'
 
@@ -325,6 +327,8 @@ def _parse_linalg_metadata(linalg: str, metadata: dict):
     # Note: Compiled Kernel requires to estimate size of shared memory to occupy
     # Currently, NPU backend does not limit on shared memory
     metadata["shared"] = 1
+    # Force disable auto tile and bind subblock if attribute is present in module
+    metadata["auto_tile_and_bind_subblock"] = not re.search(DISABLE_AUTO_TILE_AND_BIND_SUBBLOCK_REGEX, linalg)
     # the mix mode is also encoded into metadata['name'] for runtime to distinguish
     metadata["mix_mode"] = re.search(MIX_MODE_REGEX, linalg).group(1)
     metadata["parallel_mode"] = re.search(PARALLEL_MODE_REGEX, linalg).group(1)
@@ -458,6 +462,12 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             + _compile_option_list
             + ["-o", bin_file]
         )
+        # TODO both bishengir-compile and triton-compile use passing attr by module
+        auto_tile_and_bind_subblock = metadata["auto_tile_and_bind_subblock"]
+        if auto_tile_and_bind_subblock is False:
+            cmd_list += [
+                "--enable-auto-bind-sub-block=false"
+            ]
 
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
         match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', ret.stdout.decode('utf-8'))
@@ -580,6 +590,11 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
             + _compile_option_list
             + ["-o", bin_file]
         )
+        auto_tile_and_bind_subblock = metadata["auto_tile_and_bind_subblock"]
+        if auto_tile_and_bind_subblock is False:
+            cmd_list += [
+                "--enable-auto-bind-sub-block=false"
+            ]
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
         match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', ret.stdout.decode('utf-8'))
         if match:
@@ -622,6 +637,7 @@ class NPUOptions:
     optimize_epilogue: bool = False
     enable_fp_fusion: bool = True
     allow_fp8e4nv: bool = False
+    auto_tile_and_bind_subblock: bool = True
     supported_fp8_dtypes: Tuple[str] = ("fp8e5", "fp8e4b15", "fp8e4nv", "fp8e4b8", "fp8e5b16")
     deprecated_fp8_dtypes: Tuple[str] = ()
     allowed_dot_input_precisions: Tuple[str] = ("ieee", "hf32")

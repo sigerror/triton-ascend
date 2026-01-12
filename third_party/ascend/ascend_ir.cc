@@ -98,6 +98,16 @@ void init_ascend_ir(py::module &&m) {
               hivm::AddressSpace &addressSpace) -> Attribute {
              return hivm::AddressSpaceAttr::get(self.getBuilder().getContext(),
                                                 addressSpace);
-           });
+           })
+      .def("create_get_sub_vec_id",
+ 	         [](AscendNPUIROpBuilder &self) -> Value {
+             auto subBlockIdxOp = self.create<hivm::GetSubBlockIdxOp>();
+             auto moduleOp = subBlockIdxOp->getParentOfType<ModuleOp>();
+             auto *ctx = self.getBuilder().getContext();
+             // If user explicitly uses sub.block idx, add attribute to module.
+             // NPU compiler will parse this attribute and disable auto tile and bind subblock pass.
+             moduleOp->setAttr("hivm.disable_auto_tile_and_bind_subblock", mlir::UnitAttr::get(ctx));
+             return subBlockIdxOp;
+ 	         });
 }
 

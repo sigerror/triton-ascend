@@ -4,7 +4,7 @@ try:
 except Exception as e:
     is_compile_on_910_95 = False
 
-from .core import builtin, is_builtin, ascend_address_space
+from .core import builtin, is_builtin, ascend_address_space, sub_vec_id
 
 from .scope import scope
 
