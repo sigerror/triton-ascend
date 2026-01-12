@@ -90,3 +90,7 @@ def next_power_of_2(n: int):
     n |= n >> 32
     n += 1
     return n
+
+num_register_max_simt = 16
+
+simt_candidate_warps = [8, 16, 32, 64]

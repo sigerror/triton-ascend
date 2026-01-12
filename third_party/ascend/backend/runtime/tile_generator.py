@@ -38,6 +38,7 @@ from .utils import (
     next_power_of_2,
     num_vector_core,
     num_ub_max,
+    num_register_max_simt,
 )
 
 
@@ -69,7 +70,7 @@ class KernelMeta:
         persistent_reduction: bool,
         dual_reduction: bool,
         input_ptr_num: int,
-
+        is_simt_mode: bool,
     ):
         """
         :param split_params: a dict of axis name: argument name, the argument is an adjustable parameter in a split axis, such as 'XBLOCK'.
@@ -122,6 +123,7 @@ class KernelMeta:
         self.persistent_reduction = persistent_reduction
         self.dual_reduction = dual_reduction
         self.input_ptr_num = input_ptr_num
+        self.is_simt_mode = is_simt_mode
 
     @classmethod
     def _validate_axis(
@@ -174,7 +176,11 @@ class TileGenerator:
         self.dtype_bytes = get_byte_per_numel(kernel_meta.dtype)
  
         self.input_ptr_num = 3 if kernel_meta.input_ptr_num == 0 else min(kernel_meta.input_ptr_num, 3)
-        self.max_numel_threshold = num_ub_max // self.input_ptr_num * 1024
+        self.is_simt_mode = kernel_meta.is_simt_mode
+        if self.is_simt_mode: 
+            self.max_numel_threshold = num_register_max_simt * 1024
+        else:
+            self.max_numel_threshold = num_ub_max // self.input_ptr_num * 1024
         self.max_total_numel = functools.reduce(lambda x, y: x * y, [x.block_size for x in self.blocks]) if self.blocks else 1
         self.tiny_kernel = self.max_total_numel < 128 * 1024
         self.stop_numel = min(1024 // self.dtype_bytes, self.max_total_numel // (num_vector_core * 2)) if self.tiny_kernel else 1024 // self.dtype_bytes
@@ -213,11 +219,14 @@ class TileGenerator:
 
 
     def aligned_numel(self, numel):
-        min_numel = 32 // self.dtype_bytes
-        if numel <= min_numel:
-            return numel
-        aligned = ((numel + min_numel - 1) // min_numel) * min_numel
-        return aligned
+        if self.is_simt_mode:
+            return next_power_of_2(numel)
+        else:
+            min_numel = 32 // self.dtype_bytes
+            if numel <= min_numel:
+                return numel
+            aligned = ((numel + min_numel - 1) // min_numel) * min_numel
+            return aligned
 
     def valid_tile_numel(self, tile_numel):
         byte_num = self.dtype_bytes
@@ -339,21 +348,28 @@ class TileGenerator:
                         self.add_to_configs(list(tuple([x.block_size for x in self.blocks])))
                     slow_decend_split = (total_programs > num_vector_core_tile // 2)
 
-                if not slow_decend_split:
+                if self.is_simt_mode:
+                    if axis.is_tiling_axis:
+                        new_size = numel // 2
+                        self.blocks[axis_idx].block_size = next_power_of_2(new_size) if new_size > 0 else 1
+                    else:
+                        self.blocks[axis_idx].block_size = numel // 2
+                elif not slow_decend_split:
                     self.blocks[axis_idx].block_size = numel // 2
-                    self.blocks[axis_idx].sub_block_size = self.blocks[axis_idx].block_size
                 else:
                     step = numel // 4 if numel // 4 > 1 else 1
                     self.blocks[axis_idx].block_size = numel - step
-                    self.blocks[axis_idx].sub_block_size = self.blocks[axis_idx].block_size
+                self.blocks[axis_idx].sub_block_size = self.blocks[axis_idx].block_size
                 total_programs = calc_total_programs()
                 if self.blocks[axis_idx].block_size == 1 and (total_programs > program_threshold or self.dual_reduction):
                     self.candidate_blocks.append(tuple([x.block_size for x in self.blocks]))
             else:
-                if numel >= 32:
+                if self.is_simt_mode:
+                    new_size = numel // 2
+                    self.blocks[axis_idx].sub_block_size = next_power_of_2(new_size) if new_size > 0 else 1
+                elif numel >= 32:
                     self.blocks[axis_idx].sub_block_size = next_power_of_2(numel // 2)
-                else:  # numel >4 and numel < 128 :
-                    numel = self.blocks[axis_idx].sub_block_size
+                else:
                     self.blocks[axis_idx].sub_block_size = numel - 1
         return reached_stop_numel
 
@@ -374,12 +390,16 @@ class TileGenerator:
                     continue
                 if min_numel > 1 and abs(numel - min_numel) / min_numel < 0.2:
                     continue
-                if numel >= 128:
-                    self.blocks[axis.index].sub_block_size = next_power_of_2(numel // 2)
-                else:  # numel >4 and numel < 128 :
-                    numel = self.blocks[axis.index].sub_block_size
-                    numel = numel // 2
-                    self.blocks[axis.index].sub_block_size = min(self.aligned_numel(numel), next_power_of_2(numel))
+                if self.is_simt_mode and axis.is_tiling_axis:
+                    new_size = numel // 2
+                    self.blocks[axis.index].sub_block_size = next_power_of_2(new_size) if new_size > 0 else 1
+                else:
+                    if numel >= 128:
+                        self.blocks[axis.index].sub_block_size = next_power_of_2(numel // 2)
+                    else:
+                        numel = self.blocks[axis.index].sub_block_size
+                        numel = numel // 2
+                        self.blocks[axis.index].sub_block_size = min(self.aligned_numel(numel), next_power_of_2(numel))
 
         if len(self.candidate_blocks) == 0:
             # means there is no split axis and tiling_not_low_dim axis

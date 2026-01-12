@@ -26,11 +26,12 @@ import builtins
 import logging
 import os
 import time
+import copy
 from typing import Dict, List
 
 from triton.runtime.autotuner import Autotuner, Config
 
-from .utils import get_byte_per_numel, is_valid_axis_name, valid_axis_names
+from .utils import get_byte_per_numel, is_valid_axis_name, valid_axis_names, simt_candidate_warps
 from .autoparser import SplitAxesParser, TilingAxesParser, ReductionAxesParser, LowDimsAxesParser, PtrNumsParser
 
 
@@ -93,6 +94,8 @@ class AutoTilingTuner(Autotuner):
         self.dual_reduction = False
         self.persistent_reduction = False
         self.input_ptr_num = -1
+        self.is_simt_mode = False
+        self.user_specified_warps = None
         if len(key) > len(valid_axis_names):
             raise ValueError("Number of parameters exceeds the number of available axes.")
         self.keys = {axis: param for axis, param in zip(valid_axis_names, key)}
@@ -122,12 +125,32 @@ class AutoTilingTuner(Autotuner):
             self.persistent_reduction,
             self.dual_reduction,
             self.input_ptr_num,
+            self.is_simt_mode,
         )
         tile_gen = TileGenerator(kernel_meta=kernel_meta)
         tile_gen.descend_split_tiling()
 
         self.gen_configs.clear()
         self.gen_configs = tile_gen.configs
+
+        if self.is_simt_mode:
+            simt_configs = []
+            simt_warps = []
+            if self.user_specified_warps is not None:
+                simt_warps = [self.user_specified_warps]
+            else:
+                simt_warps = simt_candidate_warps
+            for base_cfg in self.gen_configs:
+                for num_warps in simt_warps:
+                    new_cfg = copy.deepcopy(base_cfg)
+                    new_cfg.num_warps = num_warps
+                    simt_configs.append(new_cfg)
+            
+            if self.print_autotuning:
+                print(f"Triton autotuning: Expanded to {len(simt_configs)} SIMT configs (with warps: {simt_candidate_warps})")
+            
+            self.gen_configs = simt_configs
+
         if len(self.gen_configs) == 0:
             print(
                 "[WARNING] The generated candidate tiling configs are empty based on provided parameters!"
@@ -152,6 +175,10 @@ class AutoTilingTuner(Autotuner):
     def run(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
         used_cached_result = True
+
+        self.is_simt_mode = kwargs.get('force_simt_only', False)
+        if 'num_warps' in kwargs and kwargs['num_warps'] is not None:
+            self.user_specified_warps = kwargs['num_warps']
 
         # generate key
         all_args = {**self.nargs, **kwargs}
@@ -238,10 +265,10 @@ class AutoTilingTuner(Autotuner):
         if config.pre_hook is not None:
             full_nargs = {**self.nargs, **kwargs, **config.all_kwargs()}
             config.pre_hook(full_nargs)
+        final_kwargs = dict(config.all_kwargs(), **kwargs)
         ret = self.fn.run(
             *args,
-            **kwargs,
-            **config.all_kwargs(),
+            **final_kwargs,
         )
         self.nargs = None
         return ret
