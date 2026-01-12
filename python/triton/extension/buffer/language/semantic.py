@@ -46,8 +46,21 @@ def alloc(
     element_ty = etype.to_ir(builder)
     address_space = tl._constexpr_to_value(address_space)
     addr_space_attr = address_space.to_ir(builder) if address_space else builder.get_null_attr()
-    return bl.buffer(builder.allocate_local_buffer(element_ty, shape, addr_space_attr),
+    return bl.buffer(builder.alloc(element_ty, shape, addr_space_attr),
                      dtype=etype, shape=shape, space=address_space)
+
+
+def to_buffer(
+    tensor: tl.tensor,
+    address_space: bl.address_space,
+    builder: ir.builder,
+) -> bl.buffer:
+    if not isinstance(tensor.shape, (tuple, list)) or not tensor.shape:
+        raise TypeError("scalar type cannot be converted to buffer")
+    address_space = tl._constexpr_to_value(address_space)
+    addr_space_attr = address_space.to_ir(builder) if address_space else builder.get_null_attr()
+    return bl.buffer(builder.to_buffer(tensor.handle, addr_space_attr),
+                     shape=tensor.shape, dtype=tensor.dtype, space=address_space)
 
 
 def to_tensor(

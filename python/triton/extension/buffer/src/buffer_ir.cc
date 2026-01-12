@@ -28,6 +28,8 @@
 #include "ir.h"
 #include "mlir/Dialect/Bufferization/IR/Bufferization.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Types.h"
 
 using namespace mlir;
 namespace py = pybind11;
@@ -48,12 +50,24 @@ void init_buffer_ir(py::module &&m)
       m, "buffer_builder", py::module_local(), py::dynamic_attr())
       .def(py::init<MLIRContext *>())
       .def("get_null_attr", [](BufferOpBuilder &self) { return Attribute(); })
-      .def("allocate_local_buffer",
+      .def("alloc",
            [](BufferOpBuilder &self, Type type, std::vector<int64_t> &shape,
               const Attribute &addressSpace) -> Value {
              auto memrefType = MemRefType::get(
                  shape, type, MemRefLayoutAttrInterface{}, addressSpace);
              return self.create<memref::AllocOp>(memrefType);
+           })
+      .def("to_buffer",
+           [](BufferOpBuilder &self, Value &src,
+              const Attribute &addressSpace) -> Value {
+             auto tensorType = dyn_cast<RankedTensorType>(src.getType());
+             if (!tensorType) {
+               llvm::report_fatal_error("to_buffer: src must be tensor type");
+             }
+             auto memrefType = MemRefType::get(
+                 tensorType.getShape(), tensorType.getElementType(),
+                 MemRefLayoutAttrInterface{}, addressSpace);
+             return self.create<bufferization::ToMemrefOp>(memrefType, src);
            })
       .def("to_tensor",
            [](BufferOpBuilder &self, Value &src, bool writable) -> Value {

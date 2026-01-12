@@ -24,6 +24,7 @@ __all__ = [
     "address_space",
     "alloc",
     "buffer",
+    "to_buffer",
     "to_tensor",
 ]
 
@@ -142,6 +143,25 @@ def alloc(
     """
     return semantic.alloc(
         etype, shape, _address_space, _builder
+    )
+
+
+@builtin
+def to_buffer(
+    tensor: tl.tensor,
+    space: address_space = None,
+    _builder=None
+) -> buffer:
+    """
+    Convert a tensor to a buffer.
+
+    :param tensor: the tensor to convert.
+    :type tensor: tl.tensor
+    :param space: the address space for the buffer (optional).
+    :type space: address_space
+    """
+    return semantic.to_buffer(
+        tensor, space, _builder
     )
 
 

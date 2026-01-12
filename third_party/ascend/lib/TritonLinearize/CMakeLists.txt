@@ -24,3 +24,6 @@ add_triton_library(TritonLinearize
   TritonTransforms
   TritonStructuredIR
 )
+
+# Disable deprecated-declarations warning for C++17 compatibility
+target_compile_options(TritonLinearize PRIVATE -Wno-error=deprecated-declarations)
