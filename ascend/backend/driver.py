@@ -753,10 +753,11 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     // stub argument for workspace
     void *syncBlockLock_ptr = NULL;
     void *workspace_addr_ptr = NULL;
+    auto optionsWorkspace = at::TensorOptions().device(at::kPrivateUse1).dtype(at::kByte);
     uint16_t ModuleId = 0;
     {f'''
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
-    at::Tensor syncBlockLock_tensor = at_npu::native::allocate_workspace(syncBlockLockSize, stream);
+    at::Tensor syncBlockLock_tensor = at::empty(syncBlockLockSize, optionsWorkspace);
     syncBlockLock_ptr = const_cast<void *>(syncBlockLock_tensor.storage().data());
     if (!syncBlockLock_ptr) {{
       {alloc_success_code if enable_taskqueue else sync_lock_fail_code}
@@ -773,7 +774,7 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     ''' if lock_num > 0 else ''}
     {f'''
     uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
-    at::Tensor workspace_tensor = at_npu::native::allocate_workspace(totalWorkSpaceSize, stream);
+    at::Tensor workspace_tensor = at::empty(totalWorkSpaceSize, optionsWorkspace);
     workspace_addr_ptr = const_cast<void *>(workspace_tensor.storage().data());
     if (!workspace_addr_ptr) {{
       {alloc_success_code if enable_taskqueue else workspace_fail_code}
