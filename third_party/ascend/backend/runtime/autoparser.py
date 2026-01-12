@@ -292,7 +292,9 @@ class TilingAxesParser(AxesKeyParser):
                isinstance(node.func.value, ast.Name) and \
                node.func.value.id == 'tl':
                 if isinstance(node.args, list) and len(node.args) == 2:
-                    return node.args[1].id
+                    for param in self.candidates_params_for_loop:
+                        if self.contains_target_var(node.args[1], param):
+                            return param
 
         for _, value in ast.iter_fields(node):
             if isinstance(value, list):
