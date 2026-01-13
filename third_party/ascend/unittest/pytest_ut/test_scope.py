@@ -81,6 +81,17 @@ def kernel_scope_vector(x_ptr, y_ptr, out_ptr, n, BLOCK: tl.constexpr):
         tl.store(out_ptr + i, result, mask=i < n)
 
 
+@triton.jit
+def kernel_scope_disable_auto_sync(x_ptr, y_ptr, out_ptr, n, BLOCK: tl.constexpr):
+    """Test disable auto sync."""
+    i = tl.program_id(0) * BLOCK + tl.arange(0, BLOCK)
+    with al.scope(core_mode="vector", disable_auto_sync=True):
+        x = tl.load(x_ptr + i, mask=i < n)
+        y = tl.load(y_ptr + i, mask=i < n)
+        result = x + y
+        tl.store(out_ptr + i, result, mask=i < n)
+
+
 # ============== Pytest tests ==============
 
 
@@ -118,6 +129,18 @@ def test_scope_vector_mode():
     assert "scope.scope" in mlir
     # Check for vector core type attribute
     assert "hivm.t_core_type" in mlir or "VECTOR" in mlir.upper()
+
+
+def test_scope_disable_auto_sync():
+    """Test disable auto sync generates correct attributes."""
+    mlir = compile_kernel(
+        kernel_scope_disable_auto_sync,
+        {"x_ptr": "*fp32", "y_ptr": "*fp32", "out_ptr": "*fp32", "n": "i32"},
+        {"BLOCK": 256},
+    )
+    assert "scope.scope" in mlir
+    # Check for disable auto sync attribute
+    assert "hivm.disable_auto_sync" in mlir
 
 
 # ============== Main for manual testing ==============

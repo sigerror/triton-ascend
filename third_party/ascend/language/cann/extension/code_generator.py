@@ -77,6 +77,9 @@ def _build_mlir_attrs_from_scope_attrs(builder, scope_attrs):
         elif k == "noinline":
             if not v:
                 mlir_attrs.pop("noinline")
+        elif k == "disable_auto_sync":
+            if v:
+                mlir_attrs["hivm.disable_auto_sync"] = _py_value_to_mlir_attr(builder, v)
         else:
             mlir_attrs[k] = _py_value_to_mlir_attr(builder, v)
     return mlir_attrs
