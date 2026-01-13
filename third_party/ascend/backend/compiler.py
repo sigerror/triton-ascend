@@ -457,6 +457,11 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
                 "--enable-hfusion-compile=true",
                 "--enable-triton-kernel-compile=true",
             ]
+        bisheng_options = metadata["bisheng_options"]
+        if bisheng_options is not None:
+            _compile_option_list += [
+                f"--append-bisheng-options={bisheng_options}"
+            ]
         cmd_list = (
             [npu_compiler_path, ttadapter_path]
             + _compile_option_list
@@ -643,6 +648,7 @@ class NPUOptions:
     allowed_dot_input_precisions: Tuple[str] = ("ieee", "hf32")
     max_num_imprecise_acc_default: int = 0
     extern_libs: dict = None
+    bisheng_options: str = None
 
     multibuffer: bool = not is_compile_on_910_95
     enable_auto_bind_sub_block: bool = not is_compile_on_910_95
