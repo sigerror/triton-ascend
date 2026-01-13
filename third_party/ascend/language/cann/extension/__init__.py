@@ -4,7 +4,7 @@ try:
 except Exception as e:
     is_compile_on_910_95 = False
 
-from .core import builtin, is_builtin, ascend_address_space, sub_vec_id, copy_from_ub_to_l1
+from .core import builtin, is_builtin, ascend_address_space, sub_vec_id, copy_from_ub_to_l1, sync_block_set, sync_block_wait, PIPE
 
 from .scope import scope
 
@@ -20,8 +20,6 @@ from .aux_ops import (
     compile_hint,
     multibuffer,
     sync_block_all,
-    sync_block_set,
-    sync_block_wait
 )
 
 from .vec_ops import (
@@ -47,6 +45,7 @@ __all__ = [
     "is_builtin",
     "sub_vec_id",
     "copy_from_ub_to_l1",
+    "PIPE",
 
     # address space
     "ascend_address_space",

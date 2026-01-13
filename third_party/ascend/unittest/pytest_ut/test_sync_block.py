@@ -24,6 +24,7 @@ import pytest
 import test_common
 
 import triton.language.extra.cann.extension as extension
+pipe = extension.PIPE
 
 # eg: pytest -v test_matmul_exp.py::test_matmul_exp
 #############################
@@ -55,8 +56,8 @@ def triton_matmul_exp(A_ptr, B_ptr, C_ptr, TBuff_ptr,
     acc_11 = tl.dot(a_vals, b_vals)           # [1, 1]
     tl.store(tbuff_ptrs, acc_11)
     
-    extension.sync_block_set("cube", "vector", 5)
-    extension.sync_block_wait("cube", "vector", 5)
+    extension.sync_block_set("cube", "vector", 5, pipe.PIPE_MTE1, pipe.PIPE_MTE3)
+    extension.sync_block_wait("cube", "vector", 5, pipe.PIPE_MTE1, pipe.PIPE_MTE3)
     
     acc_11_reload = tl.load(tbuff_ptrs)
     # Pointer grid for the single output element: shape [1,1]

@@ -24,6 +24,7 @@ __all__ = [
     "create_address_space"
 ]
 
+import enum
 from typing import (
     TypeVar, List, Union
 )
@@ -34,6 +35,7 @@ import triton.language.core as tl
 import triton.language.extra.cann.extension as al
 import triton.extension.buffer.language as bl
 
+from triton.language import semantic as real_semantic
 
 T = TypeVar('T')
 
@@ -43,6 +45,45 @@ def create_address_space(
     builder: ascend_ir.ascendnpu_ir_builder
 ) -> ir.attribute:
     return builder.get_target_attribute(address_space)
+
+
+class PIPE(enum.Enum):
+    PIPE_S = ascend_ir.PIPE.PIPE_S
+    PIPE_V = ascend_ir.PIPE.PIPE_V
+    PIPE_M = ascend_ir.PIPE.PIPE_M
+    PIPE_MTE1 = ascend_ir.PIPE.PIPE_MTE1
+    PIPE_MTE2 = ascend_ir.PIPE.PIPE_MTE2
+    PIPE_MTE3 = ascend_ir.PIPE.PIPE_MTE3
+    PIPE_ALL = ascend_ir.PIPE.PIPE_ALL
+    PIPE_FIX = ascend_ir.PIPE.PIPE_FIX
+
+
+def create_sync_block_set(sender, receiver, event_id, sender_pipe: PIPE, receiver_pipe: PIPE, _builder=None):
+    if isinstance(event_id, int):
+        _builder.sync_block_set(sender, receiver,
+                                event_id,
+                                sender_pipe.value, receiver_pipe.value)
+    elif isinstance(event_id, tl.constexpr):
+        _builder.sync_block_set(sender, receiver,
+                                real_semantic.to_tensor(event_id, _builder).handle,
+                                sender_pipe.value, receiver_pipe.value)
+    else:
+        _builder.sync_block_set(sender, receiver,
+                                event_id.handle, sender_pipe.value, receiver_pipe.value)
+
+
+def create_sync_block_wait(sender, receiver, event_id, sender_pipe: PIPE, receiver_pipe: PIPE, _builder=None):
+    if isinstance(event_id, int):
+        _builder.sync_block_wait(sender, receiver,
+                                 event_id,
+                                 sender_pipe.value, receiver_pipe.value)
+    elif isinstance(event_id, tl.constexpr):
+        _builder.sync_block_wait(sender, receiver,
+                                 real_semantic.to_tensor(event_id, _builder).handle,
+                                 sender_pipe.value, receiver_pipe.value)
+    else:
+        _builder.sync_block_wait(sender, receiver,
+                                 event_id.handle, sender_pipe.value, receiver_pipe.value)
 
 
 def sub_vec_id(builder: ascend_ir.ascendnpu_ir_builder) -> tl.tensor:
@@ -66,3 +107,4 @@ def copy_from_ub_to_l1(src: Union[tl.tensor, bl.buffer], dst: Union[tl.tensor, b
         builder.create_copy_buffer(src.handle, dst.handle)
     else:
         raise TypeError("src and dst must be tl.tensor or bl.buffer")
+

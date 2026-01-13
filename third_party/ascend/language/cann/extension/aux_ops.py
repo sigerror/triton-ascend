@@ -50,6 +50,13 @@ def sync_block_all(mode, event_id, _builder=None):
 @_tensor_member_fn
 @builtin
 def sync_block_set(sender, receiver, event_id, _builder=None):
+    import warnings
+
+    warnings.warn(
+        ("This method would be deprecated. Use al.sync_block_set instead."),
+        DeprecationWarning,
+        stacklevel=1,
+    )
     sender = _constexpr_to_value(sender)
     receiver = _constexpr_to_value(receiver)
     event_id = _constexpr_to_value(event_id)
@@ -64,6 +71,13 @@ def sync_block_set(sender, receiver, event_id, _builder=None):
 @_tensor_member_fn
 @builtin
 def sync_block_wait(sender, receiver, event_id, _builder=None):
+    import warnings
+
+    warnings.warn(
+        ("This method would be deprecated. Use al.sync_block_wait instead."),
+        DeprecationWarning,
+        stacklevel=1,
+    )
     sender = _constexpr_to_value(sender)
     receiver = _constexpr_to_value(receiver)
     event_id = _constexpr_to_value(event_id)

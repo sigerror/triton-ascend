@@ -30,6 +30,8 @@
 #include "bishengir/Dialect/Scope/IR/Scope.h"
 
 #include "mlir/AsmParser/AsmParser.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/Utils/Utils.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Types.h"
 #include "mlir/Support/LLVM.h"
@@ -54,6 +56,53 @@ struct AscendNPUIROpBuilder : public TritonOpBuilder {
   }
 };
 
+namespace {
+hivm::TCoreTypeAttr GetCore(MLIRContext *ctx, llvm::StringRef opName, llvm::StringRef sender)
+{
+  // Decide core type
+  hivm::TCoreTypeAttr core;
+  if (sender == "cube") {
+    if (opName == "sync_block_set")
+      core = hivm::TCoreTypeAttr::get(ctx, hivm::TCoreType::CUBE);
+    else
+      core = hivm::TCoreTypeAttr::get(ctx, hivm::TCoreType::VECTOR);
+  } else {
+    if (sender != "vector") {
+      throw std::runtime_error("sync_block_set/wait only supports 'cube' or 'vector' as sender");
+    }
+    if (opName == "sync_block_set")
+      core = hivm::TCoreTypeAttr::get(ctx, hivm::TCoreType::VECTOR);
+    else
+      core = hivm::TCoreTypeAttr::get(ctx, hivm::TCoreType::CUBE);
+  }
+
+  return core;
+}
+
+void buildSyncBlockOp(AscendNPUIROpBuilder &self, const std::string &opName, std::string &sender,
+                      std::string &receiver, Value id, hivm::PIPE senderPipe, hivm::PIPE receiverPipe)
+{
+  auto *ctx = self.getBuilder().getContext();
+  hivm::TCoreTypeAttr coreAttr = GetCore(ctx, opName, sender);
+  hivm::PipeAttr prodPipe = hivm::PipeAttr::get(ctx, senderPipe);
+  hivm::PipeAttr consPipe = hivm::PipeAttr::get(ctx, receiverPipe);
+  const size_t I64 = 64;
+  auto i64Ty = IntegerType::get(ctx, I64);
+  Value idI64 = id;
+  if (!id.getType().isInteger(I64)) {
+    idI64 = mlir::convertScalarToDtype(self.getBuilder(), id.getLoc(), id,
+                                       i64Ty, true);
+  }
+  if (opName == "sync_block_set") {
+    self.create<hivm::SyncBlockSetOp>(coreAttr, prodPipe, consPipe, idI64);
+  } else if (opName == "sync_block_wait") {
+    self.create<hivm::SyncBlockWaitOp>(coreAttr, prodPipe, consPipe, idI64);
+  } else {
+    throw std::runtime_error("Unsupported operation name for SyncBlockOp");
+  }
+}
+} // namespace
+
 void init_ascend_ir(py::module &&m) {
   py::enum_<hivm::AddressSpace>(m, "AddressSpace", py::module_local())
       .value("L1", hivm::AddressSpace::L1)
@@ -61,6 +110,17 @@ void init_ascend_ir(py::module &&m) {
       .value("L0A", hivm::AddressSpace::L0A)
       .value("L0B", hivm::AddressSpace::L0B)
       .value("L0C", hivm::AddressSpace::L0C)
+      .export_values();
+
+  py::enum_<hivm::PIPE>(m, "PIPE", py::module_local())
+      .value("PIPE_S", hivm::PIPE::PIPE_S)
+      .value("PIPE_V", hivm::PIPE::PIPE_V)
+      .value("PIPE_M", hivm::PIPE::PIPE_M)
+      .value("PIPE_MTE1", hivm::PIPE::PIPE_MTE1)
+      .value("PIPE_MTE2", hivm::PIPE::PIPE_MTE2)
+      .value("PIPE_MTE3", hivm::PIPE::PIPE_MTE3)
+      .value("PIPE_ALL", hivm::PIPE::PIPE_ALL)
+      .value("PIPE_FIX", hivm::PIPE::PIPE_FIX)
       .export_values();
 
   m.def("load_dialects", [](MLIRContext &context) {
@@ -110,6 +170,18 @@ void init_ascend_ir(py::module &&m) {
            [](AscendNPUIROpBuilder &self,
               std::vector<Value> operands) -> OpState {
              return self.create<scope::ReturnOp>(ValueRange(operands));
+           })
+      .def("sync_block_set",
+           [](AscendNPUIROpBuilder &self, std::string &sender,
+              std::string &receiver, Value id, hivm::PIPE senderPipe,
+              hivm::PIPE receiverPipe) -> void {
+              buildSyncBlockOp(self, "sync_block_set", sender, receiver, id, senderPipe, receiverPipe);
+           })
+      .def("sync_block_wait",
+           [](AscendNPUIROpBuilder &self, std::string &sender,
+              std::string &receiver, Value id, hivm::PIPE senderPipe,
+              hivm::PIPE receiverPipe) -> void {
+              buildSyncBlockOp(self, "sync_block_wait", sender, receiver, id, senderPipe, receiverPipe);
            })
       .def("get_target_attribute",
            [](AscendNPUIROpBuilder &self,

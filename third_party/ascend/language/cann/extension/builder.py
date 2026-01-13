@@ -73,5 +73,7 @@ def setup_unified_builder(main_builder, ascend_builder):
         'create_copy_buffer',
         'create_copy_tensor',
         'is_910_95',
+        "sync_block_set",
+        "sync_block_wait",
     ]
     attach_builder_methods(main_builder, ascend_builder, ascend_methods)

@@ -24,6 +24,8 @@ __all__ = [
     "ascend_address_space",
     "sub_vec_id",
     "copy_from_ub_to_l1",
+    "sync_block_set",
+    "sync_block_wait",
 ]
 
 from typing import TypeVar, List, Union
@@ -39,6 +41,7 @@ from triton.language.core import (
 )
 
 from . import semantic as semantic
+PIPE = semantic.PIPE
 
 
 T = TypeVar("T")
@@ -112,3 +115,38 @@ def copy_from_ub_to_l1(src: Union[tl.tensor, bl.buffer], dst: Union[tl.tensor, b
     :type dst: tl.tensor | bl.buffer
     """
     return semantic.copy_from_ub_to_l1(src, dst, _builder)
+
+
+def create_sync_block(sender, receiver, event_id, is_set: bool,
+                      sender_pipe=None, receiver_pipe=None,
+                      _builder=None):
+    sender = _constexpr_to_value(sender)
+    receiver = _constexpr_to_value(receiver)
+    assert isinstance(sender, str) and (sender == "cube" or sender == "vector"), f"ERROR: sender = {sender}, only supports cube/vector"
+    assert isinstance(receiver, str) and (receiver == "cube" or receiver == "vector"), f"ERROR: receiver = {receiver}, only supports cube/vector"
+    if isinstance(event_id, int):
+        assert (event_id >= 0) and (event_id < 16), f"event_id: {event_id} should be 0 ~ 15"
+    if sender == receiver:
+        raise ValueError(f'Unexpected pair: {sender} -> {receiver}, only supports cube -> vector or vector -> cube')
+    if sender_pipe is None and receiver_pipe is None:
+        if sender == "cube":
+            sender_pipe = PIPE.PIPE_FIX
+            receiver_pipe = PIPE.PIPE_MTE2
+        if sender == "vector":
+            sender_pipe = PIPE.PIPE_MTE3
+            receiver_pipe = PIPE.PIPE_MTE2
+    if not isinstance(sender_pipe, PIPE) or not isinstance(receiver_pipe, PIPE):
+        raise TypeError("sender_pipe and receiver_pipe must be instances of PIPE enum")
+    if is_set:
+        return semantic.create_sync_block_set(sender, receiver, event_id, sender_pipe, receiver_pipe, _builder)
+    return semantic.create_sync_block_wait(sender, receiver, event_id, sender_pipe, receiver_pipe, _builder)
+
+
+@builtin
+def sync_block_set(sender, receiver, event_id, sender_pipe=None, receiver_pipe=None, _builder=None):
+    return create_sync_block(sender, receiver, event_id, True, sender_pipe, receiver_pipe, _builder)
+
+
+@builtin
+def sync_block_wait(sender, receiver, event_id, sender_pipe=None, receiver_pipe=None, _builder=None):
+    return create_sync_block(sender, receiver, event_id, False, sender_pipe, receiver_pipe, _builder)
