@@ -136,7 +136,8 @@ def index_select_auto_kernel(in_ptr, indices_ptr, out_ptr, dim: tl.constexpr,
             
             # Auto-lowering: compute offsets and use standard load
             src_offsets = indices[:, None] * g_stride + other_idx[None, :]
-            tmp_buf = tl.load(in_ptr + src_offsets)
+            tmp_buf = tl.load(in_ptr + src_offsets,
+                              g_mask[:, None] & other_mask[None, :])
             
             tl.store(out_ptr + g_idx[:, None] * g_stride + other_idx[None, :],
                      tmp_buf, g_mask[:, None] & other_mask[None, :])
@@ -170,13 +171,15 @@ def triton_index_select(x0, dim, indices, impl='extension', num_vec_core=48):
     
     # Calculate UB space allocation
     enable_multi_buffer = True
-    available_ub_space = (125 * 1024) // (x0.element_size() * (2 if enable_multi_buffer else 1))
-    
-    if g_stride * 2 < available_ub_space:
-        other_block = g_stride
-        g_block_sub = available_ub_space // other_block
-    else:
-        other_block = available_ub_space
+    ub_size = 125 * 1024 // (2 if enable_multi_buffer else 1)
+    other_block = g_stride
+    g_block_sub = ub_size // (
+        # max memory consumption: arith.select + other (mask handling in auto)
+        x0.element_size() * g_stride * 3 +
+        indices.element_size()
+    )
+    if g_block_sub < 1:
+        other_block = (ub_size - indices.element_size()) // x0.element_size()
         g_block_sub = 1
     
     # Select kernel based on implementation

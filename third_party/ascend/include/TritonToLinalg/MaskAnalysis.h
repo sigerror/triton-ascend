@@ -1,5 +1,6 @@
 /*
  * Copyright (c) Huawei Technologies Co., Ltd. 2025. All rights reserved.
+ * Copyright (c) Microsoft Corporation, Meta Platforms.
  *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
@@ -28,6 +29,7 @@
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 
+#include <optional>
 #include <utility>
 
 namespace mlir {
@@ -137,6 +139,8 @@ private:
   LogicalResult parseExpandDims(triton::ExpandDimsOp expandDimsOp,
                                 const Location &loc, OpBuilder &builder);
 };
+
+std::optional<MaskState> runMaskAnalysis(Operation *op, OpBuilder &builder);
 
 } // namespace triton
 

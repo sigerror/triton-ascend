@@ -43,6 +43,28 @@ namespace mlir {
 
 namespace triton {
 
+namespace {
+
+template <typename MemAccOpTy>
+std::optional<MaskState> runMaskAnalysisImpl(MemAccOpTy op, OpBuilder &builder)
+{
+  auto mask = op.getMask();
+  if (!mask) {
+    return std::nullopt;
+  }
+
+  PatternRewriter::InsertionGuard insertGuard(builder);
+  builder.setInsertionPoint(op);
+
+  MaskState mstate;
+  if (mstate.parse(mask, op.getLoc(), builder).failed()) {
+    return std::nullopt;
+  }
+  return mstate;
+}
+
+} // namespace
+
 LogicalResult MaskState::parse(Value operand, const Location &loc,
                                OpBuilder &builder) {
   if (isa<IntegerType>(operand.getType())) {
@@ -620,6 +642,20 @@ void MaskState::eraseInsertedOps(Operation *rawOp, PatternRewriter &rewriter) {
     });
     rewriter.eraseOp(op);
   }
+}
+
+std::optional<MaskState> runMaskAnalysis(Operation *op, OpBuilder &builder)
+{
+  if (auto loadOp = dyn_cast<triton::LoadOp>(op)) {
+    return runMaskAnalysisImpl(loadOp, builder);
+  }
+  if (auto storeOp = dyn_cast<triton::StoreOp>(op)) {
+    return runMaskAnalysisImpl(storeOp, builder);
+  }
+  if (auto atomicRMWOp = dyn_cast<triton::AtomicRMWOp>(op)) {
+    return runMaskAnalysisImpl(atomicRMWOp, builder);
+  }
+  return std::nullopt;
 }
 
 } // namespace triton
