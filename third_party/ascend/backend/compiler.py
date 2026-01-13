@@ -449,6 +449,11 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-of-local-buffer={auto_multi_buffer}"]
 
+        disable_auto_inject_block_sync = metadata["disable_auto_inject_block_sync"]
+        if disable_auto_inject_block_sync is not None:
+            _compile_option_list += \
+                [f"--disable-auto-inject-block-sync={disable_auto_inject_block_sync}"]
+
         if _is_auto_map_parallel_blocks_enabled():
             _compile_option_list += ["--enable-auto-blockify-loop"]
         npu_compiler_path = _get_npucompiler_path()
