@@ -738,10 +738,11 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     // stub argument for workspace
     void *syncBlockLock_ptr = NULL;
     void *workspace_addr_ptr = NULL;
+    auto optionsWorkspace = at::TensorOptions().device(at::kPrivateUse1).dtype(at::kByte);
     uint16_t ModuleId = 0;
     {f'''
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
-    syncBlockLock_ptr = {get_backend_func("allocate_memory", "syncBlockLockSize", "stream")}
+    syncBlockLock_ptr = {get_backend_func("allocate_memory", "syncBlockLockSize", "optionsWorkspace")}
     if (!syncBlockLock_ptr) {{
       {alloc_success_code if enable_taskqueue else sync_lock_fail_code}
     }}
@@ -757,7 +758,7 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     ''' if lock_num > 0 else ''}
     {f'''
     uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
-    workspace_addr_ptr = {get_backend_func("allocate_memory", "totalWorkSpaceSize", "stream")}
+    workspace_addr_ptr = {get_backend_func("allocate_memory", "totalWorkSpaceSize", "optionsWorkspace")}
     if (!workspace_addr_ptr) {{
       {alloc_success_code if enable_taskqueue else workspace_fail_code}
     }}

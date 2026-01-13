@@ -284,8 +284,8 @@ def allocate_memory(size, stream):
 
 
 @backend_strategy_registry.register("torch_npu", "allocate_memory")
-def allocate_memory(size, stream):
-    return f"const_cast<void *>(at_npu::native::allocate_workspace({size}, {stream}).storage().data());"
+def allocate_memory(size, option):
+    return f"const_cast<void *>(at::empty({size}, {option}).storage().data());"
 
 
 @backend_strategy_registry.register("mindspore", "pre_launch")

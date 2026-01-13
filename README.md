@@ -38,15 +38,15 @@ Triton Ascend是面向昇腾平台构建的Triton编译框架，旨在让Triton�
 
 - #### Triton算子开发指南（入门级）
 在昇腾平台上开发Triton算子的方式与在GPU平台上基本相同。我们提供了下列算子的示例源码与配套说明来解释如何开发Triton算子的设备侧Kernel函数、主机侧调用代码以及算子功能验证代码。
-此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/07-accuracy-comparison.md) 与 [参考样例Python文件](./ascend/examples/tutorials/14-accuracy-comparison.py) 。
+此外，面向不同数据类型，我们提供了用于验证Triton算子精度的示例代码供大家参考：[算子精度验证开发指南](./docs/sources/getting-started/tutorials/07-accuracy-comparison.md) 与 [参考样例Python文件](./third_party/ascend/tutorials/14-accuracy-comparison.py) 。
 
 | 算子名称 | 开发指南 | 可执行Python文件 |
 |------|------|------|
-| VectorAdd |  [VectorAdd开发指南](./docs/sources/getting-started/tutorials/01-vector-add.md) | [VectorAdd Python文件](./ascend/examples/tutorials/01-vector-add.py) |
-| Softmax |  [Softmax开发指南](./docs/sources/getting-started/tutorials/02-fused-softmax.md) | [Softmax Python文件](./ascend/examples/tutorials/02-fused-softmax.py) |
-| LayerNorm |  [LayerNorm开发指南](./docs/sources/getting-started/tutorials/03-layer-norm.md) | [LayerNorm Python文件](./ascend/examples/tutorials/03-layer-norm.py) |
-| FlashAttention |  [FlashAttention开发指南](./docs/sources/getting-started/tutorials/04-fused-attention.md) | [FlashAttention Python文件](./ascend/examples/tutorials/04-fused-attention.py) |
-| Matmul |  [Matmul开发指南](./docs/sources/getting-started/tutorials/05-matrix-multiplication.md) | [Matmul Python文件](./ascend/examples/tutorials/05-matrix-multiplication.py) |
+| VectorAdd |  [VectorAdd开发指南](./docs/sources/getting-started/tutorials/01-vector-add.md) | [VectorAdd Python文件](./third_party/ascend/tutorials/01-vector-add.py) |
+| Softmax |  [Softmax开发指南](./docs/sources/getting-started/tutorials/02-fused-softmax.md) | [Softmax Python文件](./third_party/ascend/tutorials/02-fused-softmax.py) |
+| LayerNorm |  [LayerNorm开发指南](./docs/sources/getting-started/tutorials/03-layer-norm.md) | [LayerNorm Python文件](./third_party/ascend/tutorials/03-layer-norm.py) |
+| FlashAttention |  [FlashAttention开发指南](./docs/sources/getting-started/tutorials/04-fused-attention.md) | [FlashAttention Python文件](./third_party/ascend/tutorials/04-fused-attention.py) |
+| Matmul |  [Matmul开发指南](./docs/sources/getting-started/tutorials/05-matrix-multiplication.md) | [Matmul Python文件](./third_party/ascend/tutorials/05-matrix-multiplication.py) |
 
 - #### Triton算子自动寻优指南（入门级）
 Triton Ascend支持Triton原生的Autotune能力。通过对Tile/Block的形状配置进行搜索寻优，开发者可以在不改变Triton算子写法的条件下获得更优的性能。
