@@ -38,7 +38,20 @@ using namespace mlir;
 namespace py = pybind11;
 
 struct AscendNPUIROpBuilder : public TritonOpBuilder {
-  AscendNPUIROpBuilder(MLIRContext *context) : TritonOpBuilder(context) {}
+  std::string target;
+  static constexpr char kTarget910_95[] = "Ascend910_95";
+
+  explicit AscendNPUIROpBuilder(MLIRContext *context, std::string target = "")
+      : TritonOpBuilder(context), target(target) {}
+
+  bool is_910_95()
+  {
+    // TODO: Use enum instead of strings after enabling HACC in satandalone
+    // build
+    constexpr size_t kTargetLen = sizeof(kTarget910_95) - 1;
+    return target.size() >= kTargetLen &&
+           target.compare(0, kTargetLen, kTarget910_95) == 0;
+  }
 };
 
 void init_ascend_ir(py::module &&m) {
@@ -54,7 +67,6 @@ void init_ascend_ir(py::module &&m) {
     // Allow unregistered dialects so we can parse HACC attributes without
     // registering the dialect
     context.allowUnregisteredDialects();
-
     DialectRegistry registry;
     registry.insert<mlir::hivm::HIVMDialect, scope::ScopeDialect>();
     context.appendDialectRegistry(registry);
@@ -63,7 +75,8 @@ void init_ascend_ir(py::module &&m) {
 
   py::class_<AscendNPUIROpBuilder, TritonOpBuilder>(
       m, "ascendnpu_ir_builder", py::module_local(), py::dynamic_attr())
-      .def(py::init<MLIRContext *>())
+      .def(py::init<MLIRContext *, std::string>(), py::arg("context"),
+           py::arg("target") = "")
       .def("get_t_core_type_cube_attr",
            [](AscendNPUIROpBuilder &self) -> Attribute {
              return hivm::TCoreTypeAttr::get(self.getBuilder().getContext(),
@@ -73,6 +86,11 @@ void init_ascend_ir(py::module &&m) {
            [](AscendNPUIROpBuilder &self) -> Attribute {
              return hivm::TCoreTypeAttr::get(self.getBuilder().getContext(),
                                              hivm::TCoreType::VECTOR);
+           })
+      .def("parse_attr",
+           [](TritonOpBuilder &self, std::string value) -> Attribute {
+             auto *ctx = self.getBuilder().getContext();
+             return mlir::parseAttribute(value, ctx);
            })
       .def("create_scope_op",
            [](AscendNPUIROpBuilder &self, py::dict &scopeAttrs,
@@ -108,6 +126,18 @@ void init_ascend_ir(py::module &&m) {
              // NPU compiler will parse this attribute and disable auto tile and bind subblock pass.
              moduleOp->setAttr("hivm.disable_auto_tile_and_bind_subblock", mlir::UnitAttr::get(ctx));
              return subBlockIdxOp;
- 	         });
-}
+ 	         })
+      .def("is_910_95",
+          [](AscendNPUIROpBuilder &self) -> bool {
+            return self.is_910_95();
+           })
+      .def("create_copy_buffer",
+           [](AscendNPUIROpBuilder &self, Value src, Value dst) {
+             self.create<hivm::CopyOp>(mlir::TypeRange{}, src, dst);
+           })
+      .def("create_copy_tensor",
+           [](AscendNPUIROpBuilder &self, Value src, Value dst) {
+             return self.create<hivm::CopyOp>(mlir::TypeRange{dst.getType()}, src, dst).getResult(0);
+           });
 
+}

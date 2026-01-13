@@ -24,7 +24,7 @@ Ascend-specific builder utilities for code generation.
 
 __all__ = [
     "create_builder_method_wrapper",
-    "attach_builder_methods", 
+    "attach_builder_methods",
     "setup_unified_builder",
 ]
 
@@ -70,6 +70,8 @@ def setup_unified_builder(main_builder, ascend_builder):
         'get_t_core_type_vector_attr',
         'get_target_attribute',
         'create_get_sub_vec_id',
+        'create_copy_buffer',
+        'create_copy_tensor',
+        'is_910_95',
     ]
     attach_builder_methods(main_builder, ascend_builder, ascend_methods)
-

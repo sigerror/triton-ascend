@@ -18,7 +18,43 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 # THE SOFTWARE.
 
+import logging
+from triton._C.libtriton.ascend import ir as ascend_ir
+
 from .testing import do_bench_npu
 
+
+def _apply_ascend_patch():
+    try:
+        from triton.compiler.compiler import ASTSource
+    except ImportError:
+        return
+
+    if not getattr(ASTSource, "_ascend_patch_applied", False):
+        _original_make_ir = ASTSource.make_ir
+
+        def _patched_make_ir(self, options, codegen_fns, module_map, context):
+            """
+            Monkey Patch for Ascend:
+            Injects 'hacc.target' attribute into the module after generation.
+            """
+            module = _original_make_ir(self, options, codegen_fns, module_map, context)
+
+            if hasattr(options, "arch") and options.arch:
+                try:
+                    builder = ascend_ir.ascendnpu_ir_builder(context, options.arch)
+
+                    target_attr_str = f'#hacc.target<"{options.arch}">'
+                    module.set_attr("hacc.target", builder.parse_attr(target_attr_str))
+                except Exception as e:
+                    logging.warning(f"[Ascend Patch] Failed to set hacc.target: {e}")
+
+            return module
+
+        ASTSource.make_ir = _patched_make_ir
+        ASTSource._ascend_patch_applied = True
+
+
+_apply_ascend_patch()
 
 __all__ = ["do_bench_npu"]

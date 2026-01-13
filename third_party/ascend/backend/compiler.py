@@ -626,6 +626,7 @@ class NPUOptions:
     sanitize_overflow: bool = True
     llvm_version: int = 15
     kernel_name: str = "triton_"
+    arch: str = ""
 
     cluster_dims: tuple = (1, 1, 1)
     num_warps: int = 4
@@ -777,6 +778,7 @@ class AscendBackend(BaseBackend):
                 for k in NPUOptions.__dataclass_fields__.keys()
                 if k in opts
             }
+            args.setdefault("arch", self.target.arch)
             options = NPUOptions(**args)
         else:
             args = {

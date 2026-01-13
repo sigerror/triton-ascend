@@ -22,10 +22,11 @@
 
 __all__ = [
     "ascend_address_space",
-    "sub_vec_id"
+    "sub_vec_id",
+    "copy_from_ub_to_l1",
 ]
 
-from typing import TypeVar, List
+from typing import TypeVar, List, Union
 from functools import wraps
 
 from triton._C.libtriton import ir
@@ -98,3 +99,16 @@ def sub_vec_id(_builder=None) -> tl.tensor:
     Get the Vector Core index on the AI Core.
     """
     return semantic.sub_vec_id(_builder)
+
+
+@builtin
+def copy_from_ub_to_l1(src: Union[tl.tensor, bl.buffer], dst: Union[tl.tensor, bl.buffer], _builder: None) -> None:
+    """
+    Copies data from the Unified Buffer (UB) to the L1 Buffer.
+
+    :param src: The source data located in the Unified Buffer.
+    :type src: tl.tensor | bl.buffer
+    :param dst: The destination buffer located in L1 memory.
+    :type dst: tl.tensor | bl.buffer
+    """
+    return semantic.copy_from_ub_to_l1(src, dst, _builder)

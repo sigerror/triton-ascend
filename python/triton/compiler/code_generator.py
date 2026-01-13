@@ -216,7 +216,7 @@ class CodeGenerator(ast.NodeVisitor):
         self.builder.options = options
         
         # Set up unified builder interface with methods from specialized builders
-        self.ascend_builder = ascend_ir.ascendnpu_ir_builder(context)
+        self.ascend_builder = ascend_ir.ascendnpu_ir_builder(context, getattr(options, "arch", ""))
         self.ascend_builder.set_loc(file_name, begin_line, 0)
         setup_unified_builder(self.builder, self.ascend_builder)
         self.buffer_builder = buffer_ir.buffer_builder(context)
@@ -1328,7 +1328,7 @@ def kernel_suffix(signature, specialization):
     return suffix
 
 
-def ast_to_ttir(fn, specialization, context, options, codegen_fns, module_map):
+def ast_to_ttir(fn, specialization, context, options, codegen_fns, module_map, module=None):
     attrs = specialization.attrs
     # create kernel prototype
     cst_key = lambda i: fn.arg_names.index(i) if isinstance(i, str) else i
@@ -1352,7 +1352,7 @@ def ast_to_ttir(fn, specialization, context, options, codegen_fns, module_map):
     prototype = language.function_type([], arg_types)
     generator = CodeGenerator(context, prototype, gscope=gscope, constants=all_constants, function_name=function_name,
                               jit_fn=fn, attributes=fn_attrs, is_kernel=True, file_name=file_name,
-                              begin_line=begin_line, options=options, codegen_fns=codegen_fns, module_map=module_map)
+                               begin_line=begin_line, options=options, codegen_fns=codegen_fns, module_map=module_map, module=module)
     generator.visit(fn.parse())
 
     ret = generator.module
