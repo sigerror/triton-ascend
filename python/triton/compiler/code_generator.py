@@ -9,6 +9,7 @@ import textwrap
 from typing import Any, Callable, Dict, Optional, Tuple, Type, Union
 
 import triton.language.extra.cann.extension as extension
+from triton.extension.buffer.language import core as bl
 from triton.extension.buffer.language.builder import setup_unified_builder_with_buffer_builder
 
 from .. import language
@@ -46,6 +47,8 @@ def mangle_ty(ty):
     if ty.is_void():
         return 'V'
     raise TypeError(f'Unsupported type {ty}')
+
+mangle_ty = WITH_DISPATCH.get("mangle_ty", mangle_ty)
 
 
 def mangle_fn(name, arg_tys, constants):
@@ -214,7 +217,7 @@ class CodeGenerator(ast.NodeVisitor):
         self.begin_line = begin_line - 1
         self.builder.set_loc(file_name, begin_line, 0)
         self.builder.options = options
-        
+
         # Set up unified builder interface with methods from specialized builders
         self.ascend_builder = ascend_ir.ascendnpu_ir_builder(context, getattr(options, "arch", ""))
         self.ascend_builder.set_loc(file_name, begin_line, 0)
@@ -222,7 +225,7 @@ class CodeGenerator(ast.NodeVisitor):
         self.buffer_builder = buffer_ir.buffer_builder(context)
         self.buffer_builder.set_loc(file_name, begin_line, 0)
         setup_unified_builder_with_buffer_builder(self.builder, self.buffer_builder)
-        
+
         # dict of functions provided by the backend. Below are the list of possible functions:
         # Convert custom types not natively supported on HW.
         # convert_custom_types(intput_tensor, dtype, fp_downcast_rounding=None, _builder=None)
@@ -451,7 +454,11 @@ class CodeGenerator(ast.NodeVisitor):
                 if isinstance(self.prototype.param_types[idx], nv_tma_desc_type):
                     self.fn.set_arg_attr(idx, "tt.nv_tma_desc", 1)
 
-                arg_values.append(tensor(self.fn.args(idx), self.prototype.param_types[idx]))
+                param_type = self.prototype.param_types[idx]
+                if isinstance(param_type, bl.buffer_type):
+                    arg_values.append(bl.buffer(self.fn.args(idx), param_type))
+                else:
+                    arg_values.append(tensor(self.fn.args(idx), param_type))
                 idx += 1
 
         insert_pt = self.builder.get_insertion_block()

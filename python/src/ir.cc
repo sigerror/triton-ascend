@@ -9,6 +9,7 @@
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/UB/IR/UBOps.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -810,6 +811,21 @@ void init_triton_ir(py::module &&m) {
            [](TritonOpBuilder &self, Type &elementType,
               std::vector<int64_t> &shape) -> Type {
              return RankedTensorType::get(shape, elementType);
+           })
+      .def("get_buffer_ty",
+           [](TritonOpBuilder &self, std::vector<int64_t> &shape,
+              Type &elementType, const Attribute &memorySpace) -> Type {
+             return MemRefType::get(shape, elementType,
+                                    MemRefLayoutAttrInterface{}, memorySpace);
+           })
+      .def("get_buffer_ty_with_strides",
+           [](TritonOpBuilder &self, std::vector<int64_t> &shape,
+              Type &elementType, const std::vector<int64_t> &strides,
+              const Attribute &memorySpace) -> Type {
+             // create a layout with strides, using dynamic offset
+             auto layout = StridedLayoutAttr::get(
+                 self.getBuilder().getContext(), ShapedType::kDynamic, strides);
+             return MemRefType::get(shape, elementType, layout, memorySpace);
            })
       .def("get_function_ty",
            [](TritonOpBuilder &self, std::vector<Type> inTypes,

@@ -22,9 +22,42 @@
 Ascend-specific code generation handlers for 'with' statement context managers.
 """
 
+__all__ = ["handle_scope_with", "mangle_ty"]
 import ast
 
-__all__ = ["handle_scope_with"]
+
+def mangle_ty(ty):
+    """
+    Replacement implementation for triton.compiler.code_generator.mangle_ty.
+
+    This is registered via ASCEND_WITH_DISPATCH["mangle_ty"] and picked up by
+    triton.compiler.code_generator through its global WITH_DISPATCH table.
+    """
+    # Lazy imports to avoid circular dependencies at module import time.
+    from triton import language
+    from triton.extension.buffer.language import core as bl
+
+    # Buffer types are Python-side dtypes; handle them first.
+    if isinstance(ty, bl.buffer_type):
+        elt = mangle_ty(ty.element_ty)
+        shape = "_".join(map(str, ty.shape))
+        return f"B{elt}S{shape}S"
+
+    if ty.is_ptr():
+        return "P" + mangle_ty(ty.element_ty)
+    if ty.is_int():
+        SIGNED = language.dtype.SIGNEDNESS.SIGNED
+        prefix = "i" if ty.int_signedness == SIGNED else "u"
+        return prefix + str(ty.int_bitwidth)
+    if ty.is_floating():
+        return str(ty)
+    if ty.is_block():
+        elt = mangle_ty(ty.scalar)
+        shape = "_".join(map(str, ty.shape))
+        return f"{elt}S{shape}S"
+    if ty.is_void():
+        return "V"
+    raise TypeError(f"Unsupported type {ty}")
 
 
 def _extract_scope_attributes(context_expr):

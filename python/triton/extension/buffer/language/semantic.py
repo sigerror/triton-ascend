@@ -43,11 +43,15 @@ def alloc(
     if not isinstance(shape, (tuple, list)):
         raise TypeError("shape must be list/tuple")
     etype = tl._constexpr_to_value(etype)
-    element_ty = etype.to_ir(builder)
     address_space = tl._constexpr_to_value(address_space)
-    addr_space_attr = address_space.to_ir(builder) if address_space else builder.get_null_attr()
-    return bl.buffer(builder.alloc(element_ty, shape, addr_space_attr),
-                     dtype=etype, shape=shape, space=address_space)
+    element_ty_ir = etype.to_ir(builder)
+    addr_space_attr = (
+        address_space.to_ir(builder) if address_space else builder.get_null_attr()
+    )
+    memref_ty = builder.get_buffer_ty(shape, element_ty_ir, addr_space_attr)
+    handle = builder.alloc(memref_ty)
+    buffer_ty = bl.buffer_type(element_ty=etype, shape=shape, space=address_space)
+    return bl.buffer(handle, buffer_ty)
 
 
 def to_buffer(
@@ -58,9 +62,12 @@ def to_buffer(
     if not isinstance(tensor.shape, (tuple, list)) or not tensor.shape:
         raise TypeError("scalar type cannot be converted to buffer")
     address_space = tl._constexpr_to_value(address_space)
-    addr_space_attr = address_space.to_ir(builder) if address_space else builder.get_null_attr()
-    return bl.buffer(builder.to_buffer(tensor.handle, addr_space_attr),
-                     shape=tensor.shape, dtype=tensor.dtype, space=address_space)
+    addr_space_attr = (
+        address_space.to_ir(builder) if address_space else builder.get_null_attr()
+    )
+    handle = builder.to_buffer(tensor.handle, addr_space_attr)
+    buffer_ty = bl.buffer_type(element_ty=tensor.dtype, shape=tensor.shape, space=address_space)
+    return bl.buffer(handle, buffer_ty)
 
 
 def to_tensor(
@@ -72,3 +79,45 @@ def to_tensor(
         raise TypeError("memref must be bl.buffer")
     tensor_type = tl.block_type(memref.dtype, memref.shape)
     return tl.tensor(builder.to_tensor(memref.handle, writable), tensor_type)
+
+
+def subview(
+    src: bl.buffer,
+    offsets: List[tl.tensor],
+    sizes: List[tl.constexpr],
+    strides: List[tl.constexpr],
+    builder: ir.builder
+) -> bl.buffer:
+
+    new_offsets = [offset.handle for offset in offsets]
+    sizes_int = tl._unwrap_shape(sizes)
+    strides_int = tl._unwrap_shape(strides)
+
+    result_handle = builder.subview(src.handle, new_offsets, sizes_int, strides_int)
+    
+    # calculate the memory layout strides of the source buffer
+    if src.strides:
+        # use the strides of the source buffer
+        src_memory_strides = src.strides
+    else:
+        # calculate the default row-major strides
+        src_memory_strides = []
+        stride = 1
+        for dim_size in reversed(src.shape):
+            if dim_size < 0:
+                raise ValueError("Cannot compute strides for buffer with dynamic dimensions")
+            src_memory_strides.insert(0, stride)
+            stride *= dim_size
+    
+    result_memory_strides = []
+    for src_stride, subview_stride in zip(src_memory_strides, strides_int):
+        result_memory_strides.append(src_stride * subview_stride)
+        
+    # create buffer_type with strides
+    buffer_ty = bl.buffer_type(
+        element_ty=src.dtype, 
+        shape=sizes_int, 
+        space=src.space,
+        strides=result_memory_strides  
+    )
+    return bl.buffer(result_handle, buffer_ty)

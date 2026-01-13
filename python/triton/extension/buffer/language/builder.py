@@ -24,7 +24,7 @@ buffer-specific builder utilities for code generation.
 
 __all__ = [
     "create_builder_method_wrapper_with_buffer_builder",
-    "attach_builder_methods_with_buffer_builder", 
+    "attach_builder_methods_with_buffer_builder",
     "setup_unified_builder_with_buffer_builder",
 ]
 

@@ -22,6 +22,7 @@
 
 __all__ = [
     "address_space",
+    "buffer_type",
     "alloc",
     "buffer",
     "to_buffer",
@@ -34,6 +35,7 @@ from functools import wraps
 
 from triton._C.libtriton import ir
 import triton.language.core as tl
+from triton.language import semantic as real_semantic
 
 
 T = TypeVar("T")
@@ -76,6 +78,56 @@ class address_space:
             "Abstract address_space cannot be converted to ir"
         )
 
+
+class buffer_type(tl.dtype):
+
+    def __init__(self, element_ty: tl.dtype, shape: List, space: address_space = None, strides: List = None):
+        self.element_ty = element_ty
+        self.shape = shape if isinstance(shape, list) else list(shape)
+        self.space = space
+        self.strides = strides if strides is not None else []
+        self.name = self._make_name()
+
+    def _make_name(self):
+        res = '<buffer ' + 'x'.join(str(s) for s in self.shape) + 'x' + str(self.element_ty)
+        if self.strides:
+            res += ', strides=[' + ', '.join(str(s) for s in self.strides) + ']'
+        if self.space:
+            res += ', ' + str(self.space)
+        return res + '>'
+
+    def to_ir(self, builder: ir.builder) -> ir.type:
+        element_ty_ir = self.element_ty.to_ir(builder)
+        addr_space_attr = self.space.to_ir(builder) if self.space else builder.get_null_attr()
+
+        # use the method with strides if strides is not empty
+        if self.strides:
+            return builder.get_buffer_ty_with_strides(self.shape, element_ty_ir, self.strides, addr_space_attr)
+        else:
+            return builder.get_buffer_ty(self.shape, element_ty_ir, addr_space_attr)
+
+    def __str__(self):
+        return self.name
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __eq__(self, other) -> bool:
+        if not isinstance(other, buffer_type):
+            return False
+        return (self.element_ty == other.element_ty and
+                self.shape == other.shape and
+                self.space == other.space and
+                self.strides == other.strides)
+
+    def __ne__(self, other) -> bool:
+        return not self.__eq__(other)
+
+    @property
+    def scalar(self):
+        return self.element_ty
+
+
 # -----------------------
 # buffer
 # -----------------------
@@ -99,14 +151,15 @@ class buffer(tl._value):
        it its own section so it looks intentional. :)
     """
 
-    def __init__(self, handle, shape, dtype: tl.dtype, space: address_space = None):
+    def __init__(self, handle, buffer_ty: buffer_type):
         """Not called by user code."""
-        # IR handle
         super().__init__(handle)
-        self.dtype = dtype.scalar
-        self.shape = shape
-        self.space = space
-
+        self.type = buffer_ty
+        self.dtype = buffer_ty.element_ty.scalar
+        self.shape = buffer_ty.shape
+        self.space = buffer_ty.space
+        self.strides = buffer_ty.strides  
+    
     def __str__(self) -> str:
         # ex. "<16x32xfloat32, address_space>"
         res = '<' + 'x'.join(str(s)
@@ -114,6 +167,16 @@ class buffer(tl._value):
         if self.space:
             res += ', ' + str(self.space)
         return res + '>'
+
+    @builtin
+    def subview(
+        self,
+        offsets: List[tl.constexpr],
+        sizes: List[tl.constexpr],
+        strides: List[tl.constexpr],
+        _builder=None
+    ) -> 'buffer':
+        return subview(self, offsets, sizes, strides, _builder=_builder)
 
     @builtin
     def to_tensor(self, writable=True, _builder=None):
@@ -180,3 +243,65 @@ def to_tensor(
     :type writable: bool
     """
     return semantic.to_tensor(memref, writable, _builder)
+
+
+@builtin
+def subview(
+    src: buffer,
+    offsets: List[tl.constexpr],
+    sizes: List[tl.constexpr],
+    strides: List[tl.constexpr],
+    _builder=None
+) -> buffer:
+    '''
+    Creates a subview of the source buffer with the specified offsets, sizes, and strides.
+
+    :param src: The source buffer to create a subview from.
+    :type src: buffer
+    :param offsets: A list of non-negative integers representing the offsets in each dimension.
+    :type offsets: List[tl.constexpr]
+    :param sizes: A list of non-negative integers representing the sizes in each dimension.
+    :type sizes: List[tl.constexpr]
+    :param strides: A list of non-negative integers representing the strides in each dimension.
+    :type strides: List[tl.constexpr]
+    :return: A new buffer representing the subview of the source buffer.
+    :rtype: buffer
+    '''
+    # Validate that sizes and strides contain only constexpr values
+    new_sizes = []
+    for i, size in enumerate(sizes):
+        if isinstance(size, int):
+            # Convert regular integers to constexpr
+            new_sizes.append(tl.constexpr(size))
+        elif isinstance(size, tl.constexpr):
+            new_sizes.append(size)
+        else:
+            raise TypeError(f"sizes[{i}] must be constexpr, got {type(size).__name__}")
+    
+    new_strides = []
+    for i, stride in enumerate(strides):
+        if isinstance(stride, int):
+            # Convert regular integers to constexpr
+            new_strides.append(tl.constexpr(stride))
+        elif isinstance(stride, tl.constexpr):
+            new_strides.append(stride)
+        else:
+            raise TypeError(f"strides[{i}] must be constexpr, got {type(stride).__name__}")
+    
+    new_offsets = []
+    for offset in offsets:
+        if isinstance(offset, tl.constexpr):
+            # Check that constexpr offset values cannot be negative
+            if offset < 0:
+                raise ValueError(f"Offset value must be non-negative, got {offset}")
+            new_offsets.append(real_semantic.to_tensor(offset, _builder))
+        elif isinstance(offset, int):
+            # Convert regular integers to constexpr and then to tensor
+            if offset < 0:
+                raise ValueError(f"Offset value must be non-negative, got {offset}")
+            new_offsets.append(real_semantic.to_tensor(tl.constexpr(offset), _builder))
+        else:
+            # Assume it's already a tensor
+            new_offsets.append(offset)
+    
+    return semantic.subview(src, new_offsets, new_sizes, new_strides, _builder)
