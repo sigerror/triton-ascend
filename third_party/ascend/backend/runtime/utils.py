@@ -22,23 +22,46 @@
 
 import torch
 
-from triton.runtime.driver import driver
+_cached_params = None
 
-# npu hardware params
-target = driver.active.get_current_target()
-device = driver.active.get_current_device()
-prop = driver.active.utils.get_device_properties(device)
 
-num_cube_core = prop["num_aicore"]
-num_vector_core = prop["num_aicore"]
-num_ub_max = 192
+def _init_npu_params():
+    global _cached_params
+    if _cached_params is not None:
+        return _cached_params
+    
+    from triton.runtime.driver import driver
+    
+    target = driver.active.get_current_target()
+    device = driver.active.get_current_device()
+    prop = driver.active.utils.get_device_properties(device)
+    
+    num_cube_core = prop["num_aicore"]
+    num_vector_core = prop["num_aicore"]
+    num_ub_max = 192
+    
+    ASCEND_VARIANTS = ["Ascend910B", "Ascend910_93", "Ascend910_95"]
+    if any(variant in target.arch for variant in ASCEND_VARIANTS):
+        num_vector_core = num_cube_core * 2
+    
+    if '910_95' in target.arch:
+        num_ub_max = 256
+    
+    _cached_params = {
+        'target': target,
+        'device': device,
+        'prop': prop,
+        'num_cube_core': num_cube_core,
+        'num_vector_core': num_vector_core,
+        'num_ub_max': num_ub_max,
+    }
+    return _cached_params
 
-ASCEND_VARIANTS = ["Ascend910B", "Ascend910_93", "Ascend910_95"]
-if any(variant in target.arch for variant in ASCEND_VARIANTS):
-    num_vector_core = num_cube_core * 2
 
-if '910_95' in target.arch:
-    num_ub_max = 256
+def __getattr__(name):
+    if name in ['target', 'device', 'prop', 'num_cube_core', 'num_vector_core', 'num_ub_max']:
+        return _init_npu_params()[name]
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 # wrapper npu 32 bytes align, get and pass unalign info to triton meta
 # then autotune choose tiling param and send them to bishengIR
