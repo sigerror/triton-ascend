@@ -56,6 +56,7 @@
 #include <map>
 #include <optional>
 #include <unordered_set>
+#include <utility>
 #include <variant>
 
 #define DEBUG_TYPE "TritonNPU-Utils"
@@ -887,38 +888,43 @@ LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter
 
     const StringRef reduceRef = "reduce_mode";
     const StringRef tieBreakLeftRef = "tie_break_left";
+    const StringRef unsignedSrcRef = "unsigned_src";
 
     // Unify signed/unsigned and int/float predicate
     enum class Predicate { Undefined = 0, lt = 1, gt = 2, eq = 3 };
-    auto unifyPredicateI = [](arith::CmpIPredicate p)
-      -> Predicate {
-        switch(p) {
-         case arith::CmpIPredicate::slt:
-         case arith::CmpIPredicate::ult:
-          return Predicate::lt;
-         case arith::CmpIPredicate::sgt:
-         case arith::CmpIPredicate::ugt:
-          return Predicate::gt;
-         case arith::CmpIPredicate::eq:
-          return Predicate::eq;
-         default:
-          return Predicate::Undefined;
+    enum class Signedness { NotApplicable = 0, Signed = 1, Unsigned = 2 };
+    auto unifyPredicateI = [](arith::CmpIPredicate p) -> std::pair<Predicate, Signedness> {
+        switch (p) {
+            case arith::CmpIPredicate::slt:
+                return {Predicate::lt, Signedness::Signed};
+            case arith::CmpIPredicate::ult:
+                return {Predicate::lt, Signedness::Unsigned};
+            case arith::CmpIPredicate::sgt:
+                return {Predicate::gt, Signedness::Signed};
+            case arith::CmpIPredicate::ugt:
+                return {Predicate::gt, Signedness::Unsigned};
+            case arith::CmpIPredicate::eq:
+                return {Predicate::eq, Signedness::NotApplicable};
+            default:
+                return {Predicate::Undefined, Signedness::NotApplicable};
         }
     };
-    auto unifyPredicateF = [](arith::CmpFPredicate p)
-      -> Predicate {
-        switch(p) {
-         case arith::CmpFPredicate::OLT:
-         case arith::CmpFPredicate::ULT:
-          return Predicate::lt;
-         case arith::CmpFPredicate::OGT:
-         case arith::CmpFPredicate::UGT:
-          return Predicate::gt;
-         case arith::CmpFPredicate::OEQ:
-         case arith::CmpFPredicate::UEQ:
-          return Predicate::eq;
-         default:
-          return Predicate::Undefined;
+    auto unifyPredicateF = [](arith::CmpFPredicate p) -> std::pair<Predicate, Signedness> {
+        switch (p) {
+            case arith::CmpFPredicate::OLT:
+                return {Predicate::lt, Signedness::Signed};
+            case arith::CmpFPredicate::ULT:
+                return {Predicate::lt, Signedness::Unsigned};
+            case arith::CmpFPredicate::OGT:
+                return {Predicate::gt, Signedness::Signed};
+            case arith::CmpFPredicate::UGT:
+                return {Predicate::gt, Signedness::Unsigned};
+            case arith::CmpFPredicate::OEQ:
+                return {Predicate::eq, Signedness::Signed};
+            case arith::CmpFPredicate::UEQ:
+                return {Predicate::eq, Signedness::Unsigned};
+            default:
+                return {Predicate::Undefined, Signedness::NotApplicable};
         }
     };
 
@@ -953,21 +959,24 @@ LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter
     };
 
     std::vector<Predicate> preds;
+    std::vector<Signedness> signednesses;
     // A better way is to trace the arith.select
     // Checking the operations one by one is hacky :(
     for (auto it = body.begin(); it != body.end(); ++it) {
-        Predicate pred = Predicate::Undefined;
-        if (auto op = dyn_cast<arith::CmpIOp>(*it)) {
-            auto predi = op.getPredicate();
-            pred = unifyPredicateI(predi);
-        }
-        if (auto op = dyn_cast<arith::CmpFOp>(*it)) {
-            auto predf = op.getPredicate();
-            pred = unifyPredicateF(predf);
-        }
-        if (pred != Predicate::Undefined) {
-            preds.push_back(pred);
-        }
+      Predicate pred = Predicate::Undefined;
+      Signedness signedness = Signedness::NotApplicable;
+      if (auto op = dyn_cast<arith::CmpIOp>(*it)) {
+        auto predi = op.getPredicate();
+        std::tie(pred, signedness) = unifyPredicateI(predi);
+      }
+      if (auto op = dyn_cast<arith::CmpFOp>(*it)) {
+        auto predf = op.getPredicate();
+        std::tie(pred, signedness) = unifyPredicateF(predf);
+      }
+      if (pred != Predicate::Undefined) {
+        preds.push_back(pred);
+        signednesses.push_back(signedness);
+      }
     }
 
     // check if sequence of predicates matches any sequence for min/max
@@ -976,9 +985,15 @@ LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter
         return failure();
     }
 
-    auto [type, tie_break] = m.at(preds);
+    assert(!signednesses.empty());
+    const bool isUnsignedSrc =
+        signednesses[0] == Signedness::Unsigned ||
+        signednesses[signednesses.size() - 1] == Signedness::Unsigned;
+    const std::string unsignedSrc = isUnsignedSrc ? "true" : "false";
+    auto [type, tieBreak] = m.at(preds);
     reduceOp->setAttr(reduceRef, rewriter.getStringAttr(type));
-    reduceOp->setAttr(tieBreakLeftRef, rewriter.getStringAttr(tie_break));
+    reduceOp->setAttr(tieBreakLeftRef, rewriter.getStringAttr(tieBreak));
+    reduceOp->setAttr(unsignedSrcRef, rewriter.getStringAttr(unsignedSrc));
     return success();
 }
 
