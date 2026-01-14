@@ -445,8 +445,13 @@ LogicalResult PtrState::addState(PtrState &lhsState,
         }
         if (!isMultiple(lIt->shape, rIt->shape) &&
             !isMultiple(rIt->shape, lIt->shape)) {
-            lhsState.dump();
-            rhsState.dump();
+            LLVM_DEBUG({
+                llvm::dbgs() << "LHS PtrState: \n";
+                lhsState.dump();
+                llvm::dbgs() << "RHS PtrState: \n";
+                rhsState.dump();
+                llvm::dbgs() << "----------------------------------------------\n";
+            });
             op->emitError("PtrAnalysis: the add operation have incompatible sizes");
             return failure();
         }
@@ -454,8 +459,13 @@ LogicalResult PtrState::addState(PtrState &lhsState,
         auto newShape = minOpFoldResult(lIt->shape, rIt->shape, loc, builder);
         if ((isLess(newShape, lIt->shape) && !isZero(lIt->stride) ||
             isLess(newShape, rIt->shape) && !isZero(rIt->stride))) {
-            lhsState.dump();
-            rhsState.dump();
+            LLVM_DEBUG({
+                llvm::dbgs() << "LHS PtrState: \n";
+                lhsState.dump();
+                llvm::dbgs() << "RHS PtrState: \n";
+                rhsState.dump();
+                llvm::dbgs() << "----------------------------------------------\n";
+            });
             op->emitError("PtrAnalysis: the add operation have incompatible sizes."
                          "Valid dimensions are split.");
             return failure();
@@ -1117,7 +1127,11 @@ LogicalResult PtrAnalysis::visitOperand(Value operand, PtrState &state,
     } else if (auto op = operand.getDefiningOp<arith::FPToSIOp>()) {
         op.emitWarning("IllegalTypeConversionInAddressCalculation"
                       "float-to-int precision conversion is not supported during address computation.");
-        operand.dump();
+        LLVM_DEBUG({
+            llvm::dbgs() << "Operand: \n";
+            operand.dump();
+            llvm::dbgs() << "----------------------------------------------\n";
+        });
         return failure();
     } else if (!operand.getDefiningOp()) {
         if (!knownPtrs.contains(operand)) {
@@ -1133,7 +1147,11 @@ LogicalResult PtrAnalysis::visitOperand(Value operand, PtrState &state,
     } else {
         auto op = operand.getDefiningOp();
         op->emitWarning("TritonToStructured: encountered addptr operand produced by an unsupported operation");
-        operand.dump();
+        LLVM_DEBUG({
+            llvm::dbgs() << "Operand: \n";
+            operand.dump();
+            llvm::dbgs() << "----------------------------------------------\n";
+        });
         return failure();
     }
     return success();

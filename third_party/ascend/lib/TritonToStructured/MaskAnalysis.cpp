@@ -665,8 +665,13 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location loc,
 
         if (!isMultiple(lIt->shape, rIt->shape) &&
             !isMultiple(rIt->shape, lIt->shape)) {
-            lhsState.dump();
-            rhsState.dump();
+            LLVM_DEBUG({
+                llvm::dbgs() << "LHS MaskState: \n";
+                lhsState.dump();
+                llvm::dbgs() << "RHS MaskState: \n";
+                rhsState.dump();
+                llvm::dbgs() << "----------------------------------------------\n";
+            });
             andOp.emitError("MaskAnalysis: the add operation have incompatible sizes");
             return failure();
         }
@@ -676,8 +681,13 @@ LogicalResult MaskState::parseAnd(arith::AndIOp andOp, const Location loc,
         newInfo.shape = minOpFoldResult(lIt->shape, rIt->shape, loc, builder);
         if ((isLess(newInfo.shape, lIt->shape) && !lIt->hasBroadCast ||
              isLess(newInfo.shape, rIt->shape) && !rIt->hasBroadCast)) {
-            lhsState.dump();
-            rhsState.dump();
+            LLVM_DEBUG({
+                llvm::dbgs() << "LHS MaskState: \n";
+                lhsState.dump();
+                llvm::dbgs() << "RHS MaskState: \n";
+                rhsState.dump();
+                llvm::dbgs() << "----------------------------------------------\n";
+            });
             andOp.emitError("MaskAnalysis: the add operation have incompatible sizes."
                              "Valid dimensions are split.");
             return failure();
