@@ -73,12 +73,33 @@ def to_buffer(
 def to_tensor(
     memref: bl.buffer,
     writable: bool,
-    builder: ir.builder
+    builder: ir.builder,
+    target_shape=None
 ) -> tl.tensor:
     if not isinstance(memref, bl.buffer):
         raise TypeError("memref must be bl.buffer")
-    tensor_type = tl.block_type(memref.dtype, memref.shape)
-    return tl.tensor(builder.to_tensor(memref.handle, writable), tensor_type)
+    
+    need_convert_layout = False
+    shape = memref.shape
+    if target_shape:
+        need_convert_layout = True
+        shape = tl._unwrap_shape(target_shape)
+        assert shape != memref.shape, "target shape is the same as source shape"
+    if not isinstance(shape, (tuple, list)):
+        raise TypeError("shape must be list/tuple")
+    tensor_type = tl.block_type(memref.dtype, shape)
+
+    memref_value = memref.handle
+    if need_convert_layout:
+        buffer_ty = bl.buffer_type(
+            element_ty=memref.dtype,
+            shape=shape,
+            space=memref.space,
+        )
+        memref_value = builder.create_convert_layout(
+            memref_value, buffer_ty.to_ir(builder))
+
+    return tl.tensor(builder.to_tensor(memref_value, writable), tensor_type)
 
 
 def subview(

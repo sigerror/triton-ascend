@@ -152,6 +152,10 @@ void init_ascend_ir(py::module &&m) {
       .value("NORMAL_RELU", hivm::FixpipePreReluMode::NORMAL_RELU)
       .value("P_RELU", hivm::FixpipePreReluMode::P_RELU)
       .export_values();
+  py::enum_<hivm::DataLayout>(m, "DataLayout", py::module_local())
+        .value("nZ", hivm::DataLayout::nZ)
+        .value("zN", hivm::DataLayout::zN)
+        .export_values();
 
   m.def("load_dialects", [](MLIRContext &context) {
     // Allow unregistered dialects so we can parse HACC attributes without
@@ -266,5 +270,15 @@ void init_ascend_ir(py::module &&m) {
       .def("create_copy_tensor",
            [](AscendNPUIROpBuilder &self, Value src, Value dst) {
              return self.create<hivm::CopyOp>(mlir::TypeRange{dst.getType()}, src, dst).getResult(0);
+ 	         })
+      .def("create_convert_layout",
+           [](AscendNPUIROpBuilder &self, Value src, Type memrefType) -> Value {
+             // src is a memref
+             // the layout is incorrect (temporarily)
+             auto *ctx = self.getBuilder().getContext();
+             return self.create<hivm::ConvertLayoutOp>(
+                 memrefType, src,
+                 hivm::DataLayoutAttr::get(ctx, hivm::DataLayout::ND),
+                 hivm::DataLayoutAttr::get(ctx, hivm::DataLayout::ND)).getResult();
            });
 }

@@ -179,9 +179,9 @@ class buffer(tl._value):
         return subview(self, offsets, sizes, strides, _builder=_builder)
 
     @builtin
-    def to_tensor(self, writable=True, _builder=None):
+    def to_tensor(self, writable=True, target_shape=None, _builder=None):
         """Convert this buffer to a tl.tensor"""
-        return to_tensor(self, writable=writable, _builder=_builder)
+        return to_tensor(self, writable=writable, target_shape=target_shape, _builder=_builder)
 
 
 semantic = importlib.import_module(".semantic", package=__package__)
@@ -232,6 +232,7 @@ def to_buffer(
 def to_tensor(
     memref: buffer,
     writable: bool = True,
+    target_shape=None,
     _builder=None
 ) -> tl.tensor:
     """
@@ -242,7 +243,7 @@ def to_tensor(
     :param writable: If set true, the resultant tensor is considered "writable" during bufferization.
     :type writable: bool
     """
-    return semantic.to_tensor(memref, writable, _builder)
+    return semantic.to_tensor(memref, writable, _builder, target_shape=target_shape)
 
 
 @builtin
