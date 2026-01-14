@@ -21,7 +21,8 @@
 # THE SOFTWARE.
 
 __all__ = [
-    "create_address_space"
+    "fixpipe",
+    "create_address_space",
 ]
 
 import enum
@@ -108,3 +109,21 @@ def copy_from_ub_to_l1(src: Union[tl.tensor, bl.buffer], dst: Union[tl.tensor, b
     else:
         raise TypeError("src and dst must be tl.tensor or bl.buffer")
 
+
+def fixpipe(
+    src: tl.tensor,
+    dst,
+    dma_mode,
+    dual_dst_mode,
+    pre_quant_mode,
+    pre_relu_mode,
+    builder: ascend_ir.ascendnpu_ir_builder,
+) -> None:
+    builder.create_fixpipe(
+        src.handle,
+        dst.handle,
+        dma_mode.value,
+        dual_dst_mode.value,
+        pre_quant_mode.value,
+        pre_relu_mode.value,
+    )

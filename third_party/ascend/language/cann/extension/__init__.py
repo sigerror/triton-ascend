@@ -4,7 +4,21 @@ try:
 except Exception as e:
     is_compile_on_910_95 = False
 
-from .core import builtin, is_builtin, ascend_address_space, sub_vec_id, copy_from_ub_to_l1, sync_block_set, sync_block_wait, PIPE
+from .core import (
+    builtin,
+    is_builtin,
+    ascend_address_space,
+    sub_vec_id,
+    copy_from_ub_to_l1,
+    sync_block_set,
+    sync_block_wait,
+    PIPE,
+    fixpipe,
+    FixpipeDualDstMode,
+    FixpipeDMAMode,
+    FixpipePreQuantMode,
+    FixpipePreReluMode,
+)
 
 from .scope import scope
 
@@ -46,6 +60,11 @@ __all__ = [
     "sub_vec_id",
     "copy_from_ub_to_l1",
     "PIPE",
+    "FixpipeDMAMode",
+    "FixpipeDualDstMode",
+    "FixpipePreQuantMode",
+    "FixpipePreReluMode",
+    "fixpipe",
 
     # address space
     "ascend_address_space",

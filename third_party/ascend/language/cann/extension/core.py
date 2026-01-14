@@ -26,8 +26,14 @@ __all__ = [
     "copy_from_ub_to_l1",
     "sync_block_set",
     "sync_block_wait",
+    "FixpipeDMAMode",
+    "FixpipeDualDstMode",
+    "FixpipePreQuantMode",
+    "FixpipePreReluMode",
+    "fixpipe",
 ]
 
+import enum
 from typing import TypeVar, List, Union
 from functools import wraps
 
@@ -36,9 +42,7 @@ from triton._C.libtriton.ascend import ir as ascend_ir
 import triton.language.core as tl
 
 import triton.extension.buffer.language as bl
-from triton.language.core import (
-    _constexpr_to_value
-)
+from triton.language.core import _constexpr_to_value
 
 from . import semantic as semantic
 PIPE = semantic.PIPE
@@ -150,3 +154,63 @@ def sync_block_set(sender, receiver, event_id, sender_pipe=None, receiver_pipe=N
 @builtin
 def sync_block_wait(sender, receiver, event_id, sender_pipe=None, receiver_pipe=None, _builder=None):
     return create_sync_block(sender, receiver, event_id, False, sender_pipe, receiver_pipe, _builder)
+
+
+class FixpipeDMAMode(enum.Enum):
+    NZ2DN = ascend_ir.FixpipeDMAMode.NZ2DN
+    NZ2ND = ascend_ir.FixpipeDMAMode.NZ2ND
+    NZ2NZ = ascend_ir.FixpipeDMAMode.NZ2NZ
+
+
+class FixpipeDualDstMode(enum.Enum):
+    NO_DUAL = ascend_ir.FixpipeDualDstMode.NO_DUAL
+    COLUMN_SPLIT = ascend_ir.FixpipeDualDstMode.COLUMN_SPLIT
+    ROW_SPLIT = ascend_ir.FixpipeDualDstMode.ROW_SPLIT
+
+
+class FixpipePreQuantMode(enum.Enum):
+    NO_QUANT = ascend_ir.FixpipePreQuantMode.NO_QUANT
+    F322BF16 = ascend_ir.FixpipePreQuantMode.F322BF16
+    F322F16 = ascend_ir.FixpipePreQuantMode.F322F16
+    S322I8 = ascend_ir.FixpipePreQuantMode.S322I8
+
+
+class FixpipePreReluMode(enum.Enum):
+    LEAKY_RELU = ascend_ir.FixpipePreReluMode.LEAKY_RELU
+    NO_RELU = ascend_ir.FixpipePreReluMode.NO_RELU
+    NORMAL_RELU = ascend_ir.FixpipePreReluMode.NORMAL_RELU
+    P_RELU = ascend_ir.FixpipePreReluMode.P_RELU
+
+
+@builtin
+def fixpipe(
+    src: tl.tensor,
+    dst: bl.buffer,
+    dma_mode: FixpipeDMAMode = FixpipeDMAMode.NZ2ND,
+    dual_dst_mode: FixpipeDualDstMode = FixpipeDualDstMode.NO_DUAL,
+    _builder=None,
+) -> None:
+    """
+    Directly store a tensor on L0C to a local buffer via fixpipe.
+    Fixpipe is pipeline that performing data movement from L0C to other memory hierarchies.
+    Currently support:
+        - L0C to UB (for Ascend910_95 sereies)
+
+    :param src: the source tensor, Must be located in the l0C memory region.
+    :type src: tl.tensor
+    :param dst: The destination buffer, Must be located in the UB memory region.
+    :type dst: bl.buffer
+    :param dma_mode: DMA transfer mode, "nz2nd" enables NZ to ND layout transformation
+    :type dma_mode: str
+    """
+    if not _builder.is_910_95():
+        raise RuntimeError("this feature is only supported on Ascend910_95")
+    if not isinstance(src, tl.tensor):
+        raise TypeError("src is not of tensor type")
+    elif not isinstance(dst, bl.buffer):
+        raise TypeError("dst is not of buffer type")
+    if dst.space != ascend_address_space.UB:
+        raise TypeError("dst must be located in the UB memory region")
+    return semantic.fixpipe(
+        src, dst, dma_mode, dual_dst_mode, FixpipePreQuantMode.NO_QUANT, FixpipePreReluMode.NO_RELU, _builder
+    )

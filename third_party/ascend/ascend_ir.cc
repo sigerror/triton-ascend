@@ -35,6 +35,7 @@
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Types.h"
 #include "mlir/Support/LLVM.h"
+#include "llvm/IR/Instructions.h"
 
 using namespace mlir;
 namespace py = pybind11;
@@ -123,6 +124,35 @@ void init_ascend_ir(py::module &&m) {
       .value("PIPE_FIX", hivm::PIPE::PIPE_FIX)
       .export_values();
 
+  py::enum_<hivm::FixpipeDMAMode>(m, "FixpipeDMAMode", py::module_local())
+      .value("NZ2DN", hivm::FixpipeDMAMode::NZ2DN)
+      .value("NZ2ND", hivm::FixpipeDMAMode::NZ2ND)
+      .value("NZ2NZ", hivm::FixpipeDMAMode::NZ2NZ)
+      .export_values();
+
+  py::enum_<hivm::FixpipeDualDstMode>(m, "FixpipeDualDstMode",
+                                      py::module_local())
+      .value("NO_DUAL", hivm::FixpipeDualDstMode::NO_DUAL)
+      .value("COLUMN_SPLIT", hivm::FixpipeDualDstMode::COLUMN_SPLIT)
+      .value("ROW_SPLIT", hivm::FixpipeDualDstMode::ROW_SPLIT)
+      .export_values();
+
+  py::enum_<hivm::FixpipePreQuantMode>(m, "FixpipePreQuantMode",
+                                       py::module_local())
+      .value("NO_QUANT", hivm::FixpipePreQuantMode::NO_QUANT)
+      .value("F322BF16", hivm::FixpipePreQuantMode::F322BF16)
+      .value("F322F16", hivm::FixpipePreQuantMode::F322F16)
+      .value("S322I8", hivm::FixpipePreQuantMode::S322I8)
+      .export_values();
+
+  py::enum_<hivm::FixpipePreReluMode>(m, "FixpipePreReluMode",
+                                      py::module_local())
+      .value("LEAKY_RELU", hivm::FixpipePreReluMode::LEAKY_RELU)
+      .value("NO_RELU", hivm::FixpipePreReluMode::NO_RELU)
+      .value("NORMAL_RELU", hivm::FixpipePreReluMode::NORMAL_RELU)
+      .value("P_RELU", hivm::FixpipePreReluMode::P_RELU)
+      .export_values();
+
   m.def("load_dialects", [](MLIRContext &context) {
     // Allow unregistered dialects so we can parse HACC attributes without
     // registering the dialect
@@ -152,6 +182,32 @@ void init_ascend_ir(py::module &&m) {
              auto *ctx = self.getBuilder().getContext();
              return mlir::parseAttribute(value, ctx);
            })
+      .def("create_fixpipe",
+           [](AscendNPUIROpBuilder &self, Value src, Value dst,
+              hivm::FixpipeDMAMode dma_mode,
+              hivm::FixpipeDualDstMode dual_dst_mode,
+              hivm::FixpipePreQuantMode pre_quant_mode,
+              hivm::FixpipePreReluMode pre_relu_mode) -> void {
+             if (!dyn_cast<RankedTensorType>(src.getType())) {
+               llvm_unreachable("src is not of RankedTensorType");
+             }
+             if (!dyn_cast<MemRefType>(dst.getType())) {
+               llvm_unreachable("dst is not of MemRefType");
+             }
+             auto *ctx = self.getBuilder().getContext();
+             auto dma_mode_attr =
+                 mlir::hivm::FixpipeDMAModeAttr::get(ctx, dma_mode);
+             auto dual_dst_mode_attr =
+                 mlir::hivm::FixpipeDualDstModeAttr::get(ctx, dual_dst_mode);
+             auto pre_quant_mode_attr =
+                 mlir::hivm::FixpipePreQuantModeAttr::get(ctx, pre_quant_mode);
+             auto pre_relu_mode_attr =
+                 mlir::hivm::FixpipePreReluModeAttr::get(ctx, pre_relu_mode);
+             auto channel_split = BoolAttr::get(ctx, false);
+             auto op = self.create<hivm::FixpipeOp>(
+                 mlir::TypeRange{}, src, dst, dma_mode_attr, dual_dst_mode_attr,
+                 pre_quant_mode_attr, pre_relu_mode_attr, channel_split);
+           })
       .def("create_scope_op",
            [](AscendNPUIROpBuilder &self, py::dict &scopeAttrs,
               std::vector<Type> resultTypes) -> OpState {
@@ -175,13 +231,15 @@ void init_ascend_ir(py::module &&m) {
            [](AscendNPUIROpBuilder &self, std::string &sender,
               std::string &receiver, Value id, hivm::PIPE senderPipe,
               hivm::PIPE receiverPipe) -> void {
-              buildSyncBlockOp(self, "sync_block_set", sender, receiver, id, senderPipe, receiverPipe);
+             buildSyncBlockOp(self, "sync_block_set", sender, receiver, id,
+                              senderPipe, receiverPipe);
            })
       .def("sync_block_wait",
            [](AscendNPUIROpBuilder &self, std::string &sender,
               std::string &receiver, Value id, hivm::PIPE senderPipe,
               hivm::PIPE receiverPipe) -> void {
-              buildSyncBlockOp(self, "sync_block_wait", sender, receiver, id, senderPipe, receiverPipe);
+             buildSyncBlockOp(self, "sync_block_wait", sender, receiver, id,
+                              senderPipe, receiverPipe);
            })
       .def("get_target_attribute",
            [](AscendNPUIROpBuilder &self,
@@ -198,11 +256,9 @@ void init_ascend_ir(py::module &&m) {
              // NPU compiler will parse this attribute and disable auto tile and bind subblock pass.
              moduleOp->setAttr("hivm.disable_auto_tile_and_bind_subblock", mlir::UnitAttr::get(ctx));
              return subBlockIdxOp;
- 	         })
-      .def("is_910_95",
-          [](AscendNPUIROpBuilder &self) -> bool {
-            return self.is_910_95();
            })
+      .def("is_910_95",
+           [](AscendNPUIROpBuilder &self) -> bool { return self.is_910_95(); })
       .def("create_copy_buffer",
            [](AscendNPUIROpBuilder &self, Value src, Value dst) {
              self.create<hivm::CopyOp>(mlir::TypeRange{}, src, dst);
@@ -211,5 +267,4 @@ void init_ascend_ir(py::module &&m) {
            [](AscendNPUIROpBuilder &self, Value src, Value dst) {
              return self.create<hivm::CopyOp>(mlir::TypeRange{dst.getType()}, src, dst).getResult(0);
            });
-
 }

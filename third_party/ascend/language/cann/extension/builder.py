@@ -72,6 +72,7 @@ def setup_unified_builder(main_builder, ascend_builder):
         'create_get_sub_vec_id',
         'create_copy_buffer',
         'create_copy_tensor',
+        'create_fixpipe',
         'is_910_95',
         "sync_block_set",
         "sync_block_wait",
