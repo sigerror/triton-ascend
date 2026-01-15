@@ -26,6 +26,7 @@
 #include "pybind11/pybind11.h"
 #include <pybind11/stl.h>
 
+#include "bishengir/Dialect/Annotation/IR/Annotation.h"
 #include "bishengir/Dialect/HIVM/IR/HIVM.h"
 #include "bishengir/Dialect/Scope/IR/Scope.h"
 
@@ -194,7 +195,8 @@ void init_ascend_ir(py::module &&m) {
     // registering the dialect
     context.allowUnregisteredDialects();
     DialectRegistry registry;
-    registry.insert<mlir::hivm::HIVMDialect, scope::ScopeDialect>();
+    registry.insert<annotation::AnnotationDialect, mlir::hivm::HIVMDialect,
+                    scope::ScopeDialect>();
     context.appendDialectRegistry(registry);
     context.loadAllAvailableDialects();
   });
@@ -244,6 +246,13 @@ void init_ascend_ir(py::module &&m) {
                  mlir::TypeRange{}, src, dst, dma_mode_attr, dual_dst_mode_attr,
                  pre_quant_mode_attr, pre_relu_mode_attr, channel_split);
            })
+      .def("create_debug_barrier",
+           [](TritonOpBuilder &self, Value &ptr, const std::string &attrKey,
+              Attribute &attrVal) {
+             auto annotationOp = self.create<annotation::MarkOp>(ptr);
+             annotationOp->setAttr(self.getBuilder().getStringAttr(attrKey),
+                                   attrVal);
+           })
       .def("create_scope_op",
            [](AscendNPUIROpBuilder &self, py::dict &scopeAttrs,
               std::vector<Type> resultTypes) -> OpState {
@@ -284,7 +293,7 @@ void init_ascend_ir(py::module &&m) {
                                                 addressSpace);
            })
       .def("create_get_sub_vec_id",
- 	         [](AscendNPUIROpBuilder &self) -> Value {
+           [](AscendNPUIROpBuilder &self) -> Value {
              auto subBlockIdxOp = self.create<hivm::GetSubBlockIdxOp>();
              auto moduleOp = subBlockIdxOp->getParentOfType<ModuleOp>();
              auto *ctx = self.getBuilder().getContext();
@@ -313,7 +322,7 @@ void init_ascend_ir(py::module &&m) {
       .def("create_copy_tensor",
            [](AscendNPUIROpBuilder &self, Value src, Value dst) {
              return self.create<hivm::CopyOp>(mlir::TypeRange{dst.getType()}, src, dst).getResult(0);
- 	         })
+           })
       .def("create_convert_layout",
            [](AscendNPUIROpBuilder &self, Value src, Type memrefType) -> Value {
              // src is a memref

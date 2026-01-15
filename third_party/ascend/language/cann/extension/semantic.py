@@ -127,3 +127,9 @@ def fixpipe(
         pre_quant_mode.value,
         pre_relu_mode.value,
     )
+
+
+def debug_barrier(sync_mode: str, builder) -> None:
+    target = tl.tensor(builder.get_int64(0), tl.int64)
+    attr = builder.get_str_attr(sync_mode)
+    builder.create_debug_barrier(target.handle, "SYNC_IN_VF", attr)

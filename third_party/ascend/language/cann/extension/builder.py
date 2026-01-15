@@ -73,6 +73,7 @@ def setup_unified_builder(main_builder, ascend_builder):
         'create_copy_buffer',
         'create_copy_tensor',
         'create_fixpipe',
+        'create_debug_barrier',
         'is_910_95',
         "sync_block_set",
         "sync_block_wait",

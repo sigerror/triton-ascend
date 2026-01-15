@@ -32,6 +32,8 @@ __all__ = [
     "FixpipePreReluMode",
     "fixpipe",
     "sync_block_all",
+    "SYNC_IN_VF",
+    "debug_barrier",
 ]
 
 import enum
@@ -225,3 +227,26 @@ def fixpipe(
     return semantic.fixpipe(
         src, dst, dma_mode, dual_dst_mode, FixpipePreQuantMode.NO_QUANT, FixpipePreReluMode.NO_RELU, _builder
     )
+
+
+class SYNC_IN_VF(enum.Enum):
+    VV_ALL = enum.auto()
+    VST_VLD = enum.auto()
+    VLD_VST = enum.auto()
+    VST_VST = enum.auto()
+    VS_ALL = enum.auto()
+    VST_LD = enum.auto()
+    VLD_ST = enum.auto()
+    VST_ST = enum.auto()
+    SV_ALL = enum.auto()
+    ST_VLD = enum.auto()
+    LD_VST = enum.auto()
+    ST_VST = enum.auto()
+
+
+@builtin
+def debug_barrier(
+    sync_mode: SYNC_IN_VF,
+    _builder=None,
+) -> None:
+    return semantic.debug_barrier(sync_mode.name, _builder)

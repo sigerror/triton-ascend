@@ -19,6 +19,8 @@ from .core import (
     FixpipePreQuantMode,
     FixpipePreReluMode,
     sync_block_all,
+    SYNC_IN_VF,
+    debug_barrier,
 )
 
 from .scope import scope
@@ -66,6 +68,8 @@ __all__ = [
     "FixpipePreReluMode",
     "fixpipe",
     "sync_block_all",
+    "SYNC_IN_VF",
+    "debug_barrier",
 
     # address space
     "ascend_address_space",
