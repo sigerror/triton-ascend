@@ -503,7 +503,7 @@ class LowDimsAxesParser(AxesKeyParser):
                 partin_other_slice = [False]
                 if self.is_partin_low_dim_slice(node.targets[0].id, partin_other_slice):
                     low_dims_axis = self.get_axis(node.targets[0].id)
-                if not partin_other_slice[0]:
+                elif not partin_other_slice[0]:
                     low_dims_axis = self.get_axis(node.targets[0].id)
             elif isinstance(tl_arange_node, ast.Subscript) and \
                  self.is_low_dim_slice(tl_arange_node, [False]):
