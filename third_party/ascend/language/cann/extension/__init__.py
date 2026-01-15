@@ -18,6 +18,7 @@ from .core import (
     FixpipeDMAMode,
     FixpipePreQuantMode,
     FixpipePreReluMode,
+    sync_block_all,
 )
 
 from .scope import scope
@@ -33,7 +34,6 @@ from .aux_ops import (
     parallel,
     compile_hint,
     multibuffer,
-    sync_block_all,
 )
 
 from .vec_ops import (
@@ -65,6 +65,7 @@ __all__ = [
     "FixpipePreQuantMode",
     "FixpipePreReluMode",
     "fixpipe",
+    "sync_block_all",
 
     # address space
     "ascend_address_space",
@@ -78,7 +79,6 @@ __all__ = [
     "finitef",
 
     # aux ops
-    "sync_block_all",
     "sync_block_set",
     "sync_block_wait",
     "parallel",

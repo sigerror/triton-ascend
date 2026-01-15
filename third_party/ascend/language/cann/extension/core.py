@@ -31,6 +31,7 @@ __all__ = [
     "FixpipePreQuantMode",
     "FixpipePreReluMode",
     "fixpipe",
+    "sync_block_all",
 ]
 
 import enum
@@ -154,6 +155,16 @@ def sync_block_set(sender, receiver, event_id, sender_pipe=None, receiver_pipe=N
 @builtin
 def sync_block_wait(sender, receiver, event_id, sender_pipe=None, receiver_pipe=None, _builder=None):
     return create_sync_block(sender, receiver, event_id, False, sender_pipe, receiver_pipe, _builder)
+
+
+@builtin
+def sync_block_all(mode, event_id, _builder=None):
+    mode = _constexpr_to_value(mode)
+    event_id = _constexpr_to_value(event_id)
+    assert isinstance(mode, str), f"mode: {mode} is not string"
+    assert isinstance(event_id, int) and (event_id >= 0) and (event_id < 16), f"event_id: {event_id} should be 0 ~ 15"
+    assert mode == "all_cube" or mode == "all_vector" or mode == "all", f"ERROR: mode = {mode}, only supports all_cube/all_vector/all"
+    _builder.sync_block_all(mode, event_id)
 
 
 class FixpipeDMAMode(enum.Enum):

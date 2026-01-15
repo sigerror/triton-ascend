@@ -58,6 +58,12 @@ struct AscendNPUIROpBuilder : public TritonOpBuilder {
 };
 
 namespace {
+struct ModeAndPipes {
+  hivm::SyncBlockModeAttr modeAttr = {};
+  hivm::PipeAttr cubePipe = {};
+  hivm::PipeAttr vectorPipe = {};
+};
+
 hivm::TCoreTypeAttr GetCore(MLIRContext *ctx, llvm::StringRef opName, llvm::StringRef sender)
 {
   // Decide core type
@@ -101,6 +107,32 @@ void buildSyncBlockOp(AscendNPUIROpBuilder &self, const std::string &opName, std
   } else {
     throw std::runtime_error("Unsupported operation name for SyncBlockOp");
   }
+}
+
+ModeAndPipes GetSyncBlockModeAndPipes(MLIRContext *ctx,
+                                      const std::string &mode)
+{
+  hivm::SyncBlockModeAttr modeAttr = {};
+  hivm::PipeAttr cubePipe = {};
+  hivm::PipeAttr vectorPipe = {};
+
+  if (mode == "all_cube") {
+    modeAttr = hivm::SyncBlockModeAttr::get(ctx, hivm::SyncBlockMode::ALL_CUBE);
+    cubePipe = hivm::PipeAttr::get(ctx, hivm::PIPE::PIPE_ALL);
+    vectorPipe = hivm::PipeAttr{};
+  } else if (mode == "all_vector") {
+    modeAttr =
+        hivm::SyncBlockModeAttr::get(ctx, hivm::SyncBlockMode::ALL_VECTOR);
+    cubePipe = hivm::PipeAttr{};
+    vectorPipe = hivm::PipeAttr::get(ctx, hivm::PIPE::PIPE_ALL);
+  } else if (mode == "all") {
+    modeAttr = hivm::SyncBlockModeAttr::get(ctx, hivm::SyncBlockMode::ALL);
+    cubePipe = hivm::PipeAttr::get(ctx, hivm::PIPE::PIPE_ALL);
+    vectorPipe = hivm::PipeAttr::get(ctx, hivm::PIPE::PIPE_ALL);
+  } else {
+    llvm::report_fatal_error(llvm::StringRef("Invalid sync-block mode: " + mode));
+  }
+  return {modeAttr, cubePipe, vectorPipe};
 }
 } // namespace
 
@@ -260,6 +292,17 @@ void init_ascend_ir(py::module &&m) {
              // NPU compiler will parse this attribute and disable auto tile and bind subblock pass.
              moduleOp->setAttr("hivm.disable_auto_tile_and_bind_subblock", mlir::UnitAttr::get(ctx));
              return subBlockIdxOp;
+           })
+      .def("sync_block_all",
+           [](AscendNPUIROpBuilder &self, std::string &mode, int id) -> void {
+             auto *ctx = self.getBuilder().getContext();
+             auto [modeAttr, cubePipe, vectorPipe] =
+                 GetSyncBlockModeAndPipes(ctx, mode);
+             mlir::IndexType indexType = mlir::IndexType::get(ctx);
+             mlir::IntegerAttr indexAttribute =
+                 mlir::IntegerAttr::get(indexType, static_cast<int64_t>(id));
+             self.create<hivm::SyncBlockOp>(
+                 modeAttr, indexAttribute, mlir::Value{}, cubePipe, vectorPipe);
            })
       .def("is_910_95",
            [](AscendNPUIROpBuilder &self) -> bool { return self.is_910_95(); })

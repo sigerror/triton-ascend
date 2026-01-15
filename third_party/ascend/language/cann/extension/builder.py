@@ -77,5 +77,6 @@ def setup_unified_builder(main_builder, ascend_builder):
         "sync_block_set",
         "sync_block_wait",
         "create_convert_layout",
+        'sync_block_all',
     ]
     attach_builder_methods(main_builder, ascend_builder, ascend_methods)

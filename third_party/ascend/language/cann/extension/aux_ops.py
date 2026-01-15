@@ -39,6 +39,13 @@ from ._utils import custom_op
 @_tensor_member_fn
 @builtin
 def sync_block_all(mode, event_id, _builder=None):
+    import warnings
+
+    warnings.warn(
+        ("This method would be deprecated. Use al.sync_block_all instead."),
+        DeprecationWarning,
+        stacklevel=1,
+    )
     mode = _constexpr_to_value(mode)
     event_id = _constexpr_to_value(event_id)
     assert isinstance(mode, str), f"mode: {mode} is not string"
