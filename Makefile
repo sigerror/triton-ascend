@@ -234,7 +234,7 @@ test-inductor: ## Run inductor tests
 
 .PHONY: test-gen
 test-gen: ## Run generalization tests
-	cd ascend/examples/generalization_cases && $(PYTEST) -s -v -n $(NUM_PROCS) --dist=load
+	cd third_party/ascend/unittest/generalization_cases && $(PYTEST) -s -v -n $(NUM_PROCS) --dist=load
 
 
 # ======================

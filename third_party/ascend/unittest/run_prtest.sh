@@ -1,16 +1,16 @@
 #!/bin/bash
-# notice: 本脚本需运行在py311的TA环境上
+# notice: this script supports python3.11.x
 
 set -ex
 
 script=$(readlink -f "$0")
 script_dir=$(dirname "$script")
 
-# 清理旧日志
+# clean old logs
 mkdir -p /home/pr_test_log
 UNITTEST_DIR="triton-ascend/third_party/ascend/unittest"
 
-# 新增：定义统计文件路径
+# define summary file path
 SUMMARY_FILE="${WORKSPACE}/${UNITTEST_DIR}/summary.txt"
 
 function clean_cache() {
@@ -39,20 +39,20 @@ function run_case_by_multi_card() {
     test_dir=$1
     cd ${test_dir}
 
-    # 清理旧日志
+    # clean logs
     rm -rf logs && mkdir logs
 
-    # 记录测试开始时间
+    # record start time
     start_time=$(date +"%Y-%m-%d %H:%M:%S")
-    echo "===== 测试开始时间: ${start_time} ====="
+    echo "===== Test Start Time: ${start_time} ====="
 
-    # 运行测试并捕获退出状态
+    # run tests and capture exit status
     set +e
     python -m pytest ${test_dir} -n auto --dist=loadfile -v --junitxml=logs/results.xml | tee logs/raw_output.log
     pytest_exit=$?
     set -e
 
-    # 处理日志（添加设备标签）
+    # process logs (add device tags)
     awk '
       />> Worker gw[0-9]+ using NPU device/ {
         split($0, parts, / /)
@@ -64,14 +64,14 @@ function run_case_by_multi_card() {
       { print "[" strftime("%Y-%m-%d %H:%M:%S") "| DEV-" dev_id "] " $0 }
     ' logs/raw_output.log > logs/combined.log
 
-    # 新增：解析测试结果统计
+    # parse test result statistics
     total_tests=0
     passed_tests=0
     failed_tests=0
     skipped_tests=0
     error_tests=0
 
-    # 使用Python解析JUnit XML报告
+    # use Python to parse JUnit XML report
     python3 -c "
 import xml.etree.ElementTree as ET
 import os
@@ -105,44 +105,44 @@ print(f'skipped_tests={skipped}')
 print(f'error_tests={errors}')
 " > logs/stats.tmp
 
-    # 加载统计结果
+    # load stats
     source logs/stats.tmp
     rm logs/stats.tmp
 
-    # 记录测试结束时间
+    # record end time
     end_time=$(date +"%Y-%m-%d %H:%M:%S")
     duration=$(( $(date -d "$end_time" +%s) - $(date -d "$start_time" +%s) ))
     duration_str=$(printf "%02dh %02dm %02ds" $((duration/3600)) $(((duration%3600)/60)) $((duration%60)))
 
-    # 新增：生成统计摘要
+    # generate summary
     stats_summary="
-===== generalization_cases测试统计摘要 =====
-测试目录:       $(basename ${test_dir})
-测试开始时间:   ${start_time}
-测试结束时间:   ${end_time}
-总耗时:         ${duration_str}
+===== Test Summary - [generalization_cases] =====
+Test Directory:       $(basename ${test_dir})
+Test Start Time:   ${start_time}
+Test End Time:   ${end_time}
+Total Duration:         ${duration_str}
 ------------------------
-总用例数:       ${total_tests}
-成功用例:       ${passed_tests}
-失败用例:       ${failed_tests}
-跳过用例:       ${skipped_tests}
-错误用例:       ${error_tests}
-成功率:         $(( passed_tests * 100 / total_tests ))% (成功/总数)
-设备数量:       ${NPU_DEVICES}
+Total Tests:       ${total_tests}
+Passed Tests:       ${passed_tests}
+Failed Tests:       ${failed_tests}
+Skipped Tests:       ${skipped_tests}
+Error Tests:       ${error_tests}
+Success Rate:         $(( passed_tests * 100 / total_tests ))% (Passed/Total)
+NPU Devices:       ${NPU_DEVICES}
 ========================
 "
 
-    # 输出统计信息到控制台
+    # output stats summary to console
     echo "${stats_summary}"
 
-    # 追加统计信息到summary.txt
+    # append stats summary to summary.txt
     echo "${stats_summary}" >> ${SUMMARY_FILE}
 
     echo "========================================"
     echo "All tests completed!"
     echo "JUnit Report: logs/results.xml"
     echo "Combined Log: logs/combined.log"
-    echo "统计摘要已追加到: ${SUMMARY_FILE}"
+    echo "Stats Summary has been appended to: ${SUMMARY_FILE}"
     echo "========================================"
 
     zip_file=$2
@@ -150,12 +150,12 @@ print(f'error_tests={errors}')
     zip ${zip_file} combined.log
     cp ${zip_file} "/home/pr_test_log"
 
-    # 返回pytest的退出状态
+    # return pytest exit status
     return $pytest_exit
 }
 
-# 初始化统计文件
-echo "生成时间: $(date +"%Y-%m-%d %H:%M:%S")" >> ${SUMMARY_FILE}
+# initialize stats file
+echo "Generate Time: $(date +"%Y-%m-%d %H:%M:%S")" >> ${SUMMARY_FILE}
 echo "========================================" >> ${SUMMARY_FILE}
 
 # run gene case
