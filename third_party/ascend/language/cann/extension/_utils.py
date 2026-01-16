@@ -15,6 +15,24 @@ def custom_op(builder: ir.builder, op_name: str, **kwargs):
     raise ValueError(f"Unsupported custom op: {op_name}")
 
 
+def _is_int_like_elem(x) -> bool:
+    """Accept int / tl.constexpr(int) / tl.tensor(int*)."""
+    if isinstance(x, int):
+        return True
+    if isinstance(x, tl.constexpr):
+        # constexpr value should be python int
+        return isinstance(x.value, int)
+    if isinstance(x, tl.tensor):
+        # Offsets/strides must be integer typed (i32/i64 etc.)
+        return x.dtype.is_int()
+    return False
+
+
+def _assert_int_like_tuple(name: str, xs):
+    assert isinstance(xs, (tuple, list)), f"{name} should be a tuple/list, but got {type(xs)}"
+    assert all(_is_int_like_elem(x) for x in xs), f"{name} should be integer"
+
+
 def _convert_elem_to_ir_value(builder, elem, require_i64):
     if isinstance(elem, int):
         elem = tl.constexpr(elem)

@@ -162,6 +162,8 @@ def _make_attrs(op, builder):
     _add_optional_attr(op, 'symbol', builder, attrs)
     _add_optional_attr(op, 'source', builder, attrs)
     _add_optional_attr(op, 'compile', builder, attrs)
+    # Extra attributes can be added here, such as op.extra_attr="attr_a=xx"
+    _add_optional_attr(op, 'extra_attr', builder, attrs)
     return attrs
 
 
