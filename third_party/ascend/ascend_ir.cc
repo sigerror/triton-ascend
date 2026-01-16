@@ -130,6 +130,11 @@ ModeAndPipes GetSyncBlockModeAndPipes(MLIRContext *ctx,
     modeAttr = hivm::SyncBlockModeAttr::get(ctx, hivm::SyncBlockMode::ALL);
     cubePipe = hivm::PipeAttr::get(ctx, hivm::PIPE::PIPE_ALL);
     vectorPipe = hivm::PipeAttr::get(ctx, hivm::PIPE::PIPE_ALL);
+  } else if (mode == "all_sub_vector") {
+    modeAttr =
+        hivm::SyncBlockModeAttr::get(ctx, hivm::SyncBlockMode::ALL_SUB_VECTOR);
+    cubePipe = hivm::PipeAttr{};
+    vectorPipe = hivm::PipeAttr::get(ctx, hivm::PIPE::PIPE_ALL);
   } else {
     llvm::report_fatal_error(llvm::StringRef("Invalid sync-block mode: " + mode));
   }
