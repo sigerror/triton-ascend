@@ -83,9 +83,30 @@ int nd2nzFlag = 0;
 bool compileOn91095Flag = false;
 bool existDotFlag = false;
 
+// Convert CustomOp after operand type converted,
+// for example tt.ptr converted to memref.
+class CustomOpConverter : public OpConversionPattern<hivm::CustomOp> {
+public:
+  using OpConversionPattern<hivm::CustomOp>::OpConversionPattern;
 
-inline bool isSIMTOp(Operation *op)
+  LogicalResult
+  matchAndRewrite(hivm::CustomOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter &rewriter) const override
+  {
+    auto res_types = adaptor.getOutputs().getTypes();
+    auto new_op = rewriter.create<hivm::CustomOp>(
+      op->getLoc(), res_types, adaptor.getOperands(), op->getAttrs());
+    rewriter.replaceOp(op, new_op);
+    return success();
+  }
+};
+
+static bool isSIMTOp(Operation *op)
 {
+  if (auto custom_op = dyn_cast<hivm::CustomOp>(op)) {
+    return custom_op.getCoreType() == hivm::TCoreType::VECTOR &&
+           custom_op.getVFMode() == hivm::VFMode::SIMT;
+  }
   return isa<
       triton::ascend::EmbeddingGatherOp,
       triton::ascend::IndexPutOp,
@@ -519,6 +540,19 @@ void TritonToLinalgPass::addDynamicLegal(
     return tritonTypeConverter.isSignatureLegal(op.getFunctionType());
   });
 
+  // For CustomOp, tt.ptr should be converted to memref.
+  target.addDynamicallyLegalOp<hivm::CustomOp>([&](hivm::CustomOp op) {
+    return all_of(op->getOperandTypes(), [](Type t) {
+      if (isa<triton::PointerType>(t)) {
+        return false;
+      }
+      if (auto shapedType = dyn_cast<ShapedType>(t)) {
+        return !isa<triton::PointerType>(shapedType.getElementType());
+      }
+      return true;
+    });
+  });
+
   target.addDynamicallyLegalOp<arith::ConstantOp>([](arith::ConstantOp op) {
     auto res = op.getResult();
     if (!isa<RankedTensorType>(res.getType())) {
@@ -690,6 +724,9 @@ void TritonToLinalgPass::populateTritonToLinalgConversionPatterns(
   patterns.add<TTOpConverters::SortOpConverter>(patterns.getContext());
   patterns.add<TTOpConverters::FlipOpConverter>(patterns.getContext());
   patterns.add<TTOpConverters::GatherConverter>(patterns.getContext());
+
+  // Add convert pattern for CustomOp.
+  patterns.add<CustomOpConverter>(patterns.getContext());
 
   if (!this->namedOps) {
     linalg::populateElementwiseToLinalgConversionPatterns(patterns);

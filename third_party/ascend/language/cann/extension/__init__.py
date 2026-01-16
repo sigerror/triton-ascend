@@ -7,12 +7,15 @@ except Exception as e:
 from .core import (
     builtin,
     is_builtin,
+    int64,
+    CORE,
+    PIPE,
+    MODE,
     ascend_address_space,
     sub_vec_id,
     copy_from_ub_to_l1,
     sync_block_set,
     sync_block_wait,
-    PIPE,
     fixpipe,
     FixpipeDualDstMode,
     FixpipeDMAMode,
@@ -25,6 +28,13 @@ from .core import (
 
 from .scope import scope
 
+from .custom_op import (
+    custom,
+    custom_semantic,
+    register_custom_op,
+)
+
+from . import builtin_custom_ops
 
 from .math_ops import (
     atan2,
@@ -59,9 +69,12 @@ __all__ = [
     # core
     "builtin",
     "is_builtin",
+    "int64",
+    "CORE",
+    "PIPE",
+    "MODE",
     "sub_vec_id",
     "copy_from_ub_to_l1",
-    "PIPE",
     "FixpipeDMAMode",
     "FixpipeDualDstMode",
     "FixpipePreQuantMode",
@@ -76,6 +89,11 @@ __all__ = [
 
     # scope
     "scope",
+
+    # custom op
+    "custom",
+    "custom_semantic",
+    "register_custom_op",
 
     # math ops
     "atan2",

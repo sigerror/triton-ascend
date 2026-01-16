@@ -151,6 +151,13 @@ void init_ascend_ir(py::module &&m) {
       .value("L0C", hivm::AddressSpace::L0C)
       .export_values();
 
+  py::enum_<hivm::TCoreType>(m, "CoreType", py::module_local())
+      .value("CUBE", hivm::TCoreType::CUBE)
+      .value("VECTOR", hivm::TCoreType::VECTOR)
+      .value("CUBE_OR_VECTOR", hivm::TCoreType::CUBE_OR_VECTOR)
+      .value("CUBE_AND_VECTOR", hivm::TCoreType::CUBE_AND_VECTOR)
+      .export_values();
+
   py::enum_<hivm::PIPE>(m, "PIPE", py::module_local())
       .value("PIPE_S", hivm::PIPE::PIPE_S)
       .value("PIPE_V", hivm::PIPE::PIPE_V)
@@ -161,6 +168,12 @@ void init_ascend_ir(py::module &&m) {
       .value("PIPE_ALL", hivm::PIPE::PIPE_ALL)
       .value("PIPE_FIX", hivm::PIPE::PIPE_FIX)
       .export_values();
+
+  py::enum_<hivm::VFMode>(m, "MODE", py::module_local())
+    .value("SIMD", hivm::VFMode::SIMD)
+    .value("SIMT", hivm::VFMode::SIMT)
+    .value("MIX", hivm::VFMode::MIX)
+    .export_values();
 
   py::enum_<hivm::FixpipeDMAMode>(m, "FixpipeDMAMode", py::module_local())
       .value("NZ2DN", hivm::FixpipeDMAMode::NZ2DN)
@@ -210,6 +223,18 @@ void init_ascend_ir(py::module &&m) {
       m, "ascendnpu_ir_builder", py::module_local(), py::dynamic_attr())
       .def(py::init<MLIRContext *, std::string>(), py::arg("context"),
            py::arg("target") = "")
+      .def("get_core_type_attr",
+           [](AscendNPUIROpBuilder &self, hivm::TCoreType core_type) -> Attribute {
+             return self.getBuilder().getAttr<hivm::TCoreTypeAttr>(core_type);
+           })
+      .def("get_pipe_attr",
+           [](AscendNPUIROpBuilder &self, hivm::PIPE pipe) -> Attribute {
+             return self.getBuilder().getAttr<hivm::PipeAttr>(pipe);
+           })
+      .def("get_vf_mode_attr",
+           [](AscendNPUIROpBuilder &self, hivm::VFMode mode) -> Attribute {
+             return self.getBuilder().getAttr<hivm::VFModeAttr>(mode);
+           })
       .def("get_t_core_type_cube_attr",
            [](AscendNPUIROpBuilder &self) -> Attribute {
              return hivm::TCoreTypeAttr::get(self.getBuilder().getContext(),
@@ -257,6 +282,24 @@ void init_ascend_ir(py::module &&m) {
              auto annotationOp = self.create<annotation::MarkOp>(ptr);
              annotationOp->setAttr(self.getBuilder().getStringAttr(attrKey),
                                    attrVal);
+           })
+      .def("create_custom_op",
+           [](AscendNPUIROpBuilder &self,
+               const std::string &name,
+               const py::dict &attrs,
+               const std::vector<Value> &ins,
+               const std::vector<Value> &outs) -> std::vector<Value> {
+             ValueRange inputs{ins};
+             ValueRange outputs{outs};
+             TypeRange res_types{outputs};
+             auto op = self.create<hivm::CustomOp>(res_types, name, inputs, outputs);
+             for (auto &attr : attrs) {
+               std::string attr_name = py::cast<std::string>(attr.first);
+               Attribute attr_value = py::cast<Attribute>(attr.second);
+               op->setAttr(attr_name, attr_value);
+             }
+             auto results = op->getResults();
+             return std::vector<Value>(results.begin(), results.end());
            })
       .def("create_scope_op",
            [](AscendNPUIROpBuilder &self, py::dict &scopeAttrs,

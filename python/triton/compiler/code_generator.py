@@ -346,17 +346,19 @@ class CodeGenerator(ast.NodeVisitor):
         self.lscope[name] = value
         self.local_defs[name] = value
 
-    def _get_insertion_point_and_loc(self):
+    def _get_insertion_point_and_loc(self, builder=None):
         # XXX: this is a hack to get the location of the insertion point.
         # The insertion point's location could be invalid sometimes,
         # so we need to explicitly set the location
-        loc = self.builder.get_loc()
-        ip = self.builder.get_insertion_point()
+        _builder = self.builder if not builder else builder
+        loc = _builder.get_loc()
+        ip = _builder.get_insertion_point()
         return ip, loc
 
-    def _set_insertion_point_and_loc(self, ip, loc):
-        self.builder.restore_insertion_point(ip)
-        self.builder.set_loc(loc)
+    def _set_insertion_point_and_loc(self, ip, loc, builder=None):
+        _builder = self.builder if not builder else builder
+        _builder.restore_insertion_point(ip)
+        _builder.set_loc(loc)
 
     #
     # AST visitor
@@ -1171,12 +1173,21 @@ class CodeGenerator(ast.NodeVisitor):
             _check_fn_args(node, fn, args)
             return self.call_JitFunction(fn, args, kws)
         if (hasattr(fn, '__self__') and _is_triton_value(fn.__self__)) or language.core.is_builtin(fn):
-            extra_kwargs = {"_builder": self.builder}
+            # Copy builder's location and insertion point.
+            ip, last_loc = self._get_insertion_point_and_loc()
+            # Use ascend_builder if this function is a builtin extension operation.
+            _builder = self.ascend_builder if extension.is_builtin(fn) else self.builder
+            self._set_insertion_point_and_loc(ip, last_loc, _builder)
+            extra_kwargs = {"_builder": _builder}
             sig = inspect.signature(fn)
             if '_generator' in sig.parameters:
                 extra_kwargs['_generator'] = self
             try:
-                return fn(*args, **extra_kwargs, **kws)
+                ret = fn(*args, **extra_kwargs, **kws)
+                # Sync the builder's location before return.
+                ip, last_loc = self._get_insertion_point_and_loc(_builder)
+                self._set_insertion_point_and_loc(ip, last_loc)
+                return ret
             except Exception as e:
                 # Normally when we raise a CompilationError, we raise it as
                 # `from None`, because the original fileline from the exception
@@ -1319,6 +1330,7 @@ class CodeGenerator(ast.NodeVisitor):
         language.core.static_print: static_executor(print),
         int: static_executor(int),
         len: static_executor(len),
+        extension.int64: static_executor(extension.int64),
     }
 
 

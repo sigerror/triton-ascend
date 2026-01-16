@@ -1062,7 +1062,8 @@ FailureOr<TypedAttr> specializeTypelessValueToAttr(TypelessValue value,
   auto toPtr = [](mlir::Type ty) { return ty.getAsOpaquePointer(); };
 
   std::map<std::pair<TypelessValue, const void *>,
-           std::variant<int8_t, int16_t, int32_t, int64_t, llvm::APFloat>>
+           std::variant<int8_t, int16_t, int32_t, int64_t, uint32_t, uint64_t,
+           llvm::APFloat>>
       initMap = {
           {{TypelessValue::Zero, toPtr(f16Ty)}, halfZero},
           {{TypelessValue::Zero, toPtr(f32Ty)}, floatZero},

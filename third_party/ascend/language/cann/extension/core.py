@@ -21,6 +21,12 @@
 # THE SOFTWARE.
 
 __all__ = [
+    "builtin",
+    "is_builtin",
+    "int64",
+    "CORE",
+    "PIPE",
+    "MODE",
     "ascend_address_space",
     "sub_vec_id",
     "copy_from_ub_to_l1",
@@ -78,6 +84,41 @@ def builtin(fn: T) -> T:
 def is_builtin(fn) -> bool:
     """Is this a registered ascend language builtin function?"""
     return getattr(fn, ASCEND_BUILTIN, False)
+
+
+class int64(int):
+    """
+    For custom op, python int argument will be converted to int32 by default,
+    if a device-side int64 is required, you can pass an al.int64(x) to it.
+    """
+    def __new__(cls, value):
+        obj = int.__new__(cls, value)
+        obj.type = tl.int64
+        return obj
+
+
+class CORE(enum.Enum):
+    VECTOR = ascend_ir.CoreType.VECTOR
+    CUBE = ascend_ir.CoreType.CUBE
+    CUBE_OR_VECTOR = ascend_ir.CoreType.CUBE_OR_VECTOR
+    CUBE_AND_VECTOR = ascend_ir.CoreType.CUBE_AND_VECTOR
+
+
+class PIPE(enum.Enum):
+    PIPE_S = ascend_ir.PIPE.PIPE_S
+    PIPE_V = ascend_ir.PIPE.PIPE_V
+    PIPE_M = ascend_ir.PIPE.PIPE_M
+    PIPE_MTE1 = ascend_ir.PIPE.PIPE_MTE1
+    PIPE_MTE2 = ascend_ir.PIPE.PIPE_MTE2
+    PIPE_MTE3 = ascend_ir.PIPE.PIPE_MTE3
+    PIPE_ALL = ascend_ir.PIPE.PIPE_ALL
+    PIPE_FIX = ascend_ir.PIPE.PIPE_FIX
+
+
+class MODE(enum.Enum):
+    SIMD = ascend_ir.MODE.SIMD
+    SIMT = ascend_ir.MODE.SIMT
+    MIX = ascend_ir.MODE.MIX
 
 
 class ascend_address_space_base(bl.address_space):
