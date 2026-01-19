@@ -478,6 +478,9 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             cmd_list += [
                 "--enable-auto-bind-sub-block=false"
             ]
+        vf_merge_level = metadata["vf_merge_level"]
+        if vf_merge_level:
+            cmd_list += [f"--enable-vf-merge-level={vf_merge_level}"]
 
         ret = subprocess.run(cmd_list, capture_output=True, check=True)
         match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', ret.stdout.decode('utf-8'))
@@ -649,6 +652,7 @@ class NPUOptions:
     enable_fp_fusion: bool = True
     allow_fp8e4nv: bool = False
     auto_tile_and_bind_subblock: bool = True
+    vf_merge_level: int = 0
     supported_fp8_dtypes: Tuple[str] = ("fp8e5", "fp8e4b15", "fp8e4nv", "fp8e4b8", "fp8e5b16")
     deprecated_fp8_dtypes: Tuple[str] = ()
     allowed_dot_input_precisions: Tuple[str] = ("ieee", "hf32")
