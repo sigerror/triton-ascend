@@ -62,7 +62,7 @@ class PIPE(enum.Enum):
 def create_sync_block_set(sender, receiver, event_id, sender_pipe: PIPE, receiver_pipe: PIPE, _builder=None):
     if isinstance(event_id, int):
         _builder.sync_block_set(sender, receiver,
-                                event_id,
+                                real_semantic.to_tensor(tl.constexpr(event_id), _builder).handle,
                                 sender_pipe.value, receiver_pipe.value)
     elif isinstance(event_id, tl.constexpr):
         _builder.sync_block_set(sender, receiver,
@@ -76,7 +76,7 @@ def create_sync_block_set(sender, receiver, event_id, sender_pipe: PIPE, receive
 def create_sync_block_wait(sender, receiver, event_id, sender_pipe: PIPE, receiver_pipe: PIPE, _builder=None):
     if isinstance(event_id, int):
         _builder.sync_block_wait(sender, receiver,
-                                 event_id,
+                                 real_semantic.to_tensor(tl.constexpr(event_id), _builder).handle,
                                  sender_pipe.value, receiver_pipe.value)
     elif isinstance(event_id, tl.constexpr):
         _builder.sync_block_wait(sender, receiver,
