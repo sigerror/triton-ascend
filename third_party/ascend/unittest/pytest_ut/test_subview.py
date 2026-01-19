@@ -26,7 +26,6 @@ import triton.language as tl
 from triton.compiler.compiler import ASTSource
 from triton.compiler.code_generator import ast_to_ttir
 import triton.extension.buffer.language as bl
-from triton.extension.buffer.language.core import subview
 import triton.language.extra.cann.extension as al
 from triton._C.libtriton import ir, buffer_ir
 from triton._C.libtriton.ascend import ir as ascend_ir
@@ -62,8 +61,8 @@ def compile_kernel(kernel, signature, constants):
 def test_subview_kernel1(XBLOCK: tl.constexpr):
     # 1. Allocate a local buffer
     src_buffer = bl.alloc(tl.float32, [XBLOCK, XBLOCK])
-    
-    result_buffer = subview(
+
+    result_buffer = bl.subview(
         src_buffer,
         offsets=[1, 1],
         sizes=[XBLOCK - 2, XBLOCK - 2],

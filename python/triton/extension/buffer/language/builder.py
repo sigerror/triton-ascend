@@ -68,6 +68,7 @@ def setup_unified_builder_with_buffer_builder(main_builder, buffer_builder):
         'alloc',
         'to_buffer',
         'to_tensor',
+        'subview',
     ]
     attach_builder_methods_with_buffer_builder(main_builder, buffer_builder, buffer_methods)
 

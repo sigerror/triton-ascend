@@ -23,6 +23,7 @@
 __all__ = [
     "address_space",
     "buffer_type",
+    "subview",
     "alloc",
     "buffer",
     "to_buffer",
@@ -158,8 +159,8 @@ class buffer(tl._value):
         self.dtype = buffer_ty.element_ty.scalar
         self.shape = buffer_ty.shape
         self.space = buffer_ty.space
-        self.strides = buffer_ty.strides  
-    
+        self.strides = buffer_ty.strides
+
     def __str__(self) -> str:
         # ex. "<16x32xfloat32, address_space>"
         res = '<' + 'x'.join(str(s)
@@ -278,7 +279,7 @@ def subview(
             new_sizes.append(size)
         else:
             raise TypeError(f"sizes[{i}] must be constexpr, got {type(size).__name__}")
-    
+
     new_strides = []
     for i, stride in enumerate(strides):
         if isinstance(stride, int):
@@ -288,7 +289,7 @@ def subview(
             new_strides.append(stride)
         else:
             raise TypeError(f"strides[{i}] must be constexpr, got {type(stride).__name__}")
-    
+
     new_offsets = []
     for offset in offsets:
         if isinstance(offset, tl.constexpr):
@@ -304,5 +305,5 @@ def subview(
         else:
             # Assume it's already a tensor
             new_offsets.append(offset)
-    
+
     return semantic.subview(src, new_offsets, new_sizes, new_strides, _builder)
