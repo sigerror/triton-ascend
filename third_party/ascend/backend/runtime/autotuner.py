@@ -55,7 +55,11 @@ class AutoTilingTuner(Autotuner):
         rep=None,
         use_cuda_graph=False,
         do_bench=None,
-        auto_profile_dir=None
+        auto_profile_dir=None,
+        split_params=None,
+        tiling_params=None,
+        low_dim_axes=None,
+        reduction_axes=None,
     ):
         """
         :param key: a list of argument name, where the change of arguments in value will triger re-generating candidates configs and evaluating.
@@ -79,28 +83,102 @@ class AutoTilingTuner(Autotuner):
             use_cuda_graph,
             do_bench,
         )
+        self._init_axis_params(key, split_params, tiling_params, low_dim_axes, reduction_axes)
         self.auto_profile_dir = auto_profile_dir
-
         if not configs:
             self.user_configs = []
         else:
             self.user_configs = configs
         self.gen_configs = []  # generated configs from TileGenerator
+        self.is_simt_mode = False
+        self.user_specified_warps = None
+        self.print_autotuning = os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1"
 
-        self.split_params = None
-        self.tiling_params = None
-        self.low_dim_axes = None
-        self.reduction_axes = None
+    def _init_axis_params(self, key, split_params, tiling_params, low_dim_axes, reduction_axes):
+        if isinstance(key, list):
+            if (
+                split_params 
+                or tiling_params 
+                or low_dim_axes 
+                or reduction_axes
+            ):
+                raise ValueError(
+                    "If any axis-related parameters (split_params, tiling_params, low_dim_axes, reduction_axes)"
+                    " are provided, 'key' must be a dict, not a list."
+                )
+            if len(key) > len(valid_axis_names):
+                raise ValueError("Number of parameters exceeds the number of available axes.")
+            self.keys = {axis: param for axis, param in zip(valid_axis_names, key)}
+        elif isinstance(key, dict):
+            if not set(key.keys).issubset(set(valid_axis_names)):
+                raise ValueError("All keys in 'key' must be valid axis names. Got unexpected keys.")
+            self.keys = key
+            if not (
+                split_params
+                and tiling_params
+                and low_dim_axes
+                and reduction_axes
+            ):
+                raise ValueError(
+                    "If 'key' is a dict, all axis-related parameters (split_params, tiling_params, low_dim_axes,"
+                    " reduction_axes) must be provided."
+                )
+            if not isinstance(split_params, dict):
+                raise ValueError("split_params must be a dict, got: {}".format(type(split_params)))
+            if not isinstance(tiling_params, dict):
+                raise ValueError("tiling_params must be a dict, got: {}".format(type(tiling_params)))
+            if not isinstance(low_dim_axes, list):
+                raise ValueError("low_dim_axes must be a list, got: {}".format(type(low_dim_axes)))
+            if not isinstance(reduction_axes, list):
+                raise ValueError("reduction_axes must be a list, got: {}".format(type(reduction_axes)))
+            used_axes = [split_params.keys(), tiling_params.keys(), low_dim_axes, reduction_axes]
+            if not set(used_axes).issubset(self.keys.keys()):
+                raise ValueError(
+                    "The following axes are used but not present in the 'key': {}".format(set(used_axes) - set(self.keys.keys()))
+                )
+
+        self.split_params = split_params 
+        self.tiling_params = tiling_params
+        self.low_dim_axes = low_dim_axes
+        self.reduction_axes = reduction_axes
         self.dual_reduction = False
         self.persistent_reduction = False
         self.input_ptr_num = -1
-        self.is_simt_mode = False
-        self.user_specified_warps = None
-        if len(key) > len(valid_axis_names):
-            raise ValueError("Number of parameters exceeds the number of available axes.")
-        self.keys = {axis: param for axis, param in zip(valid_axis_names, key)}
-        self.print_autotuning = os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1"
 
+    def _autoparse_axis_params(self, all_args):
+        miss_params = [arg for arg in self.arg_names if arg not in all_args.keys()]
+        # parse pointer params nums
+        if self.input_ptr_num == -1:
+            self.input_ptr_num = self._autoparse_ptr_nums(miss_params)
+        
+        # parse autotiling axes
+        # reduction axis must be parsed before other axes. it will alter the key
+        if not self.reduction_axes:
+            self.reduction_axes = self._autoparse_reduction_axes()
+        if len(self.reduction_axes) >= 2:
+            self.dual_reduction = True
+
+        if not self.low_dim_axes:
+            self.low_dim_axes = self._autoparse_low_dim_axes()
+
+        if len(self.reduction_axes) == 1 and \
+            self.reduction_axes[0] == self.low_dim_axes[0] and \
+            all_args.get(self.keys[self.reduction_axes[0]]) < 1024:
+            self.persistent_reduction = True
+
+        if not self.split_params:
+            self.split_params = self._autoparse_split_params(miss_params)
+        miss_params = [arg for arg in miss_params if arg not in self.split_params.values()]
+        if not self.tiling_params:
+            self.tiling_params = self._autoparse_tiling_params(miss_params)
+        miss_params = [arg for arg in miss_params if arg not in self.tiling_params.values()]
+        if miss_params:
+            raise ValueError(
+                f"Missing required arguments: {miss_params}. "
+                f"These arguments must be explicitly provided and cannot be automatically tuned. "
+                f"Please ensure that these arguments are passed when calling the function."
+            )
+        
     def _gen_tile_configs(
         self, kv_dict: Dict[str, int], dtype: torch.dtype
     ) -> List[Config]:
@@ -200,42 +278,13 @@ class AutoTilingTuner(Autotuner):
 
         key = tuple(key)
         if key not in self.cache:
-            miss_params = [arg for arg in self.arg_names if arg not in all_args.keys()]
-            # parse pointer params nums
-            if self.input_ptr_num == -1:
-                self.input_ptr_num = self.autoparse_ptr_nums(miss_params)
-            
-            # parse autotiling axes
-            # reduction axis must be parsed before other axes. it will alter the key
-            if not self.reduction_axes:
-                self.reduction_axes = self.autoparse_reduction_axes()
-            if len(self.reduction_axes) >= 2:
-                self.dual_reduction = True
-
-            if not self.low_dim_axes:
-                self.low_dim_axes = self.autoparse_low_dim_axes()
-
-            if len(self.reduction_axes) == 1 and \
-               self.reduction_axes[0] == self.low_dim_axes[0] and \
-               all_args.get(self.keys[self.reduction_axes[0]]) < 1024:
-                self.persistent_reduction = True
-
-            if not self.split_params:
-                self.split_params = self.autoparse_split_params(miss_params)
-            miss_params = [arg for arg in miss_params if arg not in self.split_params.values()]
-            if not self.tiling_params:
-                self.tiling_params = self.autoparse_tiling_params(miss_params)
-            miss_params = [arg for arg in miss_params if arg not in self.tiling_params.values()]
-            if miss_params:
-                raise ValueError(
-                    f"Missing required arguments: {miss_params}. "
-                    f"These arguments must be explicitly provided and cannot be automatically tuned. "
-                    f"Please ensure that these arguments are passed when calling the function."
-                )
+            self._autoparse_axis_params(all_args)
 
             # prune configs
             _kv_dict = {k: _args[v] for k, v in self.keys.items() if v in _args}
             self.configs = self._gen_tile_configs(_kv_dict, dtype)
+            if self.print_autotuning:
+                print("Generate tile configs nums: {}".format(len(self.configs)))
             pruned_configs = self.prune_configs(kwargs)
             if len(pruned_configs) > 1:
                 used_cached_result = False
@@ -254,7 +303,7 @@ class AutoTilingTuner(Autotuner):
             config = self.cache[key]
 
         self.best_config = config
-        if os.getenv("TRITON_PRINT_AUTOTUNING", None) == "1" and not used_cached_result:
+        if self.print_autotuning and not used_cached_result:
             print(
                 f"Triton autotuning for function {self.base_fn.__name__} finished after "
                 f"{self.bench_time:.2f}s; best config selected: {self.best_config};"
@@ -277,7 +326,8 @@ class AutoTilingTuner(Autotuner):
         kernel_dict = {config: self._tiling_kernel(*args, config=config, **kwargs) for config in configs}
         tiling_dict = self._batch_benchmark(kernel_dict=kernel_dict, quantiles=(0.5, 0.2, 0.8))
         if self.print_autotuning:
-            print(f"triton configs: {tiling_dict}")
+            for config, config_time in tiling_dict.items():
+                print(f"triton configs: {config.kwargs}, time: {config_time}")
         return tiling_dict
 
     def _tiling_kernel(self, *args, config, **meta):
@@ -348,44 +398,36 @@ class AutoTilingTuner(Autotuner):
             kernel_call, prof_dir=self.auto_profile_dir, keep_res=True
         )
 
-    def autoparse_split_params(self, candidates_params: List[str]) -> Dict[str, str]:
+    def _autoparse_split_params(self, candidates_params: List[str]) -> Dict[str, str]:
         """
         Extracts the split axis parameters from triton kernel code.
         """
-        if self.print_autotuning:
-            print(f"Triton autotuning: Starting split params parsing...")
         func_ast = self.fn.parse()
         parser = SplitAxesParser(func_ast, self.keys, candidates_params)
         split_axes = parser.parse()
         if self.print_autotuning:
             print(
-                f"Triton autotuning: Split params parsing complete. "
-                f"Split params: {split_axes}"
+                f"Ascend autotuning parse split axes: {split_axes}"
             )
         return split_axes
 
-    def autoparse_tiling_params(self, candidates_params: List[str]) -> Dict[str, str]:
+    def _autoparse_tiling_params(self, candidates_params: List[str]) -> Dict[str, str]:
         """
         Extracts the tiling axis parameters from triton kernel code.
         """
-        if self.print_autotuning:
-            print(f"Triton autotuning: Starting tiling params parsing...")
         func_ast = self.fn.parse()
         parser = TilingAxesParser(func_ast, self.keys, candidates_params)
         tiling_axes = parser.parse()
         if self.print_autotuning:
             print(
-                f"Triton autotuning: Tiling params parsing complete. "
-                f"Tiling params: {tiling_axes}"
+                f"Ascend autotuning parse tiling axes: {tiling_axes}"
             )
         return tiling_axes
     
-    def autoparse_reduction_axes(self) -> List[str]:
+    def _autoparse_reduction_axes(self) -> List[str]:
         """
         Extracts the reduction axis parameters from triton kernel code.
         """
-        if self.print_autotuning:
-            print(f"Triton autotuning: Starting reduction params parsing...")
         func_ast = self.fn.parse()
         parser = ReductionAxesParser(func_ast, self.keys)
         reduction_axes = parser.parse()
@@ -395,46 +437,45 @@ class AutoTilingTuner(Autotuner):
 
         if self.print_autotuning:
             print(
-                f"Triton autotuning: Reduction params parsing complete. "
-                f"Reduction params: {reduction_axes}"
+                f"Ascend autotuning parse keys: {self.keys} \n"
+                f"Ascend autotuning parse reduction axes: {reduction_axes}"
             )
         return reduction_axes
 
-    def autoparse_low_dim_axes(self) -> List[str]:
+    def _autoparse_low_dim_axes(self) -> List[str]:
         """
         Extracts the low dimension axis from triton kernel code.
         """
-        if self.print_autotuning:
-            print(f"Triton autotuning: Starting Low dims axes parsing...")
         func_ast = self.fn.parse()
         parser = LowDimsAxesParser(func_ast, self.keys)
         low_dim_axes = parser.parse()
+        if len(low_dim_axes) < 1:
+            raise ValueError(
+                f"Failed to parse low-dimensional axes."
+            )
         if self.print_autotuning:
             print(
-                f"Triton autotuning: Low dims axes parsing complete. "
-                f"Keys: {self.keys}, Low dims: {low_dim_axes}"
+                f"Ascend autotuning parse low dimensional axes: {low_dim_axes}"
             )
         return low_dim_axes
     
-    def autoparse_ptr_nums(self, miss_params: List[str]) -> int:
+    def _autoparse_ptr_nums(self, miss_params: List[str]) -> int:
         """
         Counts the number of pointer parameters from triton kernel code.
         """
-        if self.print_autotuning:
-            print(f"Triton autotuning: Starting ptr nums parsing...")
         func_ast = self.fn.parse()
         parser = PtrNumsParser(func_ast, self.keys, miss_params)
         ptr_nums, ptr_params = parser.parse()
         if self.print_autotuning:
             print(
-                f"Triton autotuning: Pointer nums parsing complete. "
-                f"Pointer params: {ptr_params}, pointer nums: {ptr_nums}"
+                f"Ascend autotuning parse pointer params: {ptr_params}, pointer nums: {ptr_nums}"
             )
         return ptr_nums
 
 
 def ascend_autotune(configs, key, prune_configs_by=None, reset_to_zero=None, restore_value=None, pre_hook=None, post_hook=None,
-                    warmup=None, rep=None, use_cuda_graph=False, do_bench=None, auto_prof_dir=None):
+                    warmup=None, rep=None, use_cuda_graph=False, do_bench=None, auto_prof_dir=None,
+                    split_params=None, tiling_params=None, low_dim_axes=None, reduction_axes=None):
     """
     Decorator for auto-tuning a :code:`triton.jit`'d function.
 
@@ -493,6 +534,7 @@ def ascend_autotune(configs, key, prune_configs_by=None, reset_to_zero=None, res
     def decorator(fn):
         return AutoTilingTuner(fn, fn.arg_names, configs, key, reset_to_zero, restore_value, pre_hook=pre_hook,
                                post_hook=post_hook, prune_configs_by=prune_configs_by, warmup=warmup, rep=rep,
-                               use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_prof_dir)
+                               use_cuda_graph=use_cuda_graph, do_bench=do_bench, auto_profile_dir=auto_prof_dir,
+                               split_params=split_params, tiling_params=tiling_params, low_dim_axes=low_dim_axes, reduction_axes=reduction_axes)
 
     return decorator
