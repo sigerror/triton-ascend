@@ -23,7 +23,6 @@
 from __future__ import annotations
 
 import builtins
-import logging
 import os
 import time
 import copy
@@ -250,10 +249,8 @@ class AutoTilingTuner(Autotuner):
         else:
             return self.gen_configs + self.user_configs
 
-    def run(self, *args, **kwargs):
+    def generate_key_and_configs(self, *args, **kwargs):
         self.nargs = dict(zip(self.arg_names, args))
-        used_cached_result = True
-
         self.is_simt_mode = kwargs.get('force_simt_only', False)
         if 'num_warps' in kwargs and kwargs['num_warps'] is not None:
             self.user_specified_warps = kwargs['num_warps']
@@ -279,12 +276,17 @@ class AutoTilingTuner(Autotuner):
         key = tuple(key)
         if key not in self.cache:
             self._autoparse_axis_params(all_args)
-
             # prune configs
             _kv_dict = {k: _args[v] for k, v in self.keys.items() if v in _args}
             self.configs = self._gen_tile_configs(_kv_dict, dtype)
             if self.print_autotuning:
                 print("Generate tile configs nums: {}".format(len(self.configs)))
+        return key
+
+    def run(self, *args, **kwargs):
+        key = self.generate_key_and_configs(*args, **kwargs)
+        used_cached_result = True
+        if key not in self.cache:
             pruned_configs = self.prune_configs(kwargs)
             if len(pruned_configs) > 1:
                 used_cached_result = False
@@ -323,14 +325,41 @@ class AutoTilingTuner(Autotuner):
         return ret
 
     def _batch_bench(self, *args, configs, **kwargs):
-        kernel_dict = {config: self._tiling_kernel(*args, config=config, **kwargs) for config in configs}
-        tiling_dict = self._batch_benchmark(kernel_dict=kernel_dict, quantiles=(0.5, 0.2, 0.8))
-        if self.print_autotuning:
-            for config, config_time in tiling_dict.items():
-                print(f"triton configs: {config.kwargs}, time: {config_time}")
-        return tiling_dict
+        from triton.compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError
+        from triton.runtime.errors import OutOfResources
 
-    def _tiling_kernel(self, *args, config, **meta):
+        kernels_call = {config: self._make_kernel_call(*args, config=config, **kwargs) for config in configs}
+        run_fns = {}
+        exc = None
+        exc_stack = ""
+
+        for config, fn in kernels_call.items():
+            try:
+                fn()
+                run_fns[config] = fn
+            except (CompileTimeAssertionFailure, MLIRCompilationError, OutOfResources) as e:
+                import traceback
+                exc_stack = traceback.format_exc()
+                exc = e
+
+        if len(run_fns) == 0:
+            raise RuntimeError(f"No valid triton configs. {type(exc).__name__}: {exc} \nStack trace: {exc_stack}")
+
+        if len(run_fns) == 1:
+            # we ignore expensive profiling method when only single config is left
+            return {config: self.do_bench(fn) for config, fn in run_fns.items()}
+
+        use_profiling = os.getenv("TRITON_BENCH_METHOD", "default").lower() == "npu"
+        if use_profiling:
+            from ..testing import do_bench_npu
+
+            time_cost = do_bench_npu(list(run_fns.values()), clear_l2_cache=False)
+            assert len(time_cost) == len(run_fns)
+            return {config: cost for config, cost in zip(run_fns.keys(), time_cost)}
+        else:
+            return {config: self.do_bench(fn) for config, fn in run_fns.items()}
+
+    def _make_kernel_call(self, *args, config, **meta):
         # check for conflicts, i.e. meta-parameters both provided
         # as kwargs and by the autotuner
         conflicts = meta.keys() & config.kwargs.keys()
@@ -360,40 +389,23 @@ class AutoTilingTuner(Autotuner):
             self.post_hook(full_nargs, exception=None)
         return kernel_call
 
-    def _batch_benchmark(self, kernel_dict, rep=10, quantiles=None):
-        """
-            Benchmark the runtime of the provided function.
-            By default, return the median runtime of :code:`fn` along with
-            the 20-th and 80-th performance percentile.
-
-            :param kernel_dict: Function to benchmark
-            :type kernel_dict: Callable
-            :param rep: Repetition time (in ms)
-            :type rep: int
-            :param quantiles: Performance percentile to return in addition to the median.
-            :type quantiles: list[float], optional
-        """
-        assert len(kernel_dict) > 0, f"ERROR: length of kernel_dict is empty."
-        from triton.compiler.errors import CompileTimeAssertionFailure, MLIRCompilationError, CompilationError
-        from triton.runtime.errors import OutOfResources
-        if self.do_bench.__module__ == "triton.testing":
-            enable_bench_npu = os.getenv("TRITON_BENCH_METHOD", 'default').lower() == 'npu'
-            if enable_bench_npu:
-                from ..testing import do_bench_multiple_kernel_npu
-                tiling_dict = do_bench_multiple_kernel_npu(kernel_dict, active=max(30, rep), prof_dir=None, keep_res=False)
-                return tiling_dict
-        tiling_dict = {}
-        for config, kernel_call in kernel_dict.items():
-            try:
-                tiling_dict[config] = self.do_bench(kernel_call, quantiles=quantiles)
-            except (OutOfResources, CompileTimeAssertionFailure, MLIRCompilationError) as ex:
-                tiling_dict[config] = [float("inf"), float("inf"), float("inf")]
-        return tiling_dict
+    def warmup(self, *args, **kwargs):
+        _ = self.generate_key_and_configs(*args, **kwargs)
+        pruned_configs = self.prune_configs(kwargs)
+        ret = []
+        for config in pruned_configs:
+            ret.append(self.fn.warmup(
+                *args,
+                **kwargs,
+                **config.all_kwargs()
+            ))
+        self.nargs = None
+        return ret
 
     def _profile(self, *args, config, **meta):
         from ..testing import do_bench_npu
 
-        kernel_call = self._tiling_kernel(*args, config=config, **meta)
+        kernel_call = self._make_kernel_call(*args, config=config, **meta)
         do_bench_npu(
             kernel_call, prof_dir=self.auto_profile_dir, keep_res=True
         )
