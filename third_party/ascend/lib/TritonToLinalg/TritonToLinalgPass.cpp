@@ -36,6 +36,7 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "bishengir/Dialect/HFusion/IR/HFusion.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
@@ -521,7 +522,8 @@ void TritonToLinalgPass::addDynamicLegal(
       linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
       cf::ControlFlowDialect, tensor::TensorDialect, LLVM::LLVMDialect,
       bufferization::BufferizationDialect, memref::MemRefDialect,
-      annotation::AnnotationDialect, hivm::HIVMDialect>();
+      annotation::AnnotationDialect, hivm::HIVMDialect,
+      hfusion::HFusionDialect>();
 
   // add legal dialect on condition
   target.addLegalOp<ModuleOp>();
@@ -737,7 +739,7 @@ void TritonToLinalgPass::getDependentDialects(DialectRegistry &registry) const {
   registry.insert<func::FuncDialect, arith::ArithDialect, math::MathDialect,
                   linalg::LinalgDialect, affine::AffineDialect, scf::SCFDialect,
                   tensor::TensorDialect, bufferization::BufferizationDialect,
-                  memref::MemRefDialect,
+                  memref::MemRefDialect, hfusion::HFusionDialect,
                   hivm::HIVMDialect, annotation::AnnotationDialect>();
 }
 

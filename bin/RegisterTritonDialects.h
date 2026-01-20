@@ -1,5 +1,6 @@
 #pragma once
 #include "ascend/include/TritonToLinalg/Passes.h"
+#include "ascend/include/DiscreteMaskAccessConversion/Passes.h"
 // #include "amd/include/Dialect/TritonAMDGPU/IR/Dialect.h"
 // #include "amd/include/TritonAMDGPUTransforms/Passes.h"
 // #include "third_party/nvidia/include/Dialect/NVGPU/IR/Dialect.h"
@@ -52,6 +53,7 @@ inline void registerTritonDialects(mlir::DialectRegistry &registry) {
   // mlir::triton::registerConvertNVGPUToLLVMPass();
   // mlir::triton::registerDecomposeUnsupportedNVIDIAConversions();
   mlir::triton::registerTritonToLinalgPass();
+  mlir::triton::registerDiscreteMaskAccessConversion();
   mlir::registerLLVMDIScope();
 
   // TritonAMDGPUToLLVM passes
