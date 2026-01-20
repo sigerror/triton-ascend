@@ -69,7 +69,16 @@ def insert_slice(ful, sub, offsets, sizes, strides, _builder=None, _generator=No
         assert(len(ful.shape) == len(strides))
         assert(all([s>=1 for s in sizes]))
         assert(all([s>=0 for s in strides]))
-        new_offsets = [o.handle for o in offsets]
+        # Handle both tensor and int offsets (for interpreter mode)
+        new_offsets = []
+        for o in offsets:
+            if isinstance(o, tensor):
+                new_offsets.append(o.handle)
+            elif isinstance(o, int):
+                # For interpreter mode: keep as int
+                new_offsets.append(o)
+            else:
+                new_offsets.append(o.handle if hasattr(o, 'handle') else o)
         ret_type = tl.block_type(ful.type.scalar, ful.shape)
         out = builder.create_insert_slice(ful.handle, sub.handle, new_offsets, sizes, strides)
         return tensor(out, ret_type)
@@ -106,7 +115,16 @@ def extract_slice(ful, offsets, sizes, strides, _builder=None, _generator=None) 
         assert(len(ful.shape) == len(strides))
         assert(all([s>=1 for s in sizes]))
         assert(all([s>=0 for s in strides]))
-        new_offsets = [o.handle for o in offsets]
+        # Handle both tensor and int offsets (for interpreter mode)
+        new_offsets = []
+        for o in offsets:
+            if isinstance(o, tensor):
+                new_offsets.append(o.handle)
+            elif isinstance(o, int):
+                # For interpreter mode: keep as int
+                new_offsets.append(o)
+            else:
+                new_offsets.append(o.handle if hasattr(o, 'handle') else o)
         ret_type = tl.block_type(ful.type.scalar, sizes)
         out = builder.create_extract_slice(ful.handle, new_offsets, sizes, strides)
         return tensor(out, ret_type)
@@ -137,7 +155,18 @@ def get_element(src, indice, _builder=None, _generator=None):
         if len(src.shape) != len(indice):
             raise ValueError("Indice's rank must be equal to src tensor's rank")
 
-        new_indice = [i.handle for i in indice]
+        # Handle both tensor and int indices (for interpreter mode)
+        new_indice = []
+        for i in indice:
+            if isinstance(i, tensor):
+                new_indice.append(i.handle)
+            elif isinstance(i, int):
+                # For interpreter mode: convert int to TensorHandle
+                new_indice.append(i)
+            else:
+                # Try to use .handle attribute if available
+                new_indice.append(i.handle if hasattr(i, 'handle') else i)
+        
         result = builder.create_extract_scalar(src.handle, new_indice)
         return wrap_tensor(result, src.type.scalar, None)
 
