@@ -727,6 +727,13 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
   // base_ptr offset shape and stride are not used, arbitrarily set for now
   std::string name = "";
   name.append(kernelName);
+  void *workspace_addr_ptr = NULL;
+  uint32_t blockNum4Workspace = gridX * gridY * gridZ;
+  {f'''
+  uint64_t totalWorkSpaceSize = {workspace_size} * blockNum4Workspace;
+  auto optionsWorkspace = at::TensorOptions().device(at::kPrivateUse1).dtype(at::kByte);
+  workspace_addr_ptr = {get_backend_func("allocate_memory", "totalWorkSpaceSize", "optionsWorkspace")}
+  ''' if workspace_size > 0 else ''}
   {'auto launch_call = [=]() -> rtError_t' if enable_taskqueue else ''} {{
     uint32_t blockNum = gridX * gridY * gridZ;
 
@@ -749,12 +756,10 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
     {'if (ret != RT_ERROR_NONE) return ret;' if (target_support_ffts and enable_taskqueue) else 'if (ret != RT_ERROR_NONE) return;' if (target_support_ffts and (not enable_taskqueue)) else ''}
     // stub argument for workspace
     void *syncBlockLock_ptr = NULL;
-    void *workspace_addr_ptr = NULL;
-    auto optionsWorkspace = at::TensorOptions().device(at::kPrivateUse1).dtype(at::kByte);
     uint16_t ModuleId = 0;
     {f'''
     uint64_t syncBlockLockSize = {lock_num} * sizeof(int64_t);
-    syncBlockLock_ptr = {get_backend_func("allocate_memory", "syncBlockLockSize", "optionsWorkspace")}
+    syncBlockLock_ptr = {get_backend_func("allocate_sync_block_lock", "syncBlockLockSize", "stream")}
     if (!syncBlockLock_ptr) {{
       {alloc_success_code if enable_taskqueue else sync_lock_fail_code}
     }}
@@ -768,13 +773,6 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       return {'ret' if enable_taskqueue else ''};
     }}
     ''' if lock_num > 0 else ''}
-    {f'''
-    uint64_t totalWorkSpaceSize = {workspace_size} * blockNum;
-    workspace_addr_ptr = {get_backend_func("allocate_memory", "totalWorkSpaceSize", "optionsWorkspace")}
-    if (!workspace_addr_ptr) {{
-      {alloc_success_code if enable_taskqueue else workspace_fail_code}
-    }}
-    ''' if workspace_size > 0 else ''}
     {'if (ret != RT_ERROR_NONE) return ret;' if (workspace_size > 0 and enable_taskqueue) else 'if (ret != RT_ERROR_NONE) return;' if (workspace_size > 0 and not enable_taskqueue) else ''}
     struct __attribute__((packed)) {{
       {'void* ffts_addr __attribute__((aligned(8)));' if target_support_ffts else ''}

@@ -288,6 +288,11 @@ def allocate_memory(size, option):
     return f"const_cast<void *>(at::empty({size}, {option}).storage().data());"
 
 
+@backend_strategy_registry.register("torch_npu", "allocate_sync_block_lock")
+def allocate_sync_block_lock(size, stream):
+    return f"const_cast<void *>(at_npu::native::allocate_workspace({size}, {stream}).storage().data());"
+
+
 @backend_strategy_registry.register("mindspore", "pre_launch")
 def pre_launch():
     return '''static auto device_context = mindspore::device::DeviceContextManager::GetInstance().GetOrCreateDeviceContext({mindspore::device::DeviceType::kAscend, mindspore::DeviceManagerConf::GetInstance()->device_id()});
