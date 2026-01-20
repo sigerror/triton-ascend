@@ -405,6 +405,9 @@ def generate_npu_wrapper_src(constants, signature, metadata):
             "i16": "int16_t",
             "i32": "int32_t",
             "i64": "int64_t",
+            "u1": "uint32_t",
+            "u8": "uint8_t",
+            "u16": "uint16_t",
             "u32": "uint32_t",
             "u64": "uint64_t",
             "fp16": "float",
@@ -419,8 +422,13 @@ def generate_npu_wrapper_src(constants, signature, metadata):
             return "PyObject*"
         return {
             'i1': 'int32_t',
+            'i8': 'int8_t',
+            'i16': 'int16_t',
             'i32': 'int32_t',
             'i64': 'int64_t',
+            'u1': 'uint32_t',
+            'u8': 'uint8_t',
+            'u16': 'uint16_t',
             'u32': 'uint32_t',
             'u64': 'uint64_t',
             'fp16': 'float',
@@ -436,10 +444,14 @@ def generate_npu_wrapper_src(constants, signature, metadata):
             "float": "f",
             "double": "d",
             "long": "l",
-            "uint32_t": "I",
+            "int8_t": "b",
+            "int16_t": "h",
             "int32_t": "i",
+            "int64_t": "l",
+            "uint8_t": "B",
+            "uint16_t": "H",
+            "uint32_t": "I",
             "uint64_t": "K",
-            "int64_t": "L",
         }[ty]
 
     def _format_of_msprof_task_type_ratio(bs_task_type, mix_mode):
@@ -775,7 +787,9 @@ static void _launch(const char* kernelName, const void* func, rtStream_t stream,
       {'static_cast<void*>(ffts_addr),' if target_support_ffts else ''}
       {('static_cast<void*>(syncBlockLock_ptr),' if lock_num > 0 else 'nullptr,') if not metadata.force_simt_only else ''}
       {('static_cast<void*>(workspace_addr_ptr),' if workspace_size > 0 else 'nullptr,') if not metadata.force_simt_only else ''}
-      {(', '.join(f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants) + ',') if len(signature) > 0 else ''}
+      {(lambda _rt: (', '.join(_rt) + ',') if _rt else '')(
+        [f'static_cast<{_ty_to_cpp(ty)}>(arg{i})' for i, ty in signature.items() if i not in constants]
+      )}
       {', '.join(f'static_cast<{_ty_to_cpp(ty)}>(grid{mark})' for mark, ty in grid_info.items())}
       {', static_cast<void*>(DTData)' if enable_device_print else ''}
     }};
