@@ -22,6 +22,7 @@ from math import pi as math_pi
 from triton.language import core, math, semantic
 from triton._C.libtriton import ir
 from triton.runtime.jit import jit
+from triton.backends.ascend.utils import get_ascend_arch_from_env
 
 @core.extern
 def reciprocal(arg0, _builder=None):
@@ -812,30 +813,41 @@ def copysign(arg0: core.tensor, arg1: core.tensor, _builder: ir.builder):
     return semantic.where(is_negative, neg_magnitude, magnitude, _builder)
 
 
-@core.builtin
-@math._check_dtype(dtypes=["fp16", "fp32", "bf16"])
-@math._add_math_1arg_docstr("rint")
-def rint(arg0: core.tensor, _builder: ir.builder):
-    arg0 = semantic.to_tensor(arg0, _builder)
+if get_ascend_arch_from_env() == "Ascend910_9589":
+    # if we have hardware support
+    @core.extern
+    def rint(arg0, _builder=None):
+        return core.extern_elementwise(
+            "", "", [arg0], {
+                (core.dtype("fp32"),): ("__hmf_rint", core.dtype("fp32")),
+                (core.dtype("fp16"),): ("__hmf_rint", core.dtype("fp16")),
+                (core.dtype("bf16"),): ("__hmf_rint", core.dtype("bf16")),
+            }, is_pure=True, _builder=_builder)
+else:
+    @core.builtin
+    @math._check_dtype(dtypes=["fp16", "fp32", "bf16"])
+    @math._add_math_1arg_docstr("rint")
+    def rint(arg0: core.tensor, _builder: ir.builder):
+        arg0 = semantic.to_tensor(arg0, _builder)
 
-    floor_x = math.floor(arg0, _builder=_builder)
-    fractional = semantic.sub(arg0, floor_x, True, _builder)
+        floor_x = math.floor(arg0, _builder=_builder)
+        fractional = semantic.sub(arg0, floor_x, True, _builder)
 
-    half = semantic.full(arg0.shape, 0.5, arg0.type.scalar, _builder)
-    eps = semantic.full(arg0.shape, 1e-8, arg0.type.scalar, _builder)
-    is_half = semantic.less_than(math.abs(semantic.sub(fractional, half, True, _builder), _builder=_builder), eps, _builder)
+        half = semantic.full(arg0.shape, 0.5, arg0.type.scalar, _builder)
+        eps = semantic.full(arg0.shape, 1e-8, arg0.type.scalar, _builder)
+        is_half = semantic.less_than(math.abs(semantic.sub(fractional, half, True, _builder), _builder=_builder), eps, _builder)
 
-    floor_int = floor_x.to(core.int32, _builder=_builder) if hasattr(floor_x, "to") else semantic.cast(floor_x, core.int32, _builder)
-    two_i32 = semantic.full(arg0.shape, 2, core.int32, _builder)
-    is_even = semantic.equal(semantic.mod(floor_int, two_i32, _builder), semantic.full(arg0.shape, 0, core.int32, _builder), _builder)
+        floor_int = floor_x.to(core.int32, _builder=_builder) if hasattr(floor_x, "to") else semantic.cast(floor_x, core.int32, _builder)
+        two_i32 = semantic.full(arg0.shape, 2, core.int32, _builder)
+        is_even = semantic.equal(semantic.mod(floor_int, two_i32, _builder), semantic.full(arg0.shape, 0, core.int32, _builder), _builder)
 
-    zero = semantic.full(arg0.shape, 0.0, arg0.type.scalar, _builder)
-    is_pos = semantic.greater_equal(arg0, zero, _builder)
+        zero = semantic.full(arg0.shape, 0.0, arg0.type.scalar, _builder)
+        is_pos = semantic.greater_equal(arg0, zero, _builder)
 
-    round_pos = math.floor(semantic.add(arg0, half, True, _builder), _builder=_builder)
-    round_neg = math.ceil(semantic.sub(arg0, half, True, _builder), _builder=_builder)
-    normal_round = semantic.where(is_pos, round_pos, round_neg, _builder)
+        round_pos = math.floor(semantic.add(arg0, half, True, _builder), _builder=_builder)
+        round_neg = math.ceil(semantic.sub(arg0, half, True, _builder), _builder=_builder)
+        normal_round = semantic.where(is_pos, round_pos, round_neg, _builder)
 
-    half_round = semantic.where(is_even, floor_x, semantic.add(floor_x, 1.0, True, _builder), _builder)
+        half_round = semantic.where(is_even, floor_x, semantic.add(floor_x, 1.0, True, _builder), _builder)
 
-    return semantic.where(is_half, half_round, normal_round, _builder)
+        return semantic.where(is_half, half_round, normal_round, _builder)
