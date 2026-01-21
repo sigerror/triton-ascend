@@ -874,21 +874,30 @@ OpFoldResult maxOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
   return b.create<arith::MaxSIOp>(loc, lhsValue, rhsValue).getResult();
 }
 
-LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter, linalg::ReduceOp reduceOp)
+void addReduceWithIndexAttr(ReduceWithIndexParams params, ConversionPatternRewriter &rewriter, linalg::ReduceOp reduceOp)
 {
-    Block &body = reduceOp.getCombiner().front();
-    auto yieldOp = dyn_cast<linalg::YieldOp>(body.getTerminator());
-    auto yieldValue = yieldOp.getValues();
-    if (yieldValue.size() == 0) {
-      return failure();
-    }
-    else if (yieldValue.size() != 2) {
-      return success();
-    }
-
     const StringRef reduceRef = "reduce_mode";
     const StringRef tieBreakLeftRef = "tie_break_left";
     const StringRef unsignedSrcRef = "unsigned_src";
+
+    const StringRef tieBreakStr = params.tieBreakType == TieBreakType::LEFT ? "true" : "false";
+    const StringRef withIndexStr = params.withIndexType == ReduceWithIndexType::MAX ? "max_with_index" : "min_with_index";
+    const StringRef unsignedSrcStr = params.isUnsignedSrc ? "true" : "false";
+
+    reduceOp->setAttr(reduceRef, rewriter.getStringAttr(withIndexStr));
+    reduceOp->setAttr(tieBreakLeftRef, rewriter.getStringAttr(tieBreakStr));
+    reduceOp->setAttr(unsignedSrcRef, rewriter.getStringAttr(unsignedSrcStr));
+}
+
+std::optional<ReduceWithIndexParams> getReduceWithIndexParams(triton::ReduceOp reduceOp)
+{
+    auto tritonReduceBlock = reduceOp.getBody();
+    auto *tritonYield = tritonReduceBlock->getTerminator();
+    auto yieldVelues = tritonYield->getOperands();
+    constexpr int yieldValuesNum = 2;
+    if (yieldVelues.size() != yieldValuesNum) {
+      return {};
+    }
 
     // Unify signed/unsigned and int/float predicate
     enum class Predicate { Undefined = 0, lt = 1, gt = 2, eq = 3 };
@@ -943,34 +952,34 @@ LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter
     //    (new_v == old_v and new_i > old_i) or new_v > old_v
     //    new_v > old_v or (new_v == old_v and new_i > old_i)
 
-    std::map<std::vector<Predicate>, std::pair<std::string, std::string>> m {
+    std::map<std::vector<Predicate>, std::pair<ReduceWithIndexType, TieBreakType>> m {
         // leftmost
-        {{Predicate::eq, Predicate::lt, Predicate::lt}, {"min_with_index", "true"}},
-        {{Predicate::lt, Predicate::eq, Predicate::lt}, {"min_with_index", "true"}},
-        {{Predicate::lt}, {"min_with_index", "true"}},
-        {{Predicate::eq, Predicate::lt, Predicate::gt}, {"max_with_index", "true"}},
-        {{Predicate::gt, Predicate::eq, Predicate::lt}, {"max_with_index", "true"}},
-        {{Predicate::gt}, {"max_with_index", "true"}},
+        {{Predicate::eq, Predicate::lt, Predicate::lt}, {ReduceWithIndexType::MIN, TieBreakType::LEFT}},
+        {{Predicate::lt, Predicate::eq, Predicate::lt}, {ReduceWithIndexType::MIN, TieBreakType::LEFT}},
+        {{Predicate::lt}, {ReduceWithIndexType::MIN, TieBreakType::LEFT}},
+        {{Predicate::eq, Predicate::lt, Predicate::gt}, {ReduceWithIndexType::MAX, TieBreakType::LEFT}},
+        {{Predicate::gt, Predicate::eq, Predicate::lt}, {ReduceWithIndexType::MAX, TieBreakType::LEFT}},
+        {{Predicate::gt}, {ReduceWithIndexType::MAX, TieBreakType::LEFT}},
         // rightmost
-        {{Predicate::eq, Predicate::gt, Predicate::lt}, {"min_with_index", "false"}},
-        {{Predicate::lt, Predicate::eq, Predicate::gt}, {"min_with_index", "false"}},
-        {{Predicate::eq, Predicate::gt, Predicate::gt}, {"max_with_index", "false"}},
-        {{Predicate::gt, Predicate::eq, Predicate::gt}, {"max_with_index", "false"}},
+        {{Predicate::eq, Predicate::gt, Predicate::lt}, {ReduceWithIndexType::MIN, TieBreakType::RIGHT}},
+        {{Predicate::lt, Predicate::eq, Predicate::gt}, {ReduceWithIndexType::MIN, TieBreakType::RIGHT}},
+        {{Predicate::eq, Predicate::gt, Predicate::gt}, {ReduceWithIndexType::MAX, TieBreakType::RIGHT}},
+        {{Predicate::gt, Predicate::eq, Predicate::gt}, {ReduceWithIndexType::MAX, TieBreakType::RIGHT}},
     };
 
     std::vector<Predicate> preds;
     std::vector<Signedness> signednesses;
     // A better way is to trace the arith.select
     // Checking the operations one by one is hacky :(
-    for (auto it = body.begin(); it != body.end(); ++it) {
+    for (auto &op : tritonReduceBlock->without_terminator()) {
       Predicate pred = Predicate::Undefined;
       Signedness signedness = Signedness::NotApplicable;
-      if (auto op = dyn_cast<arith::CmpIOp>(*it)) {
-        auto predi = op.getPredicate();
+      if (auto cmpiOp = dyn_cast<arith::CmpIOp>(op)) {
+        auto predi = cmpiOp.getPredicate();
         std::tie(pred, signedness) = unifyPredicateI(predi);
       }
-      if (auto op = dyn_cast<arith::CmpFOp>(*it)) {
-        auto predf = op.getPredicate();
+      if (auto cmpfOp = dyn_cast<arith::CmpFOp>(op)) {
+        auto predf = cmpfOp.getPredicate();
         std::tie(pred, signedness) = unifyPredicateF(predf);
       }
       if (pred != Predicate::Undefined) {
@@ -982,19 +991,15 @@ LogicalResult addReduceWithIndexAttrIfNeeded(ConversionPatternRewriter &rewriter
     // check if sequence of predicates matches any sequence for min/max
     // leftmost/rightmost
     if (m.find(preds) == m.end()) {
-        return failure();
+        return {};
     }
 
     assert(!signednesses.empty());
     const bool isUnsignedSrc =
         signednesses[0] == Signedness::Unsigned ||
         signednesses[signednesses.size() - 1] == Signedness::Unsigned;
-    const std::string unsignedSrc = isUnsignedSrc ? "true" : "false";
-    auto [type, tieBreak] = m.at(preds);
-    reduceOp->setAttr(reduceRef, rewriter.getStringAttr(type));
-    reduceOp->setAttr(tieBreakLeftRef, rewriter.getStringAttr(tieBreak));
-    reduceOp->setAttr(unsignedSrcRef, rewriter.getStringAttr(unsignedSrc));
-    return success();
+    return ReduceWithIndexParams {
+      .withIndexType = m.at(preds).first, .tieBreakType = m.at(preds).second, .isUnsignedSrc = isUnsignedSrc};
 }
 
 // Fold layout constant info to attr, otherwise convert to index type value

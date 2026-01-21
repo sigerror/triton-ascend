@@ -922,9 +922,11 @@ LogicalResult ReduceConverter::convertToTargetOpExtended(
         b.create<linalg::YieldOp>(loc, results);
       });
 
-  if (failed(addReduceWithIndexAttrIfNeeded(rewriter, linalgOp))) {
+  auto reduceWithIndexParams = getReduceWithIndexParams(op);
+  if (!reduceWithIndexParams.has_value()) {
     return rewriter.notifyMatchFailure(op, "meaningless reduce operation");
   }
+  addReduceWithIndexAttr(*reduceWithIndexParams, rewriter, linalgOp);
 
   if (isScalarReduce) {
     SmallVector<Value> reduceResults;
