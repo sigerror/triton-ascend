@@ -21,25 +21,26 @@
 # THE SOFTWARE.
 
 __all__ = [
-    "builtin",
-    "is_builtin",
-    "int64",
-    "CORE",
-    "PIPE",
-    "MODE",
     "ascend_address_space",
-    "sub_vec_id",
+    "builtin",
+    "CORE",
     "copy_from_ub_to_l1",
-    "sync_block_set",
-    "sync_block_wait",
+    "debug_barrier",
+    "fixpipe",
     "FixpipeDMAMode",
     "FixpipeDualDstMode",
     "FixpipePreQuantMode",
     "FixpipePreReluMode",
-    "fixpipe",
+    "int64",
+    "is_builtin",
+    "MODE",
+    "PIPE",
+    "sub_vec_id",
+    "sub_vec_num",
     "sync_block_all",
-    "SYNC_IN_VF",
-    "debug_barrier",
+    "sync_block_set",
+    "sync_block_wait",
+    "SYNC_IN_VF"
 ]
 
 import enum
@@ -52,6 +53,7 @@ import triton.language.core as tl
 
 import triton.extension.buffer.language as bl
 from triton.language.core import _constexpr_to_value
+from triton.backends.ascend.driver import NPUUtils
 
 from . import semantic as semantic
 PIPE = semantic.PIPE
@@ -291,3 +293,15 @@ def debug_barrier(
     _builder=None,
 ) -> None:
     return semantic.debug_barrier(sync_mode.name, _builder)
+
+
+@builtin
+def sub_vec_num(_builder=None) -> tl.constexpr:
+    """
+    Get the Vector Core Num on one AI Core.
+    """
+    npuUtils = NPUUtils()
+    cube_num = npuUtils.get_aivector_core_num()
+    vector_num = npuUtils.get_aicore_num()
+    const_val = cube_num // vector_num
+    return tl.constexpr(const_val)
