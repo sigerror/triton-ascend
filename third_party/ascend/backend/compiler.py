@@ -680,6 +680,9 @@ class NPUOptions:
     parallel_mode: str = "simd"
     force_simt_only: bool = False
     force_simt_template: bool = False
+    # enable_bishengir_simt_optimization is passed as
+    # -enable-bishengir-simt-optimization flag to bishengir-compile.
+    enable_bishengir_simt_optimization: int = 000
     # compile_mode: "simd" (default), "unstructured_in_simt", "simt_only"
     # When compile_mode is provided, it automatically sets other fields
     compile_mode: str = "simd"
@@ -751,6 +754,8 @@ def ttir_to_npubin(mod, metadata, opt):
             _compile_option_list += ["--pure-simt"]
             _compile_option_list += [f"--num-warps={opt.num_warps}"]
             _compile_option_list += [f"--threads-per-warp={opt.warp_size}"]
+            if opt.enable_bishengir_simt_optimization != 000:
+                _compile_option_list += [f"--enable-bishengir-simt-optimization={opt.enable_bishengir_simt_optimization}"]
 
         npu_compiler_path = _get_npucompiler_path()
         cmd_list = (
