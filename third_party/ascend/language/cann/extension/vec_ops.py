@@ -353,7 +353,7 @@ def sort(ptr, dim=-1, descending=False, _builder=None):
 
 
 def ascend_cast_impl(input: tensor, dst_ty: dtype, builder: ir.builder,
-         fp_downcast_rounding: Optional[str] = None) -> tensor:
+         fp_downcast_rounding: Optional[str] = None, overflow_mode: Optional[str] = None) -> tensor:
     src_ty = input.type
     if isinstance(dst_ty, tl.constexpr):
         dst_ty = dst_ty.value
@@ -399,7 +399,7 @@ def ascend_cast_impl(input: tensor, dst_ty: dtype, builder: ir.builder,
     # bf16 <=> (not fp32)
     if (src_sca_ty.is_fp16() and not dst_sca_ty.is_fp32()) or \
        (src_sca_ty.is_bf16() and not dst_sca_ty.is_fp32()):
-        return cast(cast(input, tl.float32, builder), dst_sca_ty, builder)
+        return cast(cast(input, tl.float32, _builder=builder), dst_sca_ty, _builder=builder)
 
     # Standard floating types' casting: truncation
     #   fp64 => fp32, fp16, bf16
@@ -428,10 +428,10 @@ def ascend_cast_impl(input: tensor, dst_ty: dtype, builder: ir.builder,
             ty = input.dtype.to_ir(builder)
             _0 = tensor(builder.get_null_value(ty), input.dtype)
             return not_equal(input, _0, builder) 
-        elif not is_compile_on_910_95 and \
+        elif not is_compile_on_910_95 and overflow_mode == "saturate" and \
              (src_sca_ty.is_int_unsigned() or dst_sca_ty.is_int_unsigned()) and \
              src_sca_ty.int_bitwidth >= dst_sca_ty.int_bitwidth:
-            return cast(cast(input, tl.float32, builder), dst_sca_ty, builder)
+            return cast(cast(input, tl.float32, _builder=builder), dst_sca_ty, _builder=builder)
         return tensor(builder.create_int_cast(input.handle, dst_ty.to_ir(builder), sign_extend), dst_ty)
 
     # Casting standard floating types to integer types
@@ -499,7 +499,7 @@ def cast(input, dtype: dtype, fp_downcast_rounding: Optional[str] = None, bitcas
         bitcast = bitcast.value
     if bitcast:
         return semantic.bitcast(input, dtype, _builder)
-    ret = ascend_cast_impl(input, dtype, _builder, fp_downcast_rounding)
+    ret = ascend_cast_impl(input, dtype, _builder, fp_downcast_rounding, overflow_mode)
     if overflow_mode is not None:
         if overflow_mode in overflow_modes:
             compile_hint_impl(ret, "overflow_mode", overflow_mode, _builder)
