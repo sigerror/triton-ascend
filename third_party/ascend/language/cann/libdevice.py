@@ -98,8 +98,8 @@ def ilogb(arg0, _builder=None):
 def ldexp(arg0, arg1, _builder=None):
     return core.extern_elementwise(
         "", "", [arg0, arg1], {
-            (core.dtype("fp32"), core.dtype("fp32")): ("__hmf_ldexpf", core.dtype("fp32")),
-            (core.dtype("fp16"), core.dtype("fp16")): ("__hmf_ldexpDh", core.dtype("fp16")),
+            (core.dtype("fp32"), core.dtype("int32")): ("__hmf_ldexpf", core.dtype("fp32")),
+            (core.dtype("fp16"), core.dtype("int32")): ("__hmf_ldexpDh", core.dtype("fp16")),
         }, is_pure=True, _builder=_builder)
 
 @core.extern
