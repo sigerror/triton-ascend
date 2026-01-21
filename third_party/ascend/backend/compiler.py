@@ -662,6 +662,7 @@ class NPUOptions:
     # When compile_mode is provided, it automatically sets other fields
     compile_mode: str = "simd"
     mix_mode: str = ""
+    simt_stack_limit: int = None
 
     def __post_init__(self):
         # Parse compile_mode and set related fields
@@ -732,6 +733,8 @@ def ttir_to_npubin(mod, metadata, opt):
             _compile_option_list += [f"--threads-per-warp={opt.warp_size}"]
             if opt.enable_bishengir_simt_optimization != 000:
                 _compile_option_list += [f"--enable-bishengir-simt-optimization={opt.enable_bishengir_simt_optimization}"]
+            if opt.simt_stack_limit:
+                _compile_option_list += [f"--simt_stack_limit={opt.simt_stack_limit}"]
 
         npu_compiler_path = _get_npucompiler_path()
         cmd_list = (
