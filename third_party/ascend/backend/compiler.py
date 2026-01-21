@@ -440,6 +440,9 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             _compile_option_list += [
                 f"--append-bisheng-options={bisheng_options}"
             ]
+        mix_mode = opt.mix_mode
+        if mix_mode in ["aic"]:
+            _compile_option_list += ["--disable-hfusion-vectorize=true"]
         cmd_list = (
             [npu_compiler_path, ttadapter_path]
             + _compile_option_list
@@ -658,6 +661,7 @@ class NPUOptions:
     # compile_mode: "simd" (default), "unstructured_in_simt", "simt_only"
     # When compile_mode is provided, it automatically sets other fields
     compile_mode: str = "simd"
+    mix_mode: str = ""
 
     def __post_init__(self):
         # Parse compile_mode and set related fields
