@@ -817,6 +817,8 @@ class AscendBackend(BaseBackend):
     def get_codegen_implementation(self):
         # Note: a dict of functions is required to generate vendor-specific code piecies
         #       e.g. convert custom types like fp8e4b15
+        from triton.backends.ascend import _apply_ascend_patch
+        _apply_ascend_patch()
         codegen_fns = {"min_dot_size": min_dot_size(self.target)}
         return codegen_fns
 

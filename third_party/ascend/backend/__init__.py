@@ -25,10 +25,7 @@ from .testing import do_bench_npu
 
 
 def _apply_ascend_patch():
-    try:
-        from triton.compiler.compiler import ASTSource
-    except ImportError:
-        return
+    from triton.compiler.compiler import ASTSource
 
     if not getattr(ASTSource, "_ascend_patch_applied", False):
         _original_make_ir = ASTSource.make_ir
@@ -54,7 +51,5 @@ def _apply_ascend_patch():
         ASTSource.make_ir = _patched_make_ir
         ASTSource._ascend_patch_applied = True
 
-
-_apply_ascend_patch()
 
 __all__ = ["do_bench_npu"]
