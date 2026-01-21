@@ -1,7 +1,6 @@
 add_subdirectory(Dialect)
 add_subdirectory(TritonToAnnotation)
 add_subdirectory(TritonToHFusion)
-add_subdirectory(TritonLinearize)
 add_subdirectory(TritonToHIVM)
 add_subdirectory(TritonToLinalg)
 add_subdirectory(Utils)

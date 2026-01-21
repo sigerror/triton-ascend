@@ -142,33 +142,6 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         )
         pm.run(mod)
 
-        # cmd_list = [
-        #     triton_adapter_opt_path,
-        #     src_path,
-        # ]
-        # if enable_linearize:
-        #     cmd_list.append("--triton-linearize")
-        # cmd_list += [
-        #     f"--discrete-mask-access-conversion=compile-on-910-95={compile_on_910_95} "\
-        #     f"force-simt-template={force_simt_template}",
-        #     "--triton-to-annotation",
-        #     f"--triton-to-unstructure=compile-on-910-95={compile_on_910_95} "\
-        #     f"force-simt-template={force_simt_template}",
-        #     "--triton-to-hivm",
-        #     "--triton-to-hfusion",
-        #     "--triton-to-llvm",
-        #     "--bubble-up-operation",
-        #     f"--triton-to-linalg=global-kernel=false named-ops={named_ops} "\
-        #     f"enable-nd2nz-on-vector={enable_nd2nz_on_vector} "\
-        #     f"enable-select-analysis={enable_select_analysis} " \
-        #     f"compile-on-910-95={compile_on_910_95}",
-        #     "-o",
-        #     dst_path,
-        # ]
-        # if _is_ascend_sanitizer_enabled() or not _is_debug_line_info_disabled():
-        #     cmd_list += ["--mlir-print-debuginfo"]  # pass debug info
-        # ret = subprocess.run(cmd_list, capture_output=True, check=True)
-
         if opt.debug:
             dump_manager = get_dump_manager(metadata["hash"])
             dump_manager.put(str(mod), "kernel.ttadapter.mlir", binary=False)
@@ -642,7 +615,6 @@ class NPUOptions:
     reg_inc_consumer: int = 0
 
     compile_on_910_95: bool = is_compile_on_910_95
-    enable_linearize: bool = False
     optimize_dynamic_offset: bool = False
     enable_mask_fallback_conversion: bool = False
     enable_warp_specialization: bool = False

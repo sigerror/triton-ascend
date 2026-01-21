@@ -358,8 +358,7 @@ def test_triton_gpu_kernel(Z, Y, X, dtype, sigtype):
         a, b, out, 
         ynumel, xnumel, 
         YBLOCK=YBLOCK, XBLOCK=XBLOCK,
-        SHAPE0=Z, SHAPE1=Y, SHAPE2=X,
-        enable_linearize=True
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
     test_common.validate_cmp(sigtype, out_ref, out)
@@ -375,9 +374,8 @@ def test_k_load_perm_select(xnumel, ynumel, XBLOCK, YBLOCK, dtype, sigtype):
 
     grid = (ceil_div(xnumel, XBLOCK), ceil_div(ynumel, YBLOCK), 1)
     k_load_perm_select[grid](
-        in_ptr, out_ptr, ynumel, xnumel, 
-        YBLOCK=YBLOCK, XBLOCK=XBLOCK, 
-        enable_linearize=True
+        in_ptr, out_ptr, ynumel, xnumel,
+        YBLOCK=YBLOCK, XBLOCK=XBLOCK
     )
 
     out_ref = torch.zeros_like(out_ptr)
@@ -396,9 +394,8 @@ def test_k_store_perm_select(xnumel, ynumel, XBLOCK, YBLOCK, dtype, sigtype):
 
     grid = (ceil_div(xnumel, XBLOCK), ceil_div(ynumel, YBLOCK), 1)
     k_store_perm_select[grid](
-        in_ptr, out_ptr, ynumel, xnumel, 
-        YBLOCK=YBLOCK, XBLOCK=XBLOCK, 
-        enable_linearize=True
+        in_ptr, out_ptr, ynumel, xnumel,
+        YBLOCK=YBLOCK, XBLOCK=XBLOCK,
     )
 
     out_ref = torch.zeros_like(out_ptr)
@@ -425,8 +422,7 @@ def test_k_load_moddiv_noperm(Z, Y, X, dtype, sigtype):
     k_load_moddiv_noperm[grid](
         in_flat, out, ynumel, xnumel,
         YBLOCK=YBLOCK, XBLOCK=XBLOCK,
-        SHAPE0=Z, SHAPE1=Y, SHAPE2=X,
-        enable_linearize=True
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
     torch.testing.assert_close(out, in_flat)
@@ -448,8 +444,7 @@ def test_k_store_moddiv_noperm(Z, Y, X, dtype, sigtype):
     k_store_moddiv_noperm[grid](
         in_flat, out, ynumel, xnumel,
         YBLOCK=YBLOCK, XBLOCK=XBLOCK,
-        SHAPE0=Z, SHAPE1=Y, SHAPE2=X,
-        enable_linearize=True
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
     torch.testing.assert_close(out, in_flat)
@@ -472,8 +467,7 @@ def test_k_load_moddiv_perm(Z, Y, X, dtype, sigtype):
     k_load_moddiv_perm[grid](
         in_flat, out, ynumel, xnumel,
         YBLOCK=YBLOCK, XBLOCK=XBLOCK,
-        SHAPE0=Z, SHAPE1=Y, SHAPE2=X,
-        enable_linearize=True
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
     torch.testing.assert_close(out, in_flat)
@@ -496,8 +490,7 @@ def test_k_store_moddiv_perm(Z, Y, X, dtype, sigtype):
     k_store_moddiv_perm[grid](
         in_flat, out, ynumel, xnumel,
         YBLOCK=YBLOCK, XBLOCK=XBLOCK,
-        SHAPE0=Z, SHAPE1=Y, SHAPE2=X,
-        enable_linearize=True
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
     torch.testing.assert_close(out, in_flat)
@@ -519,8 +512,7 @@ def test_k_load_store_moddiv_noperm(Z, Y, X, dtype, sigtype):
     k_load_store_moddiv_noperm[grid](
         in_flat, out, ynumel, xnumel,
         YBLOCK=YBLOCK, XBLOCK=XBLOCK,
-        SHAPE0=Z, SHAPE1=Y, SHAPE2=X,
-        enable_linearize=True
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
     ref = (a + 2).contiguous().view(-1)
@@ -547,8 +539,7 @@ def test_k_load_store_moddiv_perm(Z, Y, X, dtype, sigtype):
     k_load_store_moddiv_perm[grid](
         a_flat, out, ynumel, xnumel,
         YBLOCK=YBLOCK, XBLOCK=XBLOCK,
-        SHAPE0=Z, SHAPE1=Y, SHAPE2=X,
-        enable_linearize=True
+        SHAPE0=Z, SHAPE1=Y, SHAPE2=X
     )
 
     a_reshaped = a + 1
@@ -591,7 +582,6 @@ def test_k_load_perm_scalar(y1_numel, y0_numel, x2_numel, Y1BLOCK, Y0BLOCK, Y0BL
         Y0BLOCK=Y0BLOCK,
         Y0BLOCK_SUB=Y0BLOCK_SUB,
         X2BLOCK_SUB=X2BLOCK_SUB,
-        enable_linearize=True
     )
 
     torch.testing.assert_close(out_ptr_triton, out_ptr_triton_ref, rtol=1e-5, atol=1e-6)
