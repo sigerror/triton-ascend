@@ -1546,9 +1546,9 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
         # All combinations of supported fp8 x fp8 are permitted
         pass
     else:
-        assert lhs.dtype in (tl.int8, tl.uint8, tl.float16, tl.bfloat16,
+        assert lhs.dtype in (tl.int1, tl.int8, tl.uint8, tl.float16, tl.bfloat16,
                              tl.float32), f"Unsupported lhs dtype {lhs.dtype}"
-        assert rhs.dtype in (tl.int8, tl.uint8, tl.float16, tl.bfloat16,
+        assert rhs.dtype in (tl.int1, tl.int8, tl.uint8, tl.float16, tl.bfloat16,
                              tl.float32), f"Unsupported rhs dtype {rhs.dtype}"
         assert lhs.dtype == rhs.dtype, f"Both operands must be same dtype. Got {lhs.dtype} and {rhs.dtype}"
 
@@ -1596,16 +1596,13 @@ def dot(lhs: tl.tensor, rhs: tl.tensor, acc: tl.tensor, input_precision: Optiona
         acc_handle = acc.handle
         assert acc.type == ret_ty
 
-    # max_num_imprecise_acc only applies to fp8 -> fp32 dot on sm_90
-    if max_num_imprecise_acc is None:
-        if lhs.dtype.is_fp8() and rhs.dtype.is_fp8():
-            max_num_imprecise_acc = builder.options.max_num_imprecise_acc_default
-        else:
-            max_num_imprecise_acc = 0
-    else:
-        if lhs.dtype.is_fp8() and rhs.dtype.is_fp8() and max_num_imprecise_acc > K:
-            raise ValueError(f"max_num_imprecise_acc ({max_num_imprecise_acc}) must be <= K ({K})")
+    if (input_precision == getattr(ir.INPUT_PRECISION, "HF32")):
+        if (not lhs.dtype.is_fp32() or not rhs.dtype.is_fp32() or not ret_scalar_ty.is_fp32()):
+            raise ValueError("input_precision = 'hf32' must be used with f32 * f32 = f32 on Ascend")
 
+    if max_num_imprecise_acc is not None:
+        print("max_num_imprecise_acc in tl.dot is not supported on Ascend yet. Thus it is ignored.")
+    max_num_imprecise_acc = 0
     return tl.tensor(builder.create_dot(lhs.handle, rhs.handle, acc_handle, input_precision, max_num_imprecise_acc),
                      ret_ty)
 
@@ -1641,7 +1638,7 @@ def _bitcast_to_fp_type(val: tl.tensor, float_format: str, builder: ir.builder):
         return bitcast(val, triton_ty, builder)
 
 def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.tensor, rhs_scale: Optional[tl.tensor],
-               rhs_format: str, acc: Union[tl.tensor, None], out_dtype: tl.dtype, lhs_k_pack, rhs_k_pack, 
+               rhs_format: str, acc: Union[tl.tensor, None], out_dtype: tl.dtype, lhs_k_pack, rhs_k_pack,
                builder: ir.builder) -> tl.tensor:
     assert lhs.type.is_block() and rhs.type.is_block()
     assert lhs.dtype == tl.bfloat16 or lhs.dtype == tl.float16, f"lhs matrix dtype must be bf16 or fp16"
@@ -1654,7 +1651,7 @@ def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.te
     rhs_format: str = rhs_format.value
     lhs_format_enum = _str_to_fp_type(lhs_format)
     rhs_format_enum = _str_to_fp_type(rhs_format)
-    allowed_formats = {"bf16", "fp16"} # unsupported fp8/4 dtype: "e2m1", "e4m3", "e5m2" 
+    allowed_formats = {"bf16", "fp16"} # unsupported fp8/4 dtype: "e2m1", "e4m3", "e5m2"
     assert lhs_format in allowed_formats, f"NYI: lhs_format {lhs_format}"
     assert rhs_format in allowed_formats, f"NYI: rhs_format {rhs_format}"
     rhs_scale_is_none = rhs_scale is None or (isinstance(rhs_scale, tl.constexpr) and rhs_scale.value is None)
@@ -1676,7 +1673,7 @@ def dot_scaled(lhs: tl.tensor, lhs_scale: tl.tensor, lhs_format: str, rhs: tl.te
         dims = core._unwrap_iterable(dims)
         tmp_rhs = permute(rhs, dims, builder)
         rhs = reshape(tmp_rhs, (rhs.shape[0], rhs.shape[1]), True, builder)
-        
+
     assert lhs.type.shape[-1] == rhs.type.shape[-2], (
         f"lhs last dimension (columns) {lhs.shape[-1]} "
         f"must equal rhs penultimate dimension (rows) {rhs.shape[-2]}"
@@ -2015,7 +2012,7 @@ def make_tensor_descriptor(
     strides[-1] = tl._unwrap_if_constexpr(strides[-1])
     if strides[-1] != 1:
         raise ValueError(f"Tensor descriptor last dim must be 1 but got {strides[-1]}")
-    
+
     shape = [make_scalar(x, tl.int32, builder) for x in shape]
     strides = [make_scalar(x, tl.int64, builder) for x in strides]
 
