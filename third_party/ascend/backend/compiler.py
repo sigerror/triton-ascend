@@ -734,7 +734,7 @@ def ttir_to_npubin(mod, metadata, opt):
             if opt.enable_bishengir_simt_optimization != 000:
                 _compile_option_list += [f"--enable-bishengir-simt-optimization={opt.enable_bishengir_simt_optimization}"]
             if opt.simt_stack_limit:
-                _compile_option_list += [f"--simt_stack_limit={opt.simt_stack_limit}"]
+                _compile_option_list += [f"--simt-stack-limit={opt.simt_stack_limit}"]
 
         npu_compiler_path = _get_npucompiler_path()
         cmd_list = (
