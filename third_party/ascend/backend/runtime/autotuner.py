@@ -169,7 +169,7 @@ class AutoTilingTuner(Autotuner):
 
         if len(self.reduction_axes) == 1 and \
             self.reduction_axes[0] == self.low_dim_axes[0] and \
-            all_args.get(self.keys[self.reduction_axes[0]]) < 1024:
+            all_args.get(self.keys[self.reduction_axes[0]], float("inf")) < 1024:
             self.persistent_reduction = True
 
         if not self.split_params:
