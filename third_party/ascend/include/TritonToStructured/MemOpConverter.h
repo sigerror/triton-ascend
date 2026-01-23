@@ -65,7 +65,7 @@ private:
 class StoreConverter : public OpRewritePattern<triton::StoreOp> {
 public:
     explicit StoreConverter(MLIRContext* context, bool optimizeDynamicOffset = false,
-                            bool enableMaskFallbackConversion = false,bool compileOn91095 = false)
+                            bool enableMaskFallbackConversion = false, bool compileOn91095 = false)
         : OpRewritePattern<triton::StoreOp>(context),
           optimizeDynamicOffset(optimizeDynamicOffset),
           compileOn91095(compileOn91095),
