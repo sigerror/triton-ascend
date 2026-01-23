@@ -355,9 +355,13 @@ Value MemOpTransformer::createNewPtr(Value oldPtr,
     }
 
     ptrState.analyzePermute();
-    if (ptrState.isPermuted && currentType == MemType::store){
+    
+    if (ptrState.isPermuted){
         ptrState.shouldLinearize = true;
-    }  
+        if (compileOn91095 && currentType == MemType::load){
+            ptrState.shouldLinearize = false;
+        }
+    } 
 
     return ptrState.createAddPtrOp(rewriter, loc);
 }
