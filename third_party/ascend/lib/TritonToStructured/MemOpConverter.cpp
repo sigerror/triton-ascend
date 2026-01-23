@@ -355,16 +355,8 @@ Value MemOpTransformer::createNewPtr(Value oldPtr,
     }
 
     ptrState.analyzePermute();
-    if (ptrState.isPermuted){
+    if (ptrState.isPermuted && currentType == MemType::store){
         ptrState.shouldLinearize = true;
-        if(auto op = oldPtr.getDefiningOp<triton::LoadOp>()){
-            LLVM_DEBUG({
-                llvm::dbgs() << "compileOn91095 :" << compileOn91095 << ", shouldLinearize is false" << "\n";
-            });
-            if (compileOn91095){
-                ptrState.shouldLinearize = false;
-            }
-        }
     }  
 
     return ptrState.createAddPtrOp(rewriter, loc);
