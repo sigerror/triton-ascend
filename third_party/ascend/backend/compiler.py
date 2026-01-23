@@ -429,7 +429,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
 
         if _is_auto_map_parallel_blocks_enabled():
             _compile_option_list += ["--enable-auto-blockify-loop"]
-        npu_compiler_path = _get_npucompiler_path()
+        npu_compiler_path, env = _get_npucompiler_path()
         if npu_compiler_path.endswith("bishengir-compile"):
             _compile_option_list += [
                 "--enable-hfusion-compile=true",
@@ -458,7 +458,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         if vf_merge_level:
             cmd_list += [f"--enable-vf-merge-level={vf_merge_level}"]
 
-        ret = subprocess.run(cmd_list, capture_output=True, check=True)
+        ret = subprocess.run(cmd_list, env = env, capture_output = True, check = True)
         match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', ret.stdout.decode('utf-8'))
         if match:
             # get the ub bits of triton kernel from bisheng for inductor autotune using
@@ -567,7 +567,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
 
         if _is_auto_map_parallel_blocks_enabled():
             _compile_option_list += ["--enable-auto-blockify-loop"]
-        npu_compiler_path = _get_npucompiler_path()
+        npu_compiler_path, env = _get_npucompiler_path()
         if npu_compiler_path.endswith("bishengir-compile"):
             _compile_option_list += [
                 "--enable-hfusion-compile=true",
@@ -584,7 +584,7 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
             cmd_list += [
                 "--enable-auto-bind-sub-block=false"
             ]
-        ret = subprocess.run(cmd_list, capture_output=True, check=True)
+        ret = subprocess.run(cmd_list, env = env, capture_output = True, check = True)
         match = re.search(r'UB\s+size\s*=\s*(\d+)\s*bits', ret.stdout.decode('utf-8'))
         if match:
             # get the ub bits of triton kernel from bisheng for inductor autotune using
@@ -736,13 +736,13 @@ def ttir_to_npubin(mod, metadata, opt):
             if opt.simt_stack_limit:
                 _compile_option_list += [f"--simt-stack-limit={opt.simt_stack_limit}"]
 
-        npu_compiler_path = _get_npucompiler_path()
+        npu_compiler_path, env = _get_npucompiler_path()
         cmd_list = (
             [npu_compiler_path, src_path]
             + _compile_option_list
             + ["-o", bin_file]
         )
-        ret = subprocess.run(cmd_list, capture_output=True, check=True)
+        ret = subprocess.run(cmd_list, env = env, capture_output = True, check = True)
         return Path(bin_path).read_bytes()
 
 
