@@ -85,7 +85,8 @@ LoadConverter::matchAndRewrite(triton::LoadOp op,
 
     MemOpTransformer tf(
         MemOpTransformer::MemType::load,
-        optimizeDynamicOffset
+        optimizeDynamicOffset,
+        compileOn91095
     );
 
     auto newPtr = tf.createNewPtr(oldPtr, loc, rewriter);
@@ -136,7 +137,8 @@ StoreConverter::matchAndRewrite(triton::StoreOp op,
 
     MemOpTransformer tf(
         MemOpTransformer::MemType::store,
-        optimizeDynamicOffset
+        optimizeDynamicOffset,
+        compileOn91095
     );
 
     auto newPtr = tf.createNewPtr(oldPtr, loc, rewriter);
@@ -353,7 +355,17 @@ Value MemOpTransformer::createNewPtr(Value oldPtr,
     }
 
     ptrState.analyzePermute();
-    if (ptrState.isPermuted)   ptrState.shouldLinearize = true;
+    if (ptrState.isPermuted){
+        ptrState.shouldLinearize = true;
+        if(auto op = oldPtr.getDefiningOp<triton::LoadOp>()){
+            LLVM_DEBUG({
+                llvm::dbgs() << "compileOn91095 :" << compileOn91095 << ", shouldLinearize is false" << "\n";
+            });
+            if (compileOn91095){
+                ptrState.shouldLinearize = false;
+            }
+        }
+    }  
 
     return ptrState.createAddPtrOp(rewriter, loc);
 }
