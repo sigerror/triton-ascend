@@ -30,7 +30,7 @@ from typing import Dict, List
 
 from triton.runtime.autotuner import Autotuner, Config
 
-from .utils import get_byte_per_numel, is_valid_axis_name, valid_axis_names, simt_candidate_warps
+from .utils import get_byte_per_numel, is_valid_axis_name, valid_axis_names
 from .autoparser import SplitAxesParser, TilingAxesParser, ReductionAxesParser, LowDimsAxesParser, PtrNumsParser
 
 
@@ -149,13 +149,13 @@ class AutoTilingTuner(Autotuner):
         self.reduction_axes = reduction_axes
         self.dual_reduction = False
         self.persistent_reduction = False
-        self.input_ptr_num = -1
+        self.num_buffers = -1
 
     def _autoparse_axis_params(self, all_args):
         miss_params = [arg for arg in self.arg_names if arg not in all_args.keys()]
         # parse pointer params nums
-        if self.input_ptr_num == -1:
-            self.input_ptr_num = self._autoparse_ptr_nums(miss_params)
+        if self.num_buffers == -1:
+            self.num_buffers = self._autoparse_ptr_nums(miss_params)
         
         # parse autotiling axes
         # reduction axis must be parsed before other axes. it will alter the key
@@ -208,7 +208,7 @@ class AutoTilingTuner(Autotuner):
             dtype,
             self.persistent_reduction,
             self.dual_reduction,
-            self.input_ptr_num,
+            self.num_buffers,
             self.is_simt_mode,
         )
         tile_gen = TileGenerator(kernel_meta=kernel_meta)
@@ -218,20 +218,21 @@ class AutoTilingTuner(Autotuner):
         self.gen_configs = tile_gen.configs
 
         if self.is_simt_mode:
+            _default_cand_num_warps = [8, 16, 32, 64]
+            cand_num_warps = (
+                _default_cand_num_warps
+                if self.user_specified_warps is None
+                else [self.user_specified_warps]
+            )
             simt_configs = []
-            simt_warps = []
-            if self.user_specified_warps is not None:
-                simt_warps = [self.user_specified_warps]
-            else:
-                simt_warps = simt_candidate_warps
             for base_cfg in self.gen_configs:
-                for num_warps in simt_warps:
+                for num_warps in cand_num_warps:
                     new_cfg = copy.deepcopy(base_cfg)
                     new_cfg.num_warps = num_warps
                     simt_configs.append(new_cfg)
             
             if self.print_autotuning:
-                print(f"Triton autotuning: Expanded to {len(simt_configs)} SIMT configs (with warps: {simt_candidate_warps})")
+                print(f"Triton autotuning: Expanded to {len(simt_configs)} SIMT configs (with warps: {cand_num_warps})")
             
             self.gen_configs = simt_configs
 
