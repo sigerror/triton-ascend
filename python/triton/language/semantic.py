@@ -8,6 +8,7 @@ from .._C.libtriton import ir
 from . import core as tl
 from . import math
 
+from . import is_compile_on_910_95
 T = TypeVar('T')
 
 
@@ -1337,10 +1338,16 @@ def atomic_cas(ptr: tl.tensor, cmp: tl.tensor, val: tl.tensor, sem: str, scope: 
     sem = _str_to_sem(sem)
     scope = _str_to_scope(scope)
     element_ty = ptr.type.scalar.element_ty
-    supported_types = [tl.int8, tl.uint8, tl.int16, tl.int32, tl.int64, tl.float16, tl.bfloat16, tl.float32]
-    if element_ty not in supported_types:
-        raise ValueError(f"atomic_cas does not support {str(element_ty)}. "
-                        "All support dtypes are int8, uint8, int16, int32, int64, float16, bfloat16, float32.")
+    if not is_compile_on_910_95:
+        supported_types = [tl.int8, tl.uint8, tl.int16, tl.int32, tl.int64, tl.float16, tl.bfloat16, tl.float32]
+        if element_ty not in supported_types:
+            raise ValueError(f"atomic_cas does not support {str(element_ty)}. "
+                            "All support dtypes are int8, uint8, int16, int32, int64, float16, bfloat16, float32.")
+    else:
+        unsupported_types = [tl.int1]
+        if element_ty in unsupported_types:
+            raise ValueError(f"atomic_cas does not support {str(element_ty)}. "
+                            "All support dtypes are int8, uint8, int16, uint16, int32, uint32, int64, uint64, fp8e4m3, fp8e5m2, float16, bfloat16, float32.")
     return tl.tensor(builder.create_atomic_cas(ptr.handle, cmp.handle, val.handle, sem, scope), val.type)
 
 
