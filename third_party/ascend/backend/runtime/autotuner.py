@@ -27,6 +27,7 @@ import os
 import time
 import copy
 from typing import Dict, List
+from torch import Tensor
 
 from triton.runtime.autotuner import Autotuner, Config
 
@@ -155,7 +156,7 @@ class AutoTilingTuner(Autotuner):
         miss_params = [arg for arg in self.arg_names if arg not in all_args.keys()]
         # parse pointer params nums
         if self.num_buffers == -1:
-            self.num_buffers = self._autoparse_ptr_nums(miss_params)
+            self.num_buffers = self._autoparse_ptr_nums(all_args)
         
         # parse autotiling axes
         # reduction axis must be parsed before other axes. it will alter the key
@@ -480,13 +481,17 @@ class AutoTilingTuner(Autotuner):
             )
         return low_dim_axes
     
-    def _autoparse_ptr_nums(self, miss_params: List[str]) -> int:
+    def _autoparse_ptr_nums(self, all_args: dict) -> int:
         """
         Counts the number of pointer parameters from triton kernel code.
         """
-        func_ast = self.fn.parse()
-        parser = PtrNumsParser(func_ast, self.keys, miss_params)
-        ptr_nums, ptr_params = parser.parse()
+        ptr_nums = 0
+        ptr_params = list()
+        for k, v in all_args.items():
+            if isinstance(v, Tensor):
+                ptr_nums += 1
+                ptr_params.append(k)
+
         if self.print_autotuning:
             print(
                 f"Ascend autotuning parse pointer params: {ptr_params}, pointer nums: {ptr_nums}"
