@@ -694,12 +694,12 @@ extern "C" {
     ret = rtKernelLaunch(func, blockNum, static_cast<void*>(&args), sizeof(args), NULL, stream);
 """
     if compile_on_910_95 and enable_simt:
-        cpp_kernel_launch = """
-    rtArgsEx_t argsInfo = {};
+        cpp_kernel_launch = f"""
+    rtArgsEx_t argsInfo = {{}};
     argsInfo.args = static_cast<void*>(&args);
     argsInfo.argsSize = sizeof(args);
-    rtTaskCfgInfo_t cfgInfo = {};
-    cfgInfo.localMemorySize = 216 * 1024;
+    rtTaskCfgInfo_t cfgInfo = {{}};
+    cfgInfo.localMemorySize = {metadata.shared_mem_dynamic_size};
     ret = rtKernelLaunchWithFlagV2(func, blockNum, &argsInfo, NULL, stream, 0, &cfgInfo);
 """
 
