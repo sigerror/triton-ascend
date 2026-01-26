@@ -563,6 +563,17 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
     }
   }
 
+  if (!op.getResult().use_empty()) {
+    auto tensorType =
+        RankedTensorType::get(ptrType.getShape(), ptrType.getElementType());
+    auto alloc = rewriter.create<memref::AllocOp>(
+        loc, MemRefType::get(ptrType.getShape(), ptrType.getElementType()));
+    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
+    Value tensorToReplace = rewriter.create<bufferization::ToTensorOp>(
+        loc, tensorType, alloc, true /* restrict */, true /* writable */);
+    rewriter.replaceOp(op, tensorToReplace);
+  }
+
   if (isDiscreteMask) {
     if (rmwOp != RMWOp::XCHG) {
       return op.emitError("Discrete mask is only expected for XCHG; other atomics "
@@ -586,16 +597,7 @@ AtomicRMWConverter::matchAndRewrite(triton::AtomicRMWOp op, OpAdaptor adaptor,
                                      inputVal, dstMemref, atomicKind);
   }
 
-  if (!op.getResult().use_empty()) {
-    auto tensorType =
-        RankedTensorType::get(ptrType.getShape(), ptrType.getElementType());
-    auto alloc = rewriter.create<memref::AllocOp>(
-        loc, MemRefType::get(ptrType.getShape(), ptrType.getElementType()));
-    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
-    Value tensorToReplace = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, alloc, true /* restrict */, true /* writable */);
-    rewriter.replaceOp(op, tensorToReplace);
-  } else {
+  if (op.getResult().use_empty()) {
     rewriter.eraseOp(op);
   }
   return success();
@@ -660,6 +662,20 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
     indexingMaps.push_back(AffineMap::get(rank, 0, inputDims, context));
   }
 
+  if (!op.getResult().use_empty()) {
+    auto tensorType =
+        RankedTensorType::get(type.getShape(), type.getElementType());
+    auto alloc = rewriter.create<memref::AllocOp>(
+        loc, MemRefType::get(type.getShape(), type.getElementType()));
+
+    // For the return value, don't need to care about mask for now
+    // this op don't support other, so we best not fill it
+    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
+    Value tensor = rewriter.create<bufferization::ToTensorOp>(
+        loc, tensorType, alloc, true /* restrict */, true /* writable */);
+    rewriter.replaceOp(op, tensor);
+  }
+
   auto linalgOp = rewriter.create<linalg::GenericOp>(
       loc, ValueRange{dstMemref, cmpMemref, inputMemref},
       mlir::ValueRange{dstMemref}, indexingMaps,
@@ -719,19 +735,7 @@ AtomicCASConverter::matchAndRewrite(triton::AtomicCASOp op, OpAdaptor adaptor,
   // this assessment.
   //
   // logic of handling is copied
-  if (!op.getResult().use_empty()) {
-    auto tensorType =
-        RankedTensorType::get(type.getShape(), type.getElementType());
-    auto alloc = rewriter.create<memref::AllocOp>(
-        loc, MemRefType::get(type.getShape(), type.getElementType()));
-
-    // For the return value, don't need to care about mask for now
-    // this op don't support other, so we best not fill it
-    rewriter.create<memref::CopyOp>(loc, ptr, alloc);
-    Value tensor = rewriter.create<bufferization::ToTensorOp>(
-        loc, tensorType, alloc, true /* restrict */, true /* writable */);
-    rewriter.replaceOp(op, tensor);
-  } else {
+  if (op.getResult().use_empty()) {
     rewriter.eraseOp(op);
   }
   return success();
