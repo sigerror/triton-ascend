@@ -423,6 +423,11 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--limit-auto-multi-buffer-of-local-buffer={auto_multi_buffer}"]
 
+        enable_mixed_cv = metadata["enable_mixed_cv"]
+        if enable_mixed_cv is not None:
+            _compile_option_list += \
+                [f"--enable_mixed_cv={enable_mixed_cv}"]
+
         disable_auto_inject_block_sync = metadata["disable_auto_inject_block_sync"]
         if disable_auto_inject_block_sync is not None:
             _compile_option_list += \
@@ -651,6 +656,7 @@ class NPUOptions:
     tile_mix_vector_loop: int = None
     tile_mix_cube_loop: int = None
     disable_auto_inject_block_sync: bool = None
+    enable_mixed_cv: bool = None
 
     stream: int = None
     parallel_mode: str = "simd"
