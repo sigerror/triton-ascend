@@ -235,6 +235,10 @@ void init_ascend_ir(py::module &&m) {
            [](AscendNPUIROpBuilder &self, hivm::VFMode mode) -> Attribute {
              return self.getBuilder().getAttr<hivm::VFModeAttr>(mode);
            })
+      .def("get_t_core_type_attr_name",
+           [](AscendNPUIROpBuilder &self) -> std::string {
+             return hivm::TCoreTypeAttr::name.str();
+           })
       .def("get_t_core_type_cube_attr",
            [](AscendNPUIROpBuilder &self) -> Attribute {
              return hivm::TCoreTypeAttr::get(self.getBuilder().getContext(),

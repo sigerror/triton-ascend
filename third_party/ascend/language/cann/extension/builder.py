@@ -66,6 +66,7 @@ def setup_unified_builder(main_builder, ascend_builder):
     ascend_methods = [
         'create_scope_op',
         'scope_return',
+        'get_t_core_type_attr_name',
         'get_t_core_type_cube_attr',
         'get_t_core_type_vector_attr',
         'get_target_attribute',
