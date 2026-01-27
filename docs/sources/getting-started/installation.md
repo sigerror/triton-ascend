@@ -107,6 +107,16 @@ apt install ccache # optional
 ```bash
 pip install ninja cmake wheel pybind11 # build-time dependencies
 ```
+### 快速安装
+安装过程会自动下载并安装LLVM等依赖；若网络情况不佳，需要本地安装LLVM，请参考下面的基于LLVM构建步骤。
+若本地已经安装好了对应的LLVM，可添加环境变量：export LVM_SYSPATH=/path/to/LLVM。
+```bash
+# 常规安装
+pip install ./python
+# 开发者安装
+pip install -e python
+```
+
 
 ### 基于LLVM构建
 
