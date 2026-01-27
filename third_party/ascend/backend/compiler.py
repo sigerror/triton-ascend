@@ -547,6 +547,16 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--enable-hivm-unit-flag-sync={unit_flag}"]
 
+        enable_drop_unit_dims = metadata["enable_drop_unit_dims"]
+        if enable_drop_unit_dims is not None:
+            _compile_option_list += \
+                [f"--enable-drop-unit-dims={enable_drop_unit_dims}"]
+
+        enable_auto_vectorize_v2 = metadata["enable_auto_vectorize_v2"]
+        if enable_auto_vectorize_v2 is not None:
+            _compile_option_list += \
+                [f"--enable-auto-vectorize-v2={enable_auto_vectorize_v2}"]
+
         inject_barrier_all = metadata["inject_barrier_all"]
         if inject_barrier_all is not None:
             _compile_option_list += \
@@ -665,6 +675,8 @@ class NPUOptions:
     enable_hivm_auto_cv_balance: bool = None
     sync_solver: bool = None
     unit_flag: bool = None
+    enable_drop_unit_dims: bool = None
+    enable_auto_vectorize_v2: bool = None
     inject_barrier_all: bool = None
     inject_block_all: bool = None
     limit_auto_multi_buffer_only_for_local_buffer: bool = None
