@@ -399,7 +399,7 @@ def ascend_cast_impl(input: tensor, dst_ty: dtype, builder: ir.builder,
     # bf16 <=> (not fp32)
     if (src_sca_ty.is_fp16() and not dst_sca_ty.is_fp32()) or \
        (src_sca_ty.is_bf16() and not dst_sca_ty.is_fp32()):
-        return cast(cast(input, tl.float32, _builder=builder), dst_sca_ty, _builder=builder)
+        return ascend_cast_impl(ascend_cast_impl(input, tl.float32, builder), dst_sca_ty, builder)
 
     # Standard floating types' casting: truncation
     #   fp64 => fp32, fp16, bf16
@@ -428,10 +428,10 @@ def ascend_cast_impl(input: tensor, dst_ty: dtype, builder: ir.builder,
             ty = input.dtype.to_ir(builder)
             _0 = tensor(builder.get_null_value(ty), input.dtype)
             return not_equal(input, _0, builder) 
-        elif not is_compile_on_910_95 and overflow_mode == "saturate" and \
+        elif overflow_mode == "saturate" and \
              (src_sca_ty.is_int_unsigned() or dst_sca_ty.is_int_unsigned()) and \
              src_sca_ty.int_bitwidth >= dst_sca_ty.int_bitwidth:
-            return cast(cast(input, tl.float32, _builder=builder), dst_sca_ty, _builder=builder)
+            return ascend_cast_impl(ascend_cast_impl(input, tl.float32, builder), dst_sca_ty, builder)
         return tensor(builder.create_int_cast(input.handle, dst_ty.to_ir(builder), sign_extend), dst_ty)
 
     # Casting standard floating types to integer types
@@ -458,7 +458,7 @@ def ascend_cast_impl(input: tensor, dst_ty: dtype, builder: ir.builder,
         if bitwidth == 64:
             return tensor(builder.create_ptr_to_int(input.handle, dst_ty.to_ir(builder)), dst_ty)
         if bitwidth == 1:
-            return not_equal(cast(input, tl.int64, builder), tensor(builder.get_int64(0), tl.int64), builder)
+            return not_equal(ascend_cast_impl(input, tl.int64, builder), tensor(builder.get_int64(0), tl.int64), builder)
 
     # Casting integer types to pointer types
     if src_sca_ty.is_int() and dst_sca_ty.is_ptr():
