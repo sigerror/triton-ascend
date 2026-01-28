@@ -258,9 +258,9 @@ void BlockData::mulBlock(BlockData &lBlock, BlockData &rBlock, Location loc,
   assert(!(lBlock.hasSource() && rBlock.hasSource()));
 
   if (lBlock.isScalar() && rBlock.isScalar()) {
-    LLVM_DEBUG({llvm::dbgs() << "lBlock.scalar:" << lBlock.getScalar() 
-                       << " rBlbock.scalar:" << rBlock.getScalar() << "\n"; });   
-    
+    LLVM_DEBUG({llvm::dbgs() << "lBlock.scalar:" << lBlock.getScalar()
+                       << " rBlbock.scalar:" << rBlock.getScalar() << "\n"; });
+
     auto scalar = mulOpFoldResult(lBlock.getScalar(), rBlock.getScalar(), loc, rewriter);
     this->scalar = scalar;
   }
@@ -957,7 +957,7 @@ void BlockDataParser::parseSelect(
   auto resType = dyn_cast<ShapedType>(op.getResult().getType());
 
   assert(llvm::all_of(resType.getShape(), [](int64_t dim) { return dim == 1; }));
-  assert(isa<IntegerType>(resType.getElementType()) || 
+  assert(isa<IntegerType>(resType.getElementType()) ||
         isa<IndexType>(resType.getElementType()));
 
   size_t loopLimit = resType.getShape().size();
@@ -968,7 +968,7 @@ void BlockDataParser::parseSelect(
   }
   auto extractOp = rewriter.create<tensor::ExtractOp>(loc, res, indices);
   OpFoldResult IndexOfr = extractOp.getResult();
-  if (isa<IntegerType>(extractOp.getType())) { 
+  if (isa<IntegerType>(extractOp.getType())) {
     IndexOfr = getOpFoldResultOfLayoutInfo(extractOp.getResult(), rewriter);
   }
   // Set scalar for mul state
@@ -1022,6 +1022,26 @@ void BlockDataParser::rewriteAddPtr(
   }
 
   known[op.getResult()] = data;
+
+  // If all strides are zero -> likely produced entirely by splat, broadcast, etc.
+  // Set strides from the lowest dimension to the highest, each to the cumulative product of the corresponding sizes.
+  bool allZeroStride = true;
+  for (auto &stride : data.getStridesRef()) {
+    auto strideConst = getConstantIntValue(stride);
+    if (!(strideConst && strideConst.value() == 0)) {
+      allZeroStride = false;
+      break;
+    }
+  }
+  if (allZeroStride) {
+    auto inferedSize = 1;
+    for (int i = data.getSizesRef().size() - 1; i >= 0; i--) {
+      auto sizeConst = getConstantIntValue(data.getSizesRef()[i]);
+      assert(sizeConst.has_value());
+      data.getStridesRef()[i] = rewriter.getIndexAttr(inferedSize);
+      inferedSize *= sizeConst.value();
+    }
+  }
 
   // If there are dimensions with size 1 and stride 0, replace 0 stride with the
   // product of sizes of all lower dimensions. This avoids creating memref with
@@ -1505,7 +1525,7 @@ BlockDataParser::rewriteTerminator(
   } else {
     newOp = rewriter.replaceOpWithNewOp<scf::ConditionOp>(op, op.getCondition(), operands);
   }
-  
+
   assert(op->getNumResults() == 0);
 
   LLVM_DEBUG({
@@ -1828,7 +1848,7 @@ void BlockDataParser::rewriteLoopOp(
         if (!isUsedForRegionArg) {
           BlockData data;
           auto regionArg = regionArgs[i];
-          auto regionArgType = cast<RankedTensorType>(regionArg.getType()); 
+          auto regionArgType = cast<RankedTensorType>(regionArg.getType());
           data.getOffsetsRef().resize(regionArgType.getRank());
           data.getStridesRef().resize(regionArgType.getRank());
           for (auto &offset: data.getOffsetsRef()) {
@@ -1842,7 +1862,7 @@ void BlockDataParser::rewriteLoopOp(
             stride = *newArgIter;
             ++newArgIter;
           }
-          
+
           auto key = mapping.lookupOrNull(regionArg);
           if (!key) {
             // Create IndexTensor regionArg from computed offset and stride data
@@ -1900,9 +1920,9 @@ void BlockDataParser::rewriteLoopOp(
     llvm::SmallDenseSet<size_t> blockArgIdxSetForAfter;
     SmallVector<int64_t> iterArgIdxMapForAfter;
     SmallVector<bool> maskIterArgsForAfter(whileOp->getNumResults());
-    
+
     int64_t indexCnt = 0;
-    
+
     for (auto newInitArg: newInitArgs) {
       usedForBeforeRegionArgs.push_back(newInitArg ? true:false);
     }
