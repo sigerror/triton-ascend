@@ -442,6 +442,26 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
             _compile_option_list += \
                 [f"--enable_mixed_cv={enable_mixed_cv}"]
 
+        enable_cce_vf_auto_sync = metadata["enable_cce_vf_auto_sync"]
+        if enable_cce_vf_auto_sync is not None:
+            _compile_option_list += \
+                [f"--apend-bisheng-options=-mllvm --cce-vf-auto-sync={enable_cce_vf_auto_sync}"]
+
+        enable_cce_vf_remove_membar = metadata["enable_cce_vf_remove_membar"]
+        if enable_cce_vf_remove_membar is not None:
+            _compile_option_list += \
+                [f"--apend-bisheng-options=-mllvm --cce-vf-remove-membar={enable_cce_vf_remove_membar}"]
+
+        enable_drop_unit_dims = metadata["enable_drop_unit_dims"]
+        if enable_drop_unit_dims is not None:
+            _compile_option_list += \
+                [f"--enable-drop-unit-dims={enable_drop_unit_dims}"]
+
+        enable_auto_vectorize_v2 = metadata["enable_auto_vectorize_v2"]
+        if enable_auto_vectorize_v2 is not None:
+            _compile_option_list += \
+                [f"--enable-auto-vectorize-v2={enable_auto_vectorize_v2}"]
+
         disable_auto_inject_block_sync = metadata["disable_auto_inject_block_sync"]
         if disable_auto_inject_block_sync is not None:
             _compile_option_list += \
@@ -681,6 +701,8 @@ class NPUOptions:
     enable_hivm_auto_cv_balance: bool = None
     sync_solver: bool = None
     unit_flag: bool = None
+    enable_cce_vf_auto_sync: bool = None
+    enable_cce_vf_remove_membar: bool = None
     enable_drop_unit_dims: bool = None
     enable_auto_vectorize_v2: bool = None
     inject_barrier_all: bool = None
