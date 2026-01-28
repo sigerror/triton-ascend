@@ -657,9 +657,11 @@ def arange(start: int, end: int, builder: ir.builder) -> tl.tensor:
     if end <= start:
         raise ValueError("arange's end argument must be greater than the start argument")
     range = end - start
-    # FIXME:patched triton community
-    # if (range & (range - 1)) != 0:
-    #     raise ValueError("arange's range must be a power of 2")
+    # Check if compile_mode is simt, then range must be a power of 2
+    if builder.is_simt_mode():
+        # Check if range is a power of 2
+        if (range & (range - 1)) != 0:
+            raise ValueError("arange's range must be a power of 2")
     shape = [range]
     ret_ty = tl.block_type(tl.int32, shape)
     return tl.tensor(builder.create_make_range(start, end), ret_ty)

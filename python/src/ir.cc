@@ -602,7 +602,12 @@ void init_triton_ir(py::module &&m) {
   static py::class_<TritonOpBuilder> builderClass(
       m, "builder", py::module_local(), py::dynamic_attr());
   ir::builderClassPtr = &builderClass;
-  builderClass.def(py::init<MLIRContext *>())
+  builderClass.def(py::init<MLIRContext *, const std::string &>(),
+                   py::arg("context"),
+                   py::arg("compile_mode") = "simd",
+                   "Create a TritonOpBuilder with optional compile_mode (simt or simd, default: simd)")
+ 	    .def("is_simt_mode", &TritonOpBuilder::isSimtMode,
+           "Check if the compile mode is simt")
       // getters
       .def("create_module",
            [](TritonOpBuilder &self) -> ModuleOp {

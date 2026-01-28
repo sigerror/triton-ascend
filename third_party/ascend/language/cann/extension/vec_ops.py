@@ -15,7 +15,6 @@ from triton.language.core import (
     constexpr,
     dtype,
     tensor,
-    static_range,
     check_bit_width,
     _unwrap_if_constexpr,
     range
@@ -201,6 +200,14 @@ def flip(ptr, dim=-1, _builder=None, _generator=None):
                 dim += len(shape)
             return constexpr(dim)
 
+        def _log2(i: core.constexpr):
+            log2 = 0
+            n = core.constexpr(i).value
+            while n > 1:
+                n >>= 1
+                log2 += 1
+            return core.constexpr(log2)
+
         def flip_simd(ptr: tensor, dim: int, builder: ir.builder):
             """
             Triton flip operation for simd
@@ -244,14 +251,12 @@ def flip(ptr, dim=-1, _builder=None, _generator=None):
             return flipped
 
         # If compile_mode is not simt, use the simd implementation
-        # FIXME: is_simt_mode
-        # if not builder.is_simt_mode():
-            # return flip_simd(ptr, dim, builder)
-        return flip_simd(ptr, dim, builder)
+        if not builder.is_simt_mode():
+            return flip_simd(ptr, dim, builder)
         core.static_assert(-len(ptr.shape) <= dim and dim < len(ptr.shape), _builder=builder)
-        _dim: constexpr = _get_flip_dim(dim, ptr.shape)
+        _dim: core.constexpr = _get_flip_dim(dim, ptr.shape)
         core.static_assert(standard._is_power_of_two(ptr.shape[_dim]), _builder=builder)
-        steps: constexpr = standard._log2(ptr.shape[_dim])
+        steps: core.constexpr = _log2(ptr.shape[_dim])
         # If steps is 0, return the original tensor
         if steps == 0:
             return ptr
@@ -259,7 +264,7 @@ def flip(ptr, dim=-1, _builder=None, _generator=None):
         idtype = core.get_int_dtype(bitwidth=ptr.dtype.primitive_bitwidth, signed=True)
         y = core.reshape(ptr.to(idtype, bitcast=True, _builder=builder), ptr.shape.__getitem__(slice(None, _dim)) + [2] * steps + ptr.shape.__getitem__(slice(_dim + 1, None)), _builder=builder)
         for i in static_range(steps):
-            y = y.__xor__(standard.xor_sum(y, _dim + i, True, _builder=builder, _generator=generator), _builder=builder)
+            y = y.__xor__(standard.xor_sum(y, _dim + i, True, _builder=builder), _builder=builder)
         ptr = core.reshape(y, ptr.shape, _builder=builder).to(ptr.dtype, bitcast=True, _builder=builder)
         return ptr
 
@@ -270,6 +275,42 @@ def flip(ptr, dim=-1, _builder=None, _generator=None):
 
     dim = len(ptr.shape) - 1 if dim == -1 else dim
     return flip_impl(ptr, dim, _builder, _generator)
+
+
+class static_range:
+    """
+    Iterator for non-JIT Python functions that need to iterate over constexpr values.
+    This is used in functions like flip that are called during compilation.
+    """
+    def __init__(self, arg1, arg2=None, step=None):
+        if step is None:
+            self.step = core.constexpr(1)
+        else:
+            self.step = step
+        if arg2 is None:
+            self.start = core.constexpr(0)
+            self.end = arg1
+        else:
+            self.start = arg1
+            self.end = arg2
+
+    def __iter__(self):
+        # Extract actual values from constexpr objects for iteration
+        start_val = core._constexpr_to_value(self.start)
+        end_val = core._constexpr_to_value(self.end)
+        step_val = core._constexpr_to_value(self.step)
+        # Store as regular Python integers for iteration
+        self._current = start_val
+        self._end = end_val
+        self._step = step_val
+        return self
+
+    def __next__(self):
+        if self._current >= self._end:
+            raise StopIteration
+        value = self._current
+        self._current += self._step
+        return value
 
 
 @builtin
