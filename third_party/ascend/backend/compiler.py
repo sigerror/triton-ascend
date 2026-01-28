@@ -133,6 +133,12 @@ def ttir_to_linalg(mod, metadata, opt, *, named_ops=False):
         ascend.passes.ttir.add_triton_to_hfusion(pm)
         ascend.passes.ttir.add_triton_to_llvm(pm)
         ascend.passes.ttir.add_bubble_up_operation(pm)
+        ascend.passes.ttir.add_triton_to_structure(
+            pm,
+            enable_mask_fallback_conversion,
+            optimize_dynamic_offset,
+            compile_on_910_95
+        )
         ascend.passes.ttir.add_triton_to_linalg(
             pm,
             False,
@@ -363,7 +369,7 @@ def linalg_to_bin_enable_npu_compile_910_95(linalg: str, metadata, opt):
         bin_path = os.path.join(tmpdir, bin_file_with_ext)
         callback_path = os.path.join(tmpdir, "libkernel.so")
         _compile_option_list = get_common_bishengir_compile_options(metadata)
-        
+
         multibuffer = metadata["multibuffer"]
         if multibuffer is not None:
             _compile_option_list += [
@@ -506,13 +512,13 @@ def linalg_to_bin_enable_npu_compile_A2_A3(linalg: str, metadata, opt):
         _compile_option_list = [
             f"--target={NPUUtils().get_arch()}",
         ]
-        
+
         multibuffer = metadata["multibuffer"]
         if multibuffer is not None:
             _compile_option_list += [
                 f"--enable-auto-multi-buffer={multibuffer}",
             ]
-        
+
         enable_ubuf_saving = metadata["enable_ubuf_saving"]
         if enable_ubuf_saving is not None:
             _compile_option_list += [

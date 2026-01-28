@@ -76,7 +76,7 @@ using namespace triton;
 using namespace TritonToStructured;
 
 LogicalResult
-LoadConverter::matchAndRewrite(triton::LoadOp op, 
+LoadConverter::matchAndRewrite(triton::LoadOp op,
                                PatternRewriter &rewriter) const {
     auto loc = op.getLoc();
     auto oldPtr = op.getPtr();
@@ -110,7 +110,7 @@ LoadConverter::matchAndRewrite(triton::LoadOp op,
         return failure();
     }
 
-    auto loadOp = rewriter.create<triton::LoadOp>(loc, newPtr, newMask, newOther, 
+    auto loadOp = rewriter.create<triton::LoadOp>(loc, newPtr, newMask, newOther,
                                    op.getCache(), op.getEvict(), op.getIsVolatile());
 
     // insert implicit ops
@@ -166,7 +166,7 @@ StoreConverter::matchAndRewrite(triton::StoreOp op,
     if (oldMask && !newMask) {
         rewriter.create<hivm::SyncBlockLockOp>(loc, lockVar);
     }
-    
+
     auto selectResult = tf.materializeImplicitSelect(
         oldValue, oldMask, oldPtr, loc, rewriter);
     auto reshapeResult = tf.materializeImplicitReshape(
@@ -174,9 +174,9 @@ StoreConverter::matchAndRewrite(triton::StoreOp op,
     auto permuteResult = tf.materializeImplicitPermute(
         reshapeResult, loc, rewriter);
 
-    auto storeOp = rewriter.create<triton::StoreOp>(loc, newPtr, permuteResult, newMask, 
+    auto storeOp = rewriter.create<triton::StoreOp>(loc, newPtr, permuteResult, newMask,
                op.getBoundaryCheck(), op.getCache(), op.getEvict());
-    
+
     // insert sync_block_unlock
     if (oldMask && !newMask) {
         rewriter.create<hivm::SyncBlockUnlockOp>(loc, lockVar);
@@ -213,7 +213,7 @@ Value MemOpTransformer::materializeImplicitBroadcast(Value srcTensor, const Loca
         auto splatOp = rewriter.create<triton::SplatOp>(
             loc, broadCastType, srcTensor
         );
-        return splatOp.getResult();     
+        return splatOp.getResult();
     }
 
     auto init = rewriter.create<tensor::EmptyOp>(
@@ -354,14 +354,20 @@ Value MemOpTransformer::createNewPtr(Value oldPtr,
         maxStride = maxOpFoldResult(maxStride, it->stride, loc, rewriter);
     }
 
+    for (auto it = ptrState.stateInfo.rbegin(); it != ptrState.stateInfo.rend(); ++it) {
+        if (isZero(it->stride)) {
+            ptrState.shouldLinearize = true;
+        }
+    }
+
     ptrState.analyzePermute();
-    
+
     if (ptrState.isPermuted){
         ptrState.shouldLinearize = true;
         if (compileOn91095 && currentType == MemType::load){
             ptrState.shouldLinearize = false;
         }
-    } 
+    }
 
     return ptrState.createAddPtrOp(rewriter, loc);
 }
@@ -425,7 +431,7 @@ Value MemOpTransformer::createNewMask(Value oldMask,
         if (!isZero(itPtr->stride)) {
             newMaskInfo.emplace_back(newInfo);
         }
-        
+
         ++itPtr;
         if (isEqual(itMask->shape, newShape)) {
             ++itMask;
@@ -478,7 +484,7 @@ Value MemOpTransformer::createNewMask(Value oldMask,
 Value MemOpTransformer::createNewOther(Value oldOther,
                                        const Location loc, PatternRewriter &rewriter) {
     if (!oldOther || !maskState.newMask)  return nullptr;
-    
+
     auto ptrType = dyn_cast<triton::PointerType>(ptrState.source.getType());
     if (!ptrType) {
         InFlightDiagnostic diag =

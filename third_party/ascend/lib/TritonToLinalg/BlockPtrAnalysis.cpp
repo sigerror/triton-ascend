@@ -1023,26 +1023,6 @@ void BlockDataParser::rewriteAddPtr(
 
   known[op.getResult()] = data;
 
-  // If all strides are zero -> likely produced entirely by splat, broadcast, etc.
-  // Set strides from the lowest dimension to the highest, each to the cumulative product of the corresponding sizes.
-  bool allZeroStride = true;
-  for (auto &stride : data.getStridesRef()) {
-    auto strideConst = getConstantIntValue(stride);
-    if (!(strideConst && strideConst.value() == 0)) {
-      allZeroStride = false;
-      break;
-    }
-  }
-  if (allZeroStride) {
-    auto inferedSize = 1;
-    for (int i = data.getSizesRef().size() - 1; i >= 0; i--) {
-      auto sizeConst = getConstantIntValue(data.getSizesRef()[i]);
-      assert(sizeConst.has_value());
-      data.getStridesRef()[i] = rewriter.getIndexAttr(inferedSize);
-      inferedSize *= sizeConst.value();
-    }
-  }
-
   // If there are dimensions with size 1 and stride 0, replace 0 stride with the
   // product of sizes of all lower dimensions. This avoids creating memref with
   // zero stride.
