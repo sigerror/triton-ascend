@@ -264,7 +264,7 @@ def flip(ptr, dim=-1, _builder=None, _generator=None):
         idtype = core.get_int_dtype(bitwidth=ptr.dtype.primitive_bitwidth, signed=True)
         y = core.reshape(ptr.to(idtype, bitcast=True, _builder=builder), ptr.shape.__getitem__(slice(None, _dim)) + [2] * steps + ptr.shape.__getitem__(slice(_dim + 1, None)), _builder=builder)
         for i in static_range(steps):
-            y = y.__xor__(standard.xor_sum(y, _dim + i, True, _builder=builder), _builder=builder)
+            y = y.__xor__(standard.xor_sum(y, _dim + i, True, _builder=builder, _generator=generator), _builder=builder)
         ptr = core.reshape(y, ptr.shape, _builder=builder).to(ptr.dtype, bitcast=True, _builder=builder)
         return ptr
 
