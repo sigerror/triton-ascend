@@ -99,14 +99,18 @@ LoadConverter::matchAndRewrite(triton::LoadOp op,
     }
 
     if (!newPtr) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "PtrAnalysis: failed to analyze load pointer.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "PtrAnalysis: failed to analyze load pointer.";
+        });
         return failure();
     }
 
     if (!enableMaskFallbackConversion && oldMask && !newMask) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "MaskAnalysis: failed to analyze load mask.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: failed to analyze load mask.";
+        });
         return failure();
     }
 
@@ -150,14 +154,18 @@ StoreConverter::matchAndRewrite(triton::StoreOp op,
     }
 
     if (!newPtr) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "PtrAnalysis: failed to analyze store pointer.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "PtrAnalysis: failed to analyze store pointer.";
+        });
         return failure();
     }
 
     if (!enableMaskFallbackConversion && oldMask && !newMask) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "MaskAnalysis: failed to analyze store mask.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: failed to analyze store mask.";
+        });
         return failure();
     }
 
@@ -195,8 +203,10 @@ Value MemOpTransformer::materializeImplicitBroadcast(Value srcTensor, const Loca
         }
         auto staticShape = getIntAttr(info.shape);
         if (!staticShape.has_value()) {
-            InFlightDiagnostic diag =
-            emitWarning(loc) << "PtrAnalysis: dynamic shape is not supported in broadcast\n";
+            LLVM_DEBUG({
+                InFlightDiagnostic diag =
+                emitWarning(loc) << "PtrAnalysis: dynamic shape is not supported in broadcast\n";
+            });
             return srcTensor;
         }
         broadCastShape.emplace_back(staticShape.value());
@@ -236,8 +246,10 @@ Value MemOpTransformer::materializeImplicitReshape(Value srcTensor, const Locati
         for (auto size : ptrState.sizes) {
             auto staticShape = getIntAttr(size);
             if (!staticShape.has_value()) {
-                InFlightDiagnostic diag =
-                emitWarning(loc) << "PtrAnalysis: dynamic shape is not supported in reshape\n";
+                LLVM_DEBUG({
+                    InFlightDiagnostic diag =
+                    emitWarning(loc) << "PtrAnalysis: dynamic shape is not supported in reshape\n";
+                });
                 return srcTensor;
             }
             targetShape.emplace_back(staticShape.value());
@@ -246,8 +258,10 @@ Value MemOpTransformer::materializeImplicitReshape(Value srcTensor, const Locati
         for (auto info : ptrState.stateInfo) {
             auto staticShape = getIntAttr(info.shape);
             if (!staticShape.has_value()) {
-                InFlightDiagnostic diag =
-                emitWarning(loc) << "PtrAnalysis: dynamic shape is not supported in reshape\n";
+                LLVM_DEBUG({
+                    InFlightDiagnostic diag =
+                    emitWarning(loc) << "PtrAnalysis: dynamic shape is not supported in reshape\n";
+                });
                 return srcTensor;
             }
             targetShape.emplace_back(staticShape.value());
@@ -272,8 +286,10 @@ Value MemOpTransformer::materializeImplicitSelect(Value srcTensor, Value mask,
     if (!mask || maskState.newMask) return srcTensor;
     auto TensorType = cast<RankedTensorType>(srcTensor.getType());
     if (cast<ShapedType>(mask.getType()).getShape() != TensorType.getShape()) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "MaskAnalysis: mask shape is not same as Value";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: mask shape is not same as Value";
+        });
         return srcTensor;
     }
 
@@ -310,8 +326,10 @@ Value MemOpTransformer::materializeImplicitPermute(Value srcTensor, const Locati
     }
     SmallVector<int64_t> outShape(order.size());
     if (inShape.size() != outShape.size()) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "PtrAnalysis: incompatible shape for permute";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "PtrAnalysis: incompatible shape for permute";
+        });
         return srcTensor;
     }
 
@@ -335,8 +353,10 @@ Value MemOpTransformer::createNewPtr(Value oldPtr,
 
     if (ptrAnalysis.visitOperand(oldPtr, ptrState, loc, rewriter).failed()) {
         ptrState.shouldLinearize = false;
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "PtranAlysis: failed to analyze load/store ptr.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "PtranAlysis: failed to analyze load/store ptr.";
+        });
         return oldPtr;
     }
 
@@ -389,8 +409,10 @@ Value MemOpTransformer::createNewMask(Value oldMask,
             maskState.dump();
             llvm::dbgs() << "----------------------------------------------\n";
         });
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "MaskAnalysis: failed to analyze load/store mask.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: failed to analyze load/store mask.";
+        });
         return nullptr;
     }
 
@@ -403,9 +425,9 @@ Value MemOpTransformer::createNewMask(Value oldMask,
            itMask != maskState.stateInfo.end()) {
         // ptr'shape must be multiple of mask'shape or vice versa
         if (!isMultiple(itMask->shape, itPtr->shape)) {
-            InFlightDiagnostic diag =
-            emitWarning(loc) << "MaskAnalysis: incompatible shapes between ptr and mask.";
             LLVM_DEBUG({
+                InFlightDiagnostic diag =
+                emitWarning(loc) << "MaskAnalysis: incompatible shapes between ptr and mask.";
                 llvm::dbgs() << "----------------------------------------------\n";
                 ptrState.dump();
                 llvm::dbgs() << "oldMask:" << oldMask << "\n";
@@ -417,8 +439,10 @@ Value MemOpTransformer::createNewMask(Value oldMask,
 
         auto newShape = minOpFoldResult(itMask->shape, itPtr->shape, loc, rewriter);
         if (isLess(newShape, itMask->shape) && !itMask->hasBroadCast) {
-            InFlightDiagnostic diag =
-            emitWarning(loc) << "MaskAnalysis: the mask shape is incompatible with ptr shape.";
+            LLVM_DEBUG({
+                InFlightDiagnostic diag =
+                emitWarning(loc) << "MaskAnalysis: the mask shape is incompatible with ptr shape.";
+            });
             return nullptr;
         }
 
@@ -448,8 +472,10 @@ Value MemOpTransformer::createNewMask(Value oldMask,
             maskState.dump();
             llvm::dbgs() << "----------------------------------------------\n";
         });
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "MaskAnalysis: incompatible number of dimensions between ptr and mask.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: incompatible number of dimensions between ptr and mask.";
+        });
         return nullptr;
     }
 
@@ -463,9 +489,9 @@ Value MemOpTransformer::createNewMask(Value oldMask,
             llvm::dbgs() << "oldMask:" << oldMask << "\n";
             maskState.dump();
             llvm::dbgs() << "----------------------------------------------\n";
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "MaskAnalysis: failed to apply permute on mask.";
         });
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "MaskAnalysis: failed to apply permute on mask.";
         return nullptr;
     }
 
@@ -487,8 +513,10 @@ Value MemOpTransformer::createNewOther(Value oldOther,
 
     auto ptrType = dyn_cast<triton::PointerType>(ptrState.source.getType());
     if (!ptrType) {
-        InFlightDiagnostic diag =
-        emitWarning(loc) << "PtrAnalysis: source of ptrState is not a pointer type.";
+        LLVM_DEBUG({
+            InFlightDiagnostic diag =
+            emitWarning(loc) << "PtrAnalysis: source of ptrState is not a pointer type.";
+        });
         return nullptr;
     }
     Type elementType = ptrType.getPointeeType();
@@ -497,8 +525,10 @@ Value MemOpTransformer::createNewOther(Value oldOther,
     for (auto info : maskState.stateInfo) {
         auto staticShape = getIntAttr(info.shape);
         if (!staticShape.has_value()) {
-            InFlightDiagnostic diag =
-            emitWarning(loc) << "MaskAnalysis: dynamic shape is not supported in reshape\n";
+            LLVM_DEBUG({
+                InFlightDiagnostic diag =
+                emitWarning(loc) << "MaskAnalysis: dynamic shape is not supported in reshape\n";
+            });
             return oldOther;
         }
         targetShape.emplace_back(staticShape.value());
