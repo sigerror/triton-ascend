@@ -33,6 +33,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 #include "triton/Dialect/Triton/IR/Dialect.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <functional>
 #include <optional>
@@ -213,16 +214,16 @@ OpFoldResult minOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
 OpFoldResult maxOpFoldResult(const OpFoldResult &lhs, const OpFoldResult &rhs,
                              const Location &loc, OpBuilder &b);
 
-enum class ReduceWithIndexType { MAX, MIN };
-enum class TieBreakType { LEFT, RIGHT };
+enum class ReduceWithIndexType { MAX, MIN, None };
+enum class TieBreakType { LEFT, RIGHT, None };
 
 struct ReduceWithIndexParams {
-  ReduceWithIndexType withIndexType;
-  TieBreakType tieBreakType;
+  ReduceWithIndexType withIndexType = ReduceWithIndexType::None;
+  TieBreakType tieBreakType = TieBreakType::None;
   bool isUnsignedSrc;
 };
 
-std::optional<ReduceWithIndexParams> getReduceWithIndexParams(triton::ReduceOp reduceOp);
+llvm::FailureOr<ReduceWithIndexParams> getReduceWithIndexParams(triton::ReduceOp op);
 
 void addReduceWithIndexAttr(ReduceWithIndexParams params,
                             ConversionPatternRewriter& rewriter,

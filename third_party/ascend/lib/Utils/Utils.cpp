@@ -889,14 +889,17 @@ void addReduceWithIndexAttr(ReduceWithIndexParams params, ConversionPatternRewri
     reduceOp->setAttr(unsignedSrcRef, rewriter.getStringAttr(unsignedSrcStr));
 }
 
-std::optional<ReduceWithIndexParams> getReduceWithIndexParams(triton::ReduceOp reduceOp)
+llvm::FailureOr<ReduceWithIndexParams> getReduceWithIndexParams(triton::ReduceOp op)
 {
-    auto tritonReduceBlock = reduceOp.getBody();
+    auto tritonReduceBlock = op.getBody();
     auto *tritonYield = tritonReduceBlock->getTerminator();
-    auto yieldVelues = tritonYield->getOperands();
+    auto yieldValues = tritonYield->getOperands();
     constexpr int yieldValuesNum = 2;
-    if (yieldVelues.size() != yieldValuesNum) {
-      return {};
+    if (yieldValues.empty()) {
+      return llvm::failure();
+    }
+    if (yieldValues.size() != yieldValuesNum) {
+      return ReduceWithIndexParams{};
     }
 
     // Unify signed/unsigned and int/float predicate
@@ -991,15 +994,16 @@ std::optional<ReduceWithIndexParams> getReduceWithIndexParams(triton::ReduceOp r
     // check if sequence of predicates matches any sequence for min/max
     // leftmost/rightmost
     if (m.find(preds) == m.end()) {
-        return {};
+        return llvm::failure();
     }
 
     assert(!signednesses.empty());
     const bool isUnsignedSrc =
         signednesses[0] == Signedness::Unsigned ||
         signednesses[signednesses.size() - 1] == Signedness::Unsigned;
-    return ReduceWithIndexParams {
-      .withIndexType = m.at(preds).first, .tieBreakType = m.at(preds).second, .isUnsignedSrc = isUnsignedSrc};
+    return ReduceWithIndexParams{.withIndexType = m.at(preds).first,
+                                 .tieBreakType = m.at(preds).second,
+                                 .isUnsignedSrc = isUnsignedSrc};
 }
 
 // Fold layout constant info to attr, otherwise convert to index type value
