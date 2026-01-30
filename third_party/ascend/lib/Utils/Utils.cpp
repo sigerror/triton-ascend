@@ -86,7 +86,7 @@ std::optional<int64_t> getLastStrideOfReinterpretCastOp(memref::ReinterpretCastO
   }
 
   OpFoldResult lastStride = mixedStrides.back();
-  
+
   if (op.getStaticStrides().back() > 0) {
     return op.getStaticStrides().back();
   } else if (isa<BlockArgument>(op.getStrides().back()) ) {
@@ -1206,7 +1206,7 @@ Value materializeValue(OpBuilder &builder, Location loc, OpFoldResult ofr) {
   if (auto val = ofr.dyn_cast<Value>()) {
     return val;
   }
-  
+
   auto intVal = getIntAttr(ofr);
   if (intVal.has_value()) {
     return builder.create<arith::ConstantOp>(loc, builder.getI32IntegerAttr(intVal.value()));
@@ -1221,6 +1221,11 @@ Value materializeValue(OpBuilder &builder, Location loc, OpFoldResult ofr) {
 bool isZero(const OpFoldResult ofr) {
     auto staticOfr = getIntAttr(ofr);
     return staticOfr.has_value() && staticOfr.value() == 0;
+}
+
+bool isOne(const OpFoldResult ofr) {
+    auto staticOfr = getIntAttr(ofr);
+    return staticOfr.has_value() && staticOfr.value() == 1;
 }
 
 Value convertToIndexIfNeeded(Value input, const Location &loc, OpBuilder &b) {
