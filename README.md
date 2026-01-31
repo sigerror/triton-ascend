@@ -29,7 +29,7 @@ Triton-Ascend编译框架打通了Triton与昇腾硬件之间的壁垒，使熟�
 
 ## 性能基准测试
 ### 关键算子性能图表
-选取经过性能优化后的关键算子FA、MM、Softmax作为示例。通过图表展示Triton算子与AscendC算子的性能差异，指标为加速比(`Speedup= AscendC_Duration_Time / Triton_Duration_Time`), [调优指南参考方法](./docs/zh/debug_guide/debugging.md)：
+选取经过性能优化后的关键算子FA、MM、Softmax作为示例。通过图表展示Triton算子与AscendC算子的性能差异，指标为加速比(`Speedup= AscendC_Duration_Time / Triton_Duration_Time`), [调优指南参考方法](./docs/zh/debug_guide/profiling.md)：
 
 - FA 性能图表：
 
@@ -84,23 +84,21 @@ Triton-Ascend 跟随 CANN 支持的操作系统，请根据CANN文档，下载�
 | 昇腾CANN社区版 8.5.0.alpha001     | 2025/11/12 | triton-ascend 3.2.0rc4 |
 | 昇腾CANN社区版 8.3.RC1            | 2025/10/30 | triton-ascend 3.2.0rc4 |
 
-## 快速开始
-我们提供了快速开始章节，帮助您快速上手Triton-Ascend，详见 [快速开始](./docs/zh/quick_start.md)。
+## 入门指引
 
-## 架构设计与核心特性
-Triton-Ascend 系统架构，详见[架构设计](./docs/zh/architecture_design_and_core_features.md)。
+- [快速开始](./docs/zh/quick_start.md)
 
-## 算子开发指南
-Triton算子开发文档[参考](docs/zh/programming_guide.md)
+- [架构设计与核心特性](./docs/zh/architecture_design_and_core_features.md)
 
-## 算子调试调优
+- [算子开发指南](./docs/zh/programming_guide.md)
 
-在使用Triton-Ascend时遇到问题需要调试，详见 [调试指南](./docs/zh/debug_guide/debugging.md#)
+- [算子迁移指南](./docs/zh/migration_guide/migrate_from_gpu.md)
 
-在使用Triton-Ascend时需要性能调优，详见 [性能调优方法](./docs/zh/debug_guide/profiling.md#)
+- [算子调试指南](./docs/zh/debug_guide/debugging.md#)
 
-## 环境变量
-Triton相关环境变量信息[参考](docs/zh/environment_variable_reference.md)
+- [性能调优指南](./docs/zh/debug_guide/profiling.md#)
+
+- [环境变量](docs/zh/environment_variable_reference.md)
 
 ## 常见问题
 
@@ -108,10 +106,10 @@ Triton相关环境变量信息[参考](docs/zh/environment_variable_reference.md
 
 ## 安全声明
 
-我们重视开发者在使用Triton-Ascend时的信息安全，安全防护建议与相关信息请见 [安全声明](./SECURITYNOTE.md) 。
+我们重视开发者在使用Triton-Ascend时的信息安全，安全防护建议与相关信息请见 [安全声明](./SECURITYNOTE.md)
 
 ## 许可证信息
-本项目代码与文档均采用 [MIT许可证](./LICENSE) 。
+本项目代码与文档均采用 [MIT许可证](./LICENSE)
 
 ## 社区与贡献
 欢迎参与Triton-Ascend的开发及代码贡献，详情请参阅 [贡献指南](./CONTRIBUTING.zh.md)

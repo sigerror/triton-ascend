@@ -74,7 +74,7 @@ def _attn_fwd(Q, K, V, M, Out, acc, scale,
 ## 单核数据搬运
 
 ### 设置合适的循环内数据分块大小（BLOCK SIZE）
-以add_kernel为例，变量和操作共同决定了片上内存空间的占用大，通过修改BLOCK_SIZE大小可以调整循环内数据分块和计算中间结果占用的大小。如果超过上限则算子编译时会提示预期占用大小并报错。要达到最大计算访存比，BLOCK_SIZE需要在不超出片上空间时尽可能大，这可以通过Triton-Ascend的[Autotune](../../ascend/examples/autotune_cases/01-vector-add.py)预先设置不同的BLOCK_SIZE，运行时会自动选取最优设置。
+以add_kernel为例，变量和操作共同决定了片上内存空间的占用大，通过修改BLOCK_SIZE大小可以调整循环内数据分块和计算中间结果占用的大小。如果超过上限则算子编译时会提示预期占用大小并报错。要达到最大计算访存比，BLOCK_SIZE需要在不超出片上空间时尽可能大，这可以通过Triton-Ascend的[Autotune](#triton-autotune-自动调优)预先设置不同的BLOCK_SIZE，运行时会自动选取最优设置。
 
 ```python
 @triton.jit
