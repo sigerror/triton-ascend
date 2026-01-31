@@ -17,19 +17,19 @@ Triton-Ascend 是适配华为 Ascend 昇腾芯片的 Triton 优化版本，提�
 最小硬件配置: 单卡 32GB 显存（推荐）
 
 ### 软件依赖
-Python(**py3.9-py3.11**)，CANN_TOOLKIT，CANN_KERNEL，以及[requirements.txt](../../requirements.txt)和[requirements_dev.txt](../../requirements_dev.txt)等。
+Python(**py3.9-py3.11**)，CANN_TOOLKIT，CANN_OPS，以及[requirements.txt](../../requirements.txt)和[requirements_dev.txt](../../requirements_dev.txt)等。
 
-CANN的安装配置脚本详细参考 [CANN安装说明](https://www.hiascend.com/document/detail/zh/canncommercial/83RC1/softwareinst/instg/instg_0093.html?Mode=PmIns&InstallType=netconda&OS=openEuler&Software=cannToolKit)。快捷安装命令参考如下：
+CANN的安装配置脚本详细参考 [CANN安装说明](https://www.hiascend.com/document/detail/zh/canncommercial/850/softwareinst/instg/instg_0000.html?Mode=PmIns&InstallType=local&OS=Ubuntu)。快捷安装命令参考如下：
 ```bash
-chmod 755 Ascend-cann-toolkit_{version}_linux-{arch}.run
-chmod 755 Ascend-cann-kernels-{chip_type}_{version}_linux-{arch}.run
+chmod +x Ascend-cann-toolkit_8.5.0_linux-aarch64.run
+chmod +x Ascend-cann-A3-ops_8.5.0_linux-aarch64.run
 
-sudo ./Ascend-cann-toolkit_{version}_linux-{arch}.run --install
-sudo ./Ascend-cann-kernels-{chip_type}_{version}_linux-{arch}.run --install
+sudo ./Ascend-cann-toolkit_8.5.0_linux-aarch64.run --install
+sudo ./Ascend-cann-A3-ops_8.5.0_linux-aarch64.run --install
 ```
 
-- 注意：[CANN_TOOLKIT，CANN_KERNEL](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.3.RC2)是使能昇腾算力卡的关键工具包，
-需要根据您实际使用的昇腾卡型号选择对应的配套版本(建议8.3版本)，并且安装CANN的时间大概在5-10分钟，请耐心等待安装完成。
+- 注意：[CANN_TOOLKIT，CANN_OPS](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.5.0)是使能昇腾算力卡的关键工具包，
+需要根据您实际使用的昇腾卡型号选择对应的配套版本(建议8.5.0版本)，并且安装CANN的时间大概在5-10分钟，请耐心等待安装完成。
 
 requirements的安装可以参考如下：
 ```shell

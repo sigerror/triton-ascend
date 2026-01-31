@@ -32,34 +32,36 @@
 | 昇腾CANN社区版 8.5.0.alpha001     | 2025/11/12 | triton-ascend 3.2.0rc4 |
 | 昇腾CANN社区版 8.3.RC1            | 2025/10/30 | triton-ascend 3.2.0rc4 |
 
-并根据实际环境指定CPU架构 “**{arch}**”(aarch64/x86_64)、NPU硬件型号“**{chip_type}**”对应的软件包。
+并根据实际环境指定CPU架构 “**{arch}**”(aarch64/x86_64)、软件版本“**{version}**”对应的软件包。
 
-建议下载安装:
+建议下载安装 8.5.0 版本:
 
-| 软件类型 | 软件包说明       | 软件包名称                       |
-|----------|------------------|----------------------------------|
-| Toolkit  | CANN开发套件包   | Ascend-cann-toolkit_**{version}**_linux-**{arch}**.run  |
-| kernels  | CANN二进制算子包 | Ascend-cann-kernels-**{chip_type}**_**{version}**_linux-**{arch}**.run |
+| 软件类型    | 软件包说明       | 软件包名称                       |
+|---------|------------------|----------------------------------|
+| Toolkit | CANN开发套件包   | Ascend-cann-toolkit_**{version}**_linux-**{arch}**.run  |
+| Ops     | CANN二进制算子包 | Ascend-cann-A3-ops_**{version}**_linux-**{arch}**.run |
 
-注意：A3系列的kernel包命名与A2略有区别，参考格式（ Atlas-A3-cann-kernels_**{version}**_linux-**{arch}**.run）
+注意1：A2系列的Ops包命名与A3略有区别，参考格式（ Ascend-cann-910b-ops_**{version}**_linux-**{arch}**.run ）
+
+注意2：8.5.0之前的版本对应的Ops包的包名略有区别，参考格式（ Atlas-A3-cann-kernels_**{version}**_linux-**{arch}**.run ）
 
 [社区下载链接](https://www.hiascend.com/developer/download/community/result?module=cann) 可以找到对应的软件包。
 
-[社区安装指引链接](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/83RC1/softwareinst/instg/instg_quick.html?Mode=PmIns&InstallType=local&OS=Ubuntu&Software=cannToolKit) 提供了完整的安装流程说明与依赖项配置建议，适用于需要全面部署 CANN 环境的用户。
+[社区安装指引链接](https://www.hiascend.com/document/detail/zh/CANNCommunityEdition/850/softwareinst/instg/instg_quick.html?Mode=PmIns&InstallType=local&OS=Ubuntu&Software=cannToolKit) 提供了完整的安装流程说明与依赖项配置建议，适用于需要全面部署 CANN 环境的用户。
 
-#### CANN安装脚本 
+#### CANN安装脚本
 
-我们提供了脚本式安装CANN供您参考：
+以8.5.0的A3 CANN版本为例，我们提供了脚本式安装供您参考：
 ```bash
 
 # 更改run包的执行权限
-chmod 755 Ascend-cann-toolkit_{version}_linux-{arch}.run
-chmod 755 Ascend-cann-kernels-{chip_type}_{version}_linux-{arch}.run
+chmod +x Ascend-cann-toolkit_8.5.0_linux-aarch64.run
+chmod +x Ascend-cann-A3-ops_8.5.0_linux-aarch64.run
 
 # 普通安装（默认安装路径：/usr/local/Ascend）
-sudo ./Ascend-cann-toolkit_{version}_linux-{arch}.run --install
+sudo ./Ascend-cann-toolkit_8.5.0_linux-aarch64.run --install
 # 默认安装路径（与 Toolkit 包一致：/usr/local/Ascend）
-sudo ./Ascend-cann-kernels-{chip_type}_{version}_linux-{arch}.run --install
+sudo ./Ascend-cann-A3-ops_8.5.0_linux-aarch64.run --install
 # 生效默认路径环境变量
 source /usr/local/Ascend/ascend-toolkit/set_env.sh
 
@@ -159,7 +161,7 @@ Triton 使用 LLVM20 为 GPU 和 CPU 生成代码。同样，昇腾的毕昇编�
    ```
 
 #### 方式一: clang构建安装LLVM
-  
+
 - 步骤1：推荐使用clang安装LLVM，环境上请安装clang、lld，并指定版本（推荐版本clang>=15，lld>=15），
   如未安装，请按下面指令安装clang、lld、ccache：
 
@@ -189,7 +191,7 @@ Triton 使用 LLVM20 为 GPU 和 CPU 生成代码。同样，昇腾的毕昇编�
     -DLLVM_ENABLE_PROJECTS="mlir;llvm;lld" \
     -DLLVM_TARGETS_TO_BUILD="host;NVPTX;AMDGPU" \
     -DLLVM_ENABLE_LLD=ON \
-    -DCMAKE_INSTALL_PREFIX=${LLVM_INSTALL_PREFIX} 
+    -DCMAKE_INSTALL_PREFIX=${LLVM_INSTALL_PREFIX}
   ninja install
   ```
 
@@ -258,7 +260,7 @@ git clone https://gitcode.com/Ascend/triton-ascend.git && cd triton-ascend/pytho
   取消注释后重新构建项目即可解决该问题。
 
 2. 运行Triton示例
-   
+
    安装运行时依赖，参考如下：
    ```bash
    cd triton-ascend && pip install -r requirements_dev.txt
@@ -276,4 +278,4 @@ git clone https://gitcode.com/Ascend/triton-ascend.git && cd triton-ascend/pytho
     tensor([0.8329, 1.0024, 1.3639,  ..., 1.0796, 1.0406, 1.5811], device='npu:0')
     The maximum difference between torch and triton is 0.0
     ```
-    
+
