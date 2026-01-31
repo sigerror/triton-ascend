@@ -11,8 +11,8 @@ Triton-Ascend编译框架打通了Triton与昇腾硬件之间的壁垒，使熟�
 
 ## 最新动态与里程碑
 - #### 近期版本更新
-当前版本：[Triton-Ascend 3.2.0RC4](https://pypi.org/project/triton-ascend/)  
-配套CANN版本：[昇腾CANN社区版8.3.RC2](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.3.RC2)  
+当前版本：[Triton-Ascend 3.2.0](https://pypi.org/project/triton-ascend/)  
+配套CANN版本：[昇腾CANN社区版8.5.0](https://www.hiascend.com/developer/download/community/result?module=cann&cann=8.5.0)  
 2026年版本计划：升级triton版本到triton3.4
 - #### 里程碑
 | 里程碑 | 重要特性更新情况 | 状态 |
@@ -73,6 +73,7 @@ Triton-Ascend 跟随 CANN 支持的操作系统，请根据CANN文档，下载�
 
 | 版本                     | 发布日期   | 适配Triton-Ascend版本   |
 |--------------------------|------------|------------|
+| 昇腾CANN商用版 8.5.0     | 2026/01/16 | triton-ascend 3.2.0 |
 | 昇腾CANN商用版 8.3.RC2   | 2025/11/20 | triton-ascend 3.2.0rc4 |
 | 昇腾CANN商用版 8.3.RC1   | 2025/10/30 | triton-ascend 3.2.0rc4 |
 
@@ -80,6 +81,7 @@ Triton-Ascend 跟随 CANN 支持的操作系统，请根据CANN文档，下载�
 
 | 版本                              | 发布日期   | 适配Triton-Ascend版本   |
 |-----------------------------------|------------|------------|
+| 昇腾CANN社区版 8.5.0              | 2026/01/16 | triton-ascend 3.2.0 |
 | 昇腾CANN社区版 8.3.RC2            | 2025/11/20 | triton-ascend 3.2.0rc4 |
 | 昇腾CANN社区版 8.5.0.alpha001     | 2025/11/12 | triton-ascend 3.2.0rc4 |
 | 昇腾CANN社区版 8.3.RC1            | 2025/10/30 | triton-ascend 3.2.0rc4 |

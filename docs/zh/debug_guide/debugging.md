@@ -131,7 +131,7 @@ python your_triton_program.py
 
 ### 3.4 IR文件解析
 
-以示范测试用例  [01-vector-add.py ](../../../ascend/examples/tutorials/01-vector-add.py#) 举例说明编译流程：
+以示范测试用例  [01-vector-add.py ](../../../third_party/ascend/tutorials/01-vector-add.py#) 举例说明编译流程：
 这是一个简单的两个tensor的加法计算，计算逻辑请参考示范用例中的注解。
 通过TRITON_DEBUG=1开启dump文件输出，可以获取到 kernel.ttir.mlir 和 kernel.ttadapter.mlir 
 - 运行用例
