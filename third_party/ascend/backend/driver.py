@@ -239,10 +239,14 @@ def make_npu_launcher_stub(header_src, wrapper_src, debug=False):
     cache = get_cache_manager(precompile_hash)
     header_path = cache.get_file("precompiled.h")
     gch_path = cache.get_file("precompiled.h.gch")
+    
+    enable_precompile = not os.getenv("TRITON_DISABLE_PRECOMPILE", 'false').lower() in ('true', '1')
     # if precompile header file and its gch file not exist, do precompile
     if header_path is None and gch_path is None:
         header_path = cache.put(header_src, "precompiled.h", binary=False)
-        _precompile_npu_ext_with_lock(header_path)
+        # only enable_precompile=true , do precompile
+        if enable_precompile:
+            _precompile_npu_ext_with_lock(header_path)
 
     # try to get cached file
     so_cache_key = hashlib.sha256(wrapper_src.encode("utf-8")).hexdigest()
@@ -275,7 +279,7 @@ def make_npu_launcher_stub(header_src, wrapper_src, debug=False):
         src_path = os.path.join(tmpdir, f"{name}.cxx")
         with open(src_path, "w") as f:
             f.write(wrapper_src)
-        so_path = _build_npu_ext(name, header_path, src_path, kernel_launcher=kernel_launcher_type, precompile=True)
+        so_path = _build_npu_ext(name, header_path, src_path, kernel_launcher=kernel_launcher_type, precompile=enable_precompile)
         if debug:
             with open(so_path, "rb") as f:
                 dump_manager.put(f.read(), so_name, binary=True)
