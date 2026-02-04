@@ -625,22 +625,35 @@ void MaskState::eraseInsertedOps(Operation *rawOp, PatternRewriter &rewriter) {
   auto moduleOp = rawOp->getParentOfType<ModuleOp>();
   SmallVector<Operation *> worklist;
   moduleOp->walk([&](Operation *op) {
-    if (isOpTriviallyDead(op))
+    if (isOpTriviallyDead(op) && op->use_empty()) {
       worklist.push_back(op);
+    }
   });
   while (!worklist.empty()) {
     Operation *op = worklist.pop_back_val();
-    if (!isOpTriviallyDead(op))
+    if (!isOpTriviallyDead(op) || !op->use_empty()) {
       continue;
+    }
+    if (!op->getBlock()) {
+      continue;
+    }
+    SmallVector<Operation *> operandDefOps;
     for (Value value : op->getOperands()) {
-      if (auto defOp = value.getDefiningOp())
-        worklist.push_back(defOp);
+      if (auto defOp = value.getDefiningOp()) {
+        if (defOp->getBlock()) {
+          operandDefOps.push_back(defOp);
+        }
+      }
     }
     LLVM_DEBUG({
       llvm::dbgs() << "[MaskState]==> inserted op: \n"
                    << *op << "\n[MaskState]<== is removed\n";
     });
+    
     rewriter.eraseOp(op);
+    for (auto defOp : operandDefOps) {
+      worklist.push_back(defOp);
+    }
   }
 }
 
