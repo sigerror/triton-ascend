@@ -274,14 +274,11 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
     os << ptrOffsetInfo.isScalarLike() << "\n";
   });
 
-  if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>) {
+  if constexpr (std::is_same_v<MemAccOpTy, triton::LoadOp>)
     if (ptrOffsetInfo.isScalarLike()) {
       splatAndLoadScenario(op, ptrOffsetInfo.getRank(), rewriter);
       return success();
     }
-  }
-
-  std::optional<MaskState> mstate = runMaskAnalysis(op, rewriter);
 
   if (op->hasAttr(ConverterUtils::discreteMaskAttrName)) {
     if constexpr (std::is_same_v<MemAccOpTy, triton::StoreOp>) {
@@ -420,8 +417,6 @@ LogicalResult UnstructuredMemAccessConverter<MemAccOpTy>::matchAndRewrite(
               loc, rewriter.getIndexType(), tptShape);
         }
         sizeVal = rewriter.create<arith::MinSIOp>(loc, sizeVal, tptShape);
-      } else if (mstate) {
-        sizeVal = getValueOrCreateConstantIndexOp(rewriter, loc, mstate->dims[i]);
       }
       if (isLoadLike) {
         forOp = rewriter.create<scf::ForOp>(loc, zeroIdx, sizeVal, oneIdx,
