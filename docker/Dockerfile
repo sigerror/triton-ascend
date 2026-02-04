@@ -3,6 +3,8 @@ FROM ubuntu:22.04
 SHELL ["/bin/bash", "-c"]
 ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ="Asia/shanghai"
+ARG NPU_TYPE
+ENV NPU_TYPE=${NPU_TYPE}
 
 RUN apt update && \
     apt install --yes --no-install-recommends --no-install-suggests \

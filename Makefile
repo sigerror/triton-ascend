@@ -16,8 +16,8 @@ LLVM_COMMIT_SHORT           := $(shell cut -c1-8 cmake/llvm-hash.txt)
 LLVM_INSTALL_DIR            := llvm-$(LLVM_COMMIT_SHORT)-$(OS_ID)-$(ARCH_NAME)
 LLVM_TARBALL                := $(LLVM_INSTALL_DIR).tar.gz
 SUDO                        := $(shell command -v sudo >/dev/null 2>&1 && echo sudo || echo)
-TOOLKIT_URL                 := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-toolkit_8.2.RC1_linux-$(ARCH).run
-KERNEL_URL                  := https://triton-ascend-artifacts.obs.cn-southwest-2.myhuaweicloud.com/cann/Ascend-cann-kernels-910b_8.2.RC1_linux-$(ARCH).run
+TOOLKIT_URL                 := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%208.5.0/Ascend-cann-toolkit_8.5.0_linux-$(ARCH).run
+KERNEL_URL                  := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%208.5.0/Ascend-cann-$(NPU_TYPE)-ops_8.5.0_linux-$(ARCH).run
 CANN_TOOLKIT                := Ascend-cann-toolkit.run
 CANN_KERNELS                := Ascend-cann-kernels.run
 DEPS_STAMP                  := .deps_installed
@@ -368,8 +368,8 @@ ifeq ($(OS_ID),ubuntu)
 	$(SUDO) apt-get update
 	$(SUDO) apt-get install --yes --no-install-recommends \
 		ca-certificates ccache clang ninja-build libzstd-dev \
-	        lld git python3 python3-dev python3-pip zlib1g-dev
-	@python3 -m pip install cmake ninja
+	        lld git python3 python3-dev python3-pip zlib1g-dev cmake
+	@python3 -m pip install ninja
 else ifeq ($(OS_ID),almalinux)
 	@echo "Installing dependencies for AlmaLinux..."
 	dnf install --assumeyes clang lld cmake ccache git
