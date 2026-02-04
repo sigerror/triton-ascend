@@ -267,12 +267,12 @@ git clone https://gitcode.com/Ascend/triton-ascend.git && cd triton-ascend/pytho
    ```bash
    cd triton-ascend && pip install -r requirements_dev.txt
    ```
-   运行实例: [01-vector-add.py](../../ascend/examples/tutorials/01-vector-add.py)
+   运行实例: [01-vector-add.py](../../third_party/ascend/tutorials/01-vector-add.py)
    ```bash
    # 设置CANN环境变量（以root用户默认安装路径`/usr/local/Ascend`为例）
    source /usr/local/Ascend/ascend-toolkit/set_env.sh
    # 运行tutorials示例：
-   python3 ./triton-ascend/ascend/examples/tutorials/01-vector-add.py
+   python3 ./triton-ascend/third_party/ascend/tutorials/01-vector-add.py
    ```
     观察到类似的输出即说明环境配置正确。
     ```
