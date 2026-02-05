@@ -95,6 +95,14 @@ class AxesKeyParser(AutoParser):
                 axis = self.handle_lt_node(var, child_node)
             elif isinstance(child_node, ast.Assign):
                 axis = self.handle_assign_node(var, child_node)
+
+            elif isinstance(child_node, ast.BinOp) and \
+                 isinstance(child_node.op, ast.BitAnd):
+                
+                axis = self.handle_lt_node(var, child_node.left)
+                if axis is None:
+                    axis = self.handle_lt_node(var, child_node.right)
+
             if axis is not None:
                 return axis
         self.checked_vars.append(var)
