@@ -140,11 +140,18 @@ tensor::InsertSliceOp MaskState::getInsertSlice(Value source, Value dest,
 memref::SubViewOp MaskState::getSubview(Value source, const Location &loc,
                                         OpBuilder &builder) const {
   auto sourceType = cast<MemRefType>(source.getType());
-  SmallVector<OpFoldResult> strides(getRank(), builder.getIndexAttr(1));
+  int64_t rank = sourceType.getRank();
+  SmallVector<OpFoldResult> strides(rank, builder.getIndexAttr(1));
+
+  SmallVector<OpFoldResult> fixedOffsets(offsets.begin(), offsets.end());
+  SmallVector<OpFoldResult> fixedDims(dims.begin(), dims.end());
+  fixedOffsets.resize(rank, builder.getIndexAttr(0));
+  fixedDims.resize(rank, builder.getIndexAttr(1));
+
   auto dstType =
-      memref::SubViewOp::inferResultType(sourceType, offsets, dims, strides);
+      memref::SubViewOp::inferResultType(sourceType, fixedOffsets, fixedDims, strides);
   return builder.create<memref::SubViewOp>(loc, cast<MemRefType>(dstType),
-                                           source, offsets, dims, strides);
+                                           source, fixedOffsets, fixedDims, strides);
 }
 
 static memref::SubViewOp createSubview(Value src, const Location &loc,
