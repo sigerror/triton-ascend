@@ -16,8 +16,8 @@ LLVM_COMMIT_SHORT           := $(shell cut -c1-8 cmake/llvm-hash.txt)
 LLVM_INSTALL_DIR            := llvm-$(LLVM_COMMIT_SHORT)-$(OS_ID)-$(ARCH_NAME)
 LLVM_TARBALL                := $(LLVM_INSTALL_DIR).tar.gz
 SUDO                        := $(shell command -v sudo >/dev/null 2>&1 && echo sudo || echo)
-TOOLKIT_URL                 := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%208.5.0/Ascend-cann-toolkit_8.5.0_linux-$(ARCH).run
-KERNEL_URL                  := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%208.5.0/Ascend-cann-$(NPU_TYPE)-ops_8.5.0_linux-$(ARCH).run
+TOOLKIT_URL                 := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%20$(CANN_VERSION)/Ascend-cann-toolkit_$(CANN_VERSION)_linux-$(ARCH).run
+# KERNEL_URL                  := https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%20$(CANN_VERSION)/Ascend-cann-$(CHIP_TYPE)-ops_$(CANN_VERSION)_linux-$(ARCH).run
 CANN_TOOLKIT                := Ascend-cann-toolkit.run
 CANN_KERNELS                := Ascend-cann-kernels.run
 DEPS_STAMP                  := .deps_installed
@@ -42,6 +42,29 @@ PYPI_CONFIG                 := ~/.pypirc
 
 
 .DEFAULT_GOAL := all
+# =====================
+# CANN Kernel URL
+# =====================
+IS_8_5_0 		:= $(filter 8.5.0, $(CANN_VERSION))
+IS_RC_VERSION 	:= $(filter 8.3.RC% 8.2.RC%, $(CANN_VERSION))
+CANN_BASE_URL 	:= https://ascend-repo.obs.cn-east-2.myhuaweicloud.com/CANN/CANN%20$(CANN_VERSION)
+ifeq ($(IS_8_5_0), $(CANN_VERSION)) # VERSION 8.5.0: Unified naming convention
+	KERNEL_URL := $(CANN_BASE_URL)/Ascend-cann-A3-ops_$(CANN_VERSION)_linux-$(ARCH).run
+else ifeq ($(IS_RC_VERSION), $(CANN_VERSION)) # VERSIONS 8.3.RCx/8.2.RCx: Suffix is "-kernels". Special naming for A3 (Atlas-A3-cann-kernels)
+	ifeq ($(CHIP_TYPE), A3)
+		KERNEL_URL := $(CANN_BASE_URL)/Atlas-A3-cann-kernels_$(CANN_VERSION)_linux-$(ARCH).run
+	else
+		KERNEL_URL := $(CANN_BASE_URL)/Ascend-cann-kernels-$(CHIP_TYPE)_$(CANN_VERSION)_linux-$(ARCH).run
+	endif
+else
+	KERNEL_URL:= $(CANN_BASE_URL)/Ascend-cann-toolkit_$(CANN_VERSION)_linux-$(ARCH).run
+endif
+
+.PHONY: check_cann_url
+check_cann_url:
+	@echo "TOOLKIT_URL: $(TOOLKIT_URL)"
+	@echo "KERNEL_URL: $(KERNEL_URL)"
+
 
 # ======================
 # Help
