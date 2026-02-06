@@ -669,7 +669,9 @@ InterleaveStatusWithMaskOptimization(SmallVector<Operation *> materializeVec) {
   SmallVector<OpFoldResult> extractStrides =
       firstSrcExtractSlice.getMixedStrides();
   SmallVector<OpFoldResult> extractSizes = firstSrcExtractSlice.getMixedSizes();
-  assert(llvm::isa<Attribute>(extractSizes.back()));
+  if (!llvm::isa<Attribute>(extractSizes.back())) {
+    return failure();
+  }
   extractSizes.back() = builder.getIndexAttr(
       getConstantIntValue(extractSizes.back()).value() * 2);
   auto newSrcExtractSlice = builder.create<tensor::ExtractSliceOp>(
@@ -702,10 +704,18 @@ InterleaveStatusWithMaskOptimization(SmallVector<Operation *> materializeVec) {
   // 8. Erase origin operation
   materializeVec[0]->erase();
   materializeVec[1]->erase();
-  firstSubviewOpOfReCast->erase();
-  firstSrcExtractSlice->erase();
-  secondSubviewOpOfReCast->erase();
-  secondSrcExtractSlice->erase();
+  if (firstSubviewOpOfReCast->use_empty()) {
+    firstSubviewOpOfReCast->erase();
+  }
+  if (firstSrcExtractSlice->use_empty()) {
+    firstSrcExtractSlice->erase();
+  }
+  if (secondSubviewOpOfReCast->use_empty()) {
+    secondSubviewOpOfReCast->erase();
+  }
+  if (secondSrcExtractSlice->use_empty()) {
+    secondSrcExtractSlice->erase();
+  }
 
   return success();
 }
