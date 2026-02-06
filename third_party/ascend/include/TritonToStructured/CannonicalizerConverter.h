@@ -69,12 +69,18 @@ public:
 private:
     // Information about a pointer iteration argument to be promoted
     struct PointerArgInfo {
-      unsigned oldIndex;    // Original index in the iteration arguments
-      Value basePointer;    // Base pointer value passed as init arg
-      Value offsetValue;    // Offset value used in addptr operation
-      Value newIterArg;     // New integer iteration argument
-      Value addPtrValue;    // The addptr operation result that updates the pointer
+        unsigned oldIndex;    // Original index in the iteration arguments
+        Value basePointer;    // Base pointer value passed as init arg
+        Value offsetValue;    // Offset value used in addptr operation
+        Value newIterArg;     // New integer iteration argument
+        Value addPtrValue;    // The addptr operation result that updates the pointer
+        // Offset value used in advancePtr operation (with explicit inlined capacity)
+        SmallVector<Value> offsetValues;
+        SmallVector<Value> newInitArgs;
+        SmallVector<Type> newIterArgTypes;
     };
+
+    LogicalResult matchAndRewriteForAddPtr(scf::ForOp forOp, PatternRewriter &rewriter) const;
 
     // Check if the loop meets basic transformation conditions
     LogicalResult matchLoop(scf::ForOp forOp) const;
@@ -165,8 +171,56 @@ private:
                              Value intResult,
                              ArrayRef<PointerArgInfo> pointerArgs,
                              PatternRewriter &rewriter) const;
-};
 
+    LogicalResult matchAndRewriteAdvancePtr(scf::ForOp forOp, PatternRewriter &rewriter) const;
+
+    SmallVector<PointerArgInfo> collectPointerIterArgsForAdvancePtr(scf::ForOp forOp) const;
+
+    std::optional<PointerArgInfo> analyzePointerIterArgForAdvancePtr(Value iterArg, Block &loopBody) const;
+
+    std::tuple<SmallVector<Value>, SmallVector<Type>, DenseMap<unsigned, unsigned>>
+    createNewIterArgsForAdvancePtr(
+                                   scf::ForOp forOp,
+                                   SmallVector<PointerArgInfo>& pointerArgs,
+                                   PatternRewriter &rewriter) const;
+
+    IRMapping  createIRMappingForAdvancePtr(scf::ForOp oldForOp,
+                                           scf::ForOp newForOp,
+                                           SmallVector<PointerArgInfo> &pointerArgs,
+                                           DenseMap<unsigned, unsigned> &indexMap,
+                                           PatternRewriter &rewriter) const;
+
+    Value rebuildPointerForAdvancePtr(scf::ForOp forOp,
+                                      ArrayRef<PointerArgInfo> pointerArgs,
+                                      unsigned idx,
+                                      PatternRewriter &rewriter) const;
+
+    SmallVector<Value> createOffsetsForAdvancePtr(unsigned idx,
+                                                  ArrayRef<PointerArgInfo> pointerArgs,
+                                                  DenseMap<unsigned, unsigned> &indexMap,
+                                                  PatternRewriter &rewriter) const;
+
+    LogicalResult cloneInstructionsForAdvancePtr(
+        Block &oldBody, Block &newBody, ArrayRef<PointerArgInfo> pointerArgs,
+        DenseMap<unsigned, unsigned> &indexMap, IRMapping &mapping,
+        PatternRewriter &rewriter) const;
+
+    LogicalResult rewriteLoopBodyForAdvancePtr(
+                                 scf::ForOp oldForOp,
+                                 scf::ForOp newForOp,
+                                 SmallVector<PointerArgInfo> &pointerArgs,
+                                 DenseMap<unsigned, unsigned> &indexMap,
+                                 PatternRewriter &rewriter) const;
+
+    LogicalResult cloneYieldOpForAdvancePtr(
+        scf::YieldOp yieldOp, ArrayRef<PointerArgInfo> pointerArgs,
+        DenseMap<unsigned, unsigned> &indexMap, IRMapping &mapping,
+        PatternRewriter &rewriter) const;
+
+    SmallVector<Value> reconstructPointerForAdvance(scf::ForOp forOp, unsigned idx, Value intResult,
+                                                    ArrayRef<PointerArgInfo> pointerArgs,
+                                                    PatternRewriter &rewriter) const;
+};
 }  // namespace CannonicalizerConverter
 
 #endif

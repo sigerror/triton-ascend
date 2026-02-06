@@ -1146,17 +1146,6 @@ void BlockDataParser::rewriteMakeTensorPtrOp(
   BlockData data;
 
   auto orderSize = op.getOrder().size();
-  if (orderSize > 1) {
-    // Declaration of llvm::ArrayRef::slice(n, m)
-    // - Chop off the first N elements of the array, and keep M elements
-    //   in the array.
-    // Take care that 'm' means chunk length
-    for (auto [first, second] :
-         llvm::zip(op.getOrder().slice(0, orderSize - 1),
-                   op.getOrder().slice(1, orderSize - 1))) {
-        assert(first == second + 1 && "Currently only support default order on block pointers");
-    }
-  }
 
   // Handle base is defined by tt.bitcast
   BlockDataParser::parse(op.getBase(), data, loc, rewriter, known);

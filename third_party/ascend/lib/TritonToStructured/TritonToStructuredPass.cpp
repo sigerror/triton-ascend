@@ -87,13 +87,13 @@ void TritonToStructuredPass::populateTritonToStructuredCanonicalizationPatterns(
 
 void TritonToStructuredPass::populateTritonToStructuredPatterns(
     RewritePatternSet &patterns, bool optimizeDynamicOffset,
-    bool enableMaskFallbackConversion, bool compileOn91095) {
+    bool enableMaskFallbackConversion) {
     patterns.add<MemOpConverter::LoadConverter>(
         patterns.getContext(), optimizeDynamicOffset,
-        enableMaskFallbackConversion, compileOn91095);
+        enableMaskFallbackConversion);
     patterns.add<MemOpConverter::StoreConverter>(
         patterns.getContext(), optimizeDynamicOffset,
-        enableMaskFallbackConversion,false);
+        enableMaskFallbackConversion);
 }
 
 LogicalResult TritonToStructuredPass::processSplatBinaryOperations(ModuleOp moduleOp) {
@@ -134,8 +134,7 @@ void TritonToStructuredPass::runOnOperation() {
     RewritePatternSet tritonToStructuredPatterns(&getContext());
     populateTritonToStructuredPatterns(tritonToStructuredPatterns,
                                        optimizeDynamicOffset,
-                                       enableMaskFallbackConversion,
-                                       compileOn91095);
+                                       enableMaskFallbackConversion);
 
     if (failed(applyPatternsAndFoldGreedily(moduleOp,
                                             std::move(tritonToStructuredPatterns)))) {
@@ -162,7 +161,7 @@ std::unique_ptr<OperationPass<ModuleOp>> triton::createTritonToStructuredPass() 
 
 std::unique_ptr<OperationPass<ModuleOp>>
 triton::createTritonToStructuredPass(
-  bool enableMaskFallbackConversion, bool optimizeDynamicOffset, bool compileOn91095) {
+  bool enableMaskFallbackConversion, bool optimizeDynamicOffset) {
   return std::make_unique<TritonToStructuredPass>(
-    enableMaskFallbackConversion, optimizeDynamicOffset,compileOn91095);
+    enableMaskFallbackConversion, optimizeDynamicOffset);
 }

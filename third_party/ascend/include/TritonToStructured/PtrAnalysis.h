@@ -53,6 +53,9 @@ struct PtrState {
     SmallVector<StateInfo> stateInfo;  // shape info when load, maintained with visitOps
     SmallVector<OpFoldResult> sizes;    // original shape, maintained with visitOps
     SmallVector<size_t> permuteIds;
+    SmallVector<size_t> order;   // the order of the original data format, only used for block_ptr
+    SmallVector<OpFoldResult> dimOffsets; // the offsets per dimension, only used for block_ptr
+
     Value source;                // base address (ptr), maintained with visitOps
     OpFoldResult offset;        // scalar offset (int), maintained with visitOps
 
@@ -65,7 +68,14 @@ struct PtrState {
     bool isEmpty() const;
     bool isScalar() const;
     bool hasSource() const;
+    bool isBlockPtr() const;
     bool isSameSizeAs(const PtrState& x) const;
+
+    void generateOriginPermuteIds();
+
+    // Formula of "contiguous axes"
+    // - axis i is contiguous if stride[i] == product(shape[0..i-1]).
+    size_t countContiguousAxes(SmallVector<StateInfo> stateInfo) const;
     void analyzePermute();
 
     void updatePtrState(SmallVector<StateInfo> stateInfo, SmallVector<OpFoldResult> sizes,
@@ -84,6 +94,8 @@ struct PtrState {
                           OpBuilder& builder);
 
     triton::AddPtrOp createAddPtrOp(OpBuilder& builder, Location loc);
+
+    triton::MakeTensorPtrOp createMakeTensorPtrOp(OpBuilder& builder, Location loc);
 };
 
 class PtrAnalysis {
@@ -151,6 +163,12 @@ public:
     // - The resulting state for ptr and offset wil be added
     LogicalResult visitOperandAddptr(triton::AddPtrOp addptrOp, PtrState& state,
                                      const Location loc, OpBuilder& builder);
+
+    // Operand is the result of tt.make_tensor_ptr.
+    // Expected result:
+    //  Parse source pointer and grab results
+    LogicalResult visitOperandMakeTensorPtr(triton::MakeTensorPtrOp makeTensorPtrOp, PtrState& state,
+                                            const Location loc, OpBuilder& builder);
 
     // Parse the state of AddPtrOp, insert any instruction needed to
     // calculate strides and offsets, build PtrState for this operand, and record

@@ -30,6 +30,7 @@
 #include "ascend/include/TritonToLinalg/DescriptorConverter.h"
 #include "ascend/include/TritonToLinalg/HoistBroadcast.h"
 #include "ascend/include/TritonToLinalg/UseAnalysis.h"
+#include "ascend/include/TritonToLinalg/ImplicitPermute.h"
 #include "ascend/include/Utils/InterleaveOptimization.h"
 #include "ascend/include/Utils/Utils.h"
 
@@ -657,7 +658,6 @@ void TritonToLinalgPass::populateTritonToLinalgCanonicalizationPatterns(RewriteP
         // TTOpConverters::ScalarMathCanonicalizer<arith::ExtFOp>
         // TTOpConverters::ScalarMathCanonicalizer<arith::TruncFOp>
         >(patterns.getContext());
-    patterns.add<TTOpConverters::MakeTensorPtrCanonicalizer>(patterns.getContext());
     patterns.add<TTOpConverters::ReduceSingleCanonicalizer>(patterns.getContext());
     if (this->enableSelectAnalysis) {
       patterns.add<TTOpConverters::SelectCanonicalizer>(patterns.getContext());
@@ -830,6 +830,26 @@ void TritonToLinalgPass::annotateTensorKindForModule(ModuleOp moduleOp) {
   });
 }
 
+LogicalResult TritonToLinalgPass::processImplicitPermuteOperations(ModuleOp moduleOp)
+{
+  mlir::RewritePatternSet patterns(&getContext());
+  patterns.add<ImplicitPermute::LoadConverter>(patterns.getContext());
+  patterns.add<ImplicitPermute::StoreConverter>(patterns.getContext());
+  patterns.add<ImplicitPermute::AtomicRMWConverter>(patterns.getContext());
+  patterns.add<ImplicitPermute::AtomicCASConverter>(patterns.getContext());
+
+  if (failed(applyPatternsAndFoldGreedily(moduleOp, std::move(patterns)))) {
+    LLVM_DEBUG({
+      llvm::dbgs() << "ImplicitPermute: rewrite MemOp failed\n";
+    });
+  }
+
+  mlir::PassManager pm(&getContext(), moduleOp.getOperationName());
+  pm.addPass(createCSEPass());
+  pm.addPass(createCanonicalizerPass());
+  return runPipeline(pm, getOperation());
+}
+
 void TritonToLinalgPass::runOnOperation() {
   compileOn91095Flag = this->compileOn91095;
 
@@ -863,16 +883,23 @@ void TritonToLinalgPass::runOnOperation() {
     return WalkResult::advance();
   });
 
-  RewritePatternSet canonicalizerPatterns(&getContext());
-
   // Execute tensor descriptor operations conversion
   if (failed(processDescriptorOperations(moduleOp))) {
+    signalPassFailure();
+  }
+
+  // Execute implicit permute
+  if (failed(processImplicitPermuteOperations(moduleOp))) {
+    LLVM_DEBUG({
+      llvm::dbgs() << "Failed to process implicit permute operations\n";
+    });
     signalPassFailure();
   }
 
   // 0. Annotate Memory-Related Triton FuncOps with tensor_kind (used by profiling).
   annotateTensorKindForModule(moduleOp);
 
+  RewritePatternSet canonicalizerPatterns(&getContext());
   // 1. Canonicalize load/store related patterns.
   this->populateTritonToLinalgCanonicalizationPatterns(canonicalizerPatterns);
   if (failed(applyPatternsAndFoldGreedily(moduleOp,
