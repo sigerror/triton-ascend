@@ -132,6 +132,49 @@ namespace {
       return success();
     }
   };
+
+  struct TritonCDivSIToHFusionConversion : public OpRewritePattern<triton::CDivSIOp> {
+    using OpRewritePattern<triton::CDivSIOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(triton::CDivSIOp op,
+      PatternRewriter &rewriter) const final {
+      if (auto tensorType = dyn_cast<RankedTensorType>(op.getType())) {
+        auto emptyOp = rewriter.create<tensor::EmptyOp>(
+            op.getLoc(), tensorType.getShape(), tensorType.getElementType());
+        auto binaryAttr =
+            rewriter.getAttr<hfusion::BinaryFnAttr>(hfusion::BinaryFn::ceildivsi);
+        auto fnAttr = rewriter.getNamedAttr("fun", binaryAttr);
+        rewriter.replaceOpWithNewOp<hfusion::ElemwiseBinaryOp>(
+            op, ValueRange({op.getLhs(), op.getRhs()}), ValueRange{emptyOp},
+            ArrayRef{fnAttr});
+      } else {
+        rewriter.replaceOpWithNewOp<arith::CeilDivSIOp>(op, op.getLhs(), op.getRhs());
+      }
+      return success();
+    }
+  };
+
+  struct TritonCDivUIToHFusionConversion : public OpRewritePattern<triton::CDivUIOp> {
+    using OpRewritePattern<triton::CDivUIOp>::OpRewritePattern;
+
+    LogicalResult matchAndRewrite(triton::CDivUIOp op,
+      PatternRewriter &rewriter) const final {
+      assert(getElementTypeOrSelf(op.getType()).isInteger(8));
+      if (auto tensorType = dyn_cast<RankedTensorType>(op.getType())) {
+        auto emptyOp = rewriter.create<tensor::EmptyOp>(
+            op.getLoc(), tensorType.getShape(), tensorType.getElementType());
+        auto binaryAttr =
+            rewriter.getAttr<hfusion::BinaryFnAttr>(hfusion::BinaryFn::ceildivui);
+        auto fnAttr = rewriter.getNamedAttr("fun", binaryAttr);
+        rewriter.replaceOpWithNewOp<hfusion::ElemwiseBinaryOp>(
+            op, ValueRange({op.getLhs(), op.getRhs()}), ValueRange{emptyOp},
+            ArrayRef{fnAttr});
+      } else {
+        rewriter.replaceOpWithNewOp<arith::CeilDivUIOp>(op, op.getLhs(), op.getRhs());
+      }
+      return success();
+    }
+  };
 }
 
 namespace {
@@ -151,7 +194,9 @@ void TritonToHFusionPass::runOnOperation() {
   patterns.add<TritonHistogramToHFusionConversion>(patterns.getContext());
   patterns.add<TritonFpToFpToHFusionConversion>(patterns.getContext());
   patterns.add<TritonModToHFusionConversion>(patterns.getContext());
-
+  patterns.add<TritonCDivSIToHFusionConversion>(patterns.getContext());
+  patterns.add<TritonCDivUIToHFusionConversion>(patterns.getContext());
+  
   // Apply patterns with greedy rewriting
   // This allows patterns to return failure() without causing pass failure
   if (failed(applyPatternsAndFoldGreedily(module, std::move(patterns)))) {

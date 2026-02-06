@@ -1369,5 +1369,35 @@ def TT_DescriptorStoreOp : TT_Op<"descriptor_store", [TT_DescriptorStoreLikeOpIn
   let hasVerifier = 1;
 }
 
+//
+// CeilDiv Op
+//
+def TT_CDivSIOp : TT_Op<"cdivsi", [Elementwise,
+                          SameOperandsAndResultType,
+                          Pure]> {
+  let summary = "Signed ceil div operation of input tensors.";
+  let description = [{
+    Performs element-wise ceil division for signed integer type.
+  }];
+
+  let arguments = (ins TT_IntLike:$lhs, TT_IntLike:$rhs);
+  let results = (outs TT_IntLike:$result);
+
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
+}
+
+def TT_CDivUIOp : TT_Op<"cdivui", [Elementwise,
+                          SameOperandsAndResultType,
+                          Pure]> {
+  let summary = "Unsigned ceil div operation of input tensors.";
+  let description = [{
+    Performs element-wise ceil division for unsigned integer type.
+  }];
+
+  let arguments = (ins TT_IntLike:$lhs, TT_IntLike:$rhs);
+  let results = (outs TT_IntLike:$result);
+
+  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` type($lhs) `,` type($rhs) `->` type($result)";
+}
 
 #endif // Triton_OPS
