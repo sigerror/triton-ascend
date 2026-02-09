@@ -1,6 +1,7 @@
 try:
     import acl
-    is_compile_on_910_95 = acl.get_soc_name().startswith("Ascend910_95")
+    soc_name = acl.get_soc_name()
+    is_compile_on_910_95 = soc_name.startswith("Ascend910_95") or soc_name.startswith("Ascend950")
 except Exception as e:
     is_compile_on_910_95 = False
 

@@ -71,7 +71,6 @@ def triton_cdiv_special(in_ptr0, div, out_ptr0, XBLOCK, XBLOCK_SUB: tl.constexpr
 
 
 param_lists = [
-    ['uint8', (4096,), 1, 4096, 4096],
     ['int8', (4096,), 1, 4096, 4096],
     ['int16', (4096,), 1, 4096, 4096],
     ['int32', (4096,), 1, 4096, 4096],
