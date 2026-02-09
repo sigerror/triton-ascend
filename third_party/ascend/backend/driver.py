@@ -23,6 +23,7 @@ import tempfile
 import os
 import os.path
 import re
+import fcntl
 import subprocess
 import sysconfig
 from typing import Optional
@@ -49,7 +50,7 @@ class NPUUtils(object):
         if not hasattr(cls, 'instance'):
             cls.instance = super(NPUUtils, cls).__new__(cls)
         return cls.instance
-
+    
     def __init__(self):
         dirname = os.path.dirname(os.path.realpath(__file__))
         src_path = os.path.join(dirname, "npu_utils.cpp")
@@ -58,12 +59,12 @@ class NPUUtils(object):
         cache = get_cache_manager(key)
         fname = "npu_utils.so"
         cache_path = cache.get_file(fname)
+            
         if cache_path is None:
             with tempfile.TemporaryDirectory() as tmpdir:
                 tmp_src_path = os.path.join(tmpdir, "npu_utils.cpp")
-                with open(tmp_src_path, "w") as f:
-                    f.write(src)
-                so = _build_npu_ext("npu_utils", None, tmp_src_path)
+                so = _exec_cmd_with_lock(tmp_src_path, "npu_utils", 
+                                         lambda: self._write_npu_utils_and_compile(tmp_src_path, src))
                 with open(so, "rb") as f:
                     cache_path = cache.put(f.read(), fname, binary=True)
         import importlib.util
@@ -73,7 +74,14 @@ class NPUUtils(object):
         self.npu_utils_mod = mod
         # setup for remote run
         env_arch = get_ascend_arch_from_env()
-
+    
+    
+    def _write_npu_utils_and_compile(self, tmp_src_path, src):
+        with open(tmp_src_path, "w") as f:
+            f.write(src)
+        return _build_npu_ext("npu_utils", None, tmp_src_path)
+    
+    
     def load_binary(self, name, kernel, shared, device):
         fnname, mix_mode = name.split()
         return self.npu_utils_mod.load_kernel_binary(fnname, kernel, shared, device, mix_mode)
@@ -217,16 +225,17 @@ class NPUDriver(DriverBase):
         cache_size = 192 * 1024 * 1024
         return get_backend_func("get_empty_tensor", cache_size // 4)
 
-   
-# fixed the issue of corrupted gch header files in multi-threaded scenarios.
-def _precompile_npu_ext_with_lock(header_path):
-    import fcntl
-    src_path = os.path.dirname(header_path)
-    lock_path = os.path.join(src_path, "precompiled.lock")
+
+# fixed the issue of file corrupted in multi-threaded scenarios.
+def _exec_cmd_with_lock(lock_path, lock_name, fn, debug=False):
+    src_path = os.path.dirname(lock_path)
+    lock_path = os.path.join(src_path, lock_name + ".lock")
+    if debug:
+        print(f"lock_path: {lock_path}")
     with open(lock_path, "a+") as f:
         try:
             fcntl.flock(f, fcntl.LOCK_EX)
-            _precompile_npu_ext(header_path)
+            return fn()
         finally:
             fcntl.flock(f, fcntl.LOCK_UN)
 
@@ -246,7 +255,8 @@ def make_npu_launcher_stub(header_src, wrapper_src, debug=False):
         header_path = cache.put(header_src, "precompiled.h", binary=False)
         # only enable_precompile=true , do precompile
         if enable_precompile:
-            _precompile_npu_ext_with_lock(header_path)
+            header_path = _exec_cmd_with_lock(header_path, "precompile",
+                                              lambda: _precompile_npu_ext(header_path), debug=debug)
 
     # try to get cached file
     so_cache_key = hashlib.sha256(wrapper_src.encode("utf-8")).hexdigest()
@@ -274,12 +284,18 @@ def make_npu_launcher_stub(header_src, wrapper_src, debug=False):
     enable_taskqueue = os.getenv("TRITON_ENABLE_TASKQUEUE", 'true').lower() in ('true', '1')
     if not enable_taskqueue:
         kernel_launcher_type = None
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        src_path = os.path.join(tmpdir, f"{name}.cxx")
-        with open(src_path, "w") as f:
+        
+    def _write_launcher_and_compile(wrapper_src, name, launcher_path, header_path, kernel_launcher_type, enable_precompile):
+        with open(launcher_path, "w") as f:
             f.write(wrapper_src)
-        so_path = _build_npu_ext(name, header_path, src_path, kernel_launcher=kernel_launcher_type, precompile=enable_precompile)
+        return _build_npu_ext(name, header_path, launcher_path, kernel_launcher=kernel_launcher_type, precompile=enable_precompile)
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        launcher_path = os.path.join(tmpdir, f"{name}.cxx")
+        so_path = _exec_cmd_with_lock(launcher_path, 
+                                      "launcher", 
+                                      lambda: _write_launcher_and_compile(wrapper_src, name, launcher_path, header_path, kernel_launcher_type, enable_precompile), 
+                                      debug=debug)
         if debug:
             with open(so_path, "rb") as f:
                 dump_manager.put(f.read(), so_name, binary=True)
