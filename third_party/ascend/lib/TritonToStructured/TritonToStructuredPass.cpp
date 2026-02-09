@@ -97,23 +97,9 @@ void TritonToStructuredPass::populateTritonToStructuredPatterns(
 }
 
 LogicalResult TritonToStructuredPass::processSplatBinaryOperations(ModuleOp moduleOp) {
-    mlir::ConversionTarget target(getContext());
-    target.addLegalOp<triton::SplatOp>();
-    target.addDynamicallyLegalOp<arith::CmpIOp>([](arith::CmpIOp op) {
-        auto lhs = op.getLhs();
-        auto rhs = op.getRhs();
-        auto lhsSplatOp = lhs.getDefiningOp<triton::SplatOp>();
-        auto rhsSplatOp = rhs.getDefiningOp<triton::SplatOp>();
-        // If both operands are splat, then the cmpOp is illegal and needs to be converted.
-        if (lhsSplatOp && rhsSplatOp) {
-            return false;
-        }
-        return true;
-    });
-
     mlir::RewritePatternSet patterns(&getContext());
     patterns.add<CannonicalizerConverter::SplatCmpConverter>(patterns.getContext());
-    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+    if (failed(applyPatternsAndFoldGreedily(moduleOp, std::move(patterns)))) {
         moduleOp.emitWarning("Splat binary op processing failed");
         return failure();
     }

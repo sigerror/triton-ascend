@@ -31,6 +31,7 @@
 #include "ascend/include/TritonToLinalg/HoistBroadcast.h"
 #include "ascend/include/TritonToLinalg/UseAnalysis.h"
 #include "ascend/include/TritonToLinalg/ImplicitPermute.h"
+#include "ascend/include/TritonToStructured/CannonicalizerConverter.h"
 #include "ascend/include/Utils/InterleaveOptimization.h"
 #include "ascend/include/Utils/Utils.h"
 
@@ -837,6 +838,7 @@ LogicalResult TritonToLinalgPass::processImplicitPermuteOperations(ModuleOp modu
   patterns.add<ImplicitPermute::StoreConverter>(patterns.getContext());
   patterns.add<ImplicitPermute::AtomicRMWConverter>(patterns.getContext());
   patterns.add<ImplicitPermute::AtomicCASConverter>(patterns.getContext());
+  patterns.add<CannonicalizerConverter::SplatCmpConverter>(patterns.getContext());
 
   if (failed(applyPatternsAndFoldGreedily(moduleOp, std::move(patterns)))) {
     LLVM_DEBUG({

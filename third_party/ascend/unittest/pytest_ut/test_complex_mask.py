@@ -41,9 +41,29 @@ def copy_kernel(in_ptr, out_ptr, N: tl.constexpr, NUMEL):
     tl.store(out_ptr + idx_block[None, :], x[None, :], mask=mask_i1)
 
 
+@triton.jit
+def permute_copy_kernel(in_ptr, out_ptr, M: tl.constexpr, N: tl.constexpr, NUMEL):
+    idx_block_n = tl.arange(0, N)
+    idx_block_m = tl.arange(0, M)
+    idx_block = idx_block_m[:, None] + idx_block_n[None, :] * M
+    is_valid = N <= NUMEL
+    x = tl.load(in_ptr + idx_block, mask=(idx_block_m[:, None] < M) & (idx_block_n[None, :] < N))
+    mask_i1 = (is_valid[:, None, None]) & (idx_block_m[None, :, None] < M) & (idx_block_n[None, None, :] < N)
+    tl.store(out_ptr + idx_block[None, :], x[None, :], mask=mask_i1)
+
+
 def test_complex_mask_copy():
     N = 1024
     x = torch.randn(N, dtype=torch.float32).npu()
     y = torch.empty_like(x).npu()
     copy_kernel[(1,)](x, y, N=N, NUMEL=N)
+    torch.testing.assert_close(x, y)
+
+
+def test_complex_mask_permute_copy():
+    M = 4
+    N = 32
+    x = torch.randn(M * N, dtype=torch.float32).npu()
+    y = torch.empty_like(x).npu()
+    permute_copy_kernel[(1,)](x, y, M=M, N=N, NUMEL=M * N)
     torch.testing.assert_close(x, y)

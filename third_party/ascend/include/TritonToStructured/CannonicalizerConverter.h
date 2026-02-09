@@ -50,12 +50,14 @@ public:
                                   PatternRewriter& rewriter) const override;
 };
 
-class SplatCmpConverter : public OpConversionPattern<arith::CmpIOp> {
+class SplatCmpConverter : public OpRewritePattern<arith::CmpIOp> {
 public:
-  using OpConversionPattern<arith::CmpIOp>::OpConversionPattern;
+    explicit SplatCmpConverter(MLIRContext* context)
+        : OpRewritePattern<arith::CmpIOp>(context) {}
+    using OpRewritePattern<arith::CmpIOp>::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(arith::CmpIOp op, OpAdaptor adaptor,
-                                ConversionPatternRewriter &rewriter) const override;
+    LogicalResult matchAndRewrite(arith::CmpIOp op,
+                                  PatternRewriter &rewriter) const override;
 };
 
 class PromotePointerIterArgsPattern : public OpRewritePattern<scf::ForOp> {

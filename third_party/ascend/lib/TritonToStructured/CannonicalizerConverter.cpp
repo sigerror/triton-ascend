@@ -155,7 +155,7 @@ LogicalResult CmpConverter::matchAndRewrite(arith::CmpIOp cmpOp, PatternRewriter
 //   Output IR:
 //     %cmp_scalar = arith.cmpi slt, %val1, %val2
 //     %splat_cmp = tt.splat %cmp_scalar : tensor<128xi1>
-LogicalResult SplatCmpConverter::matchAndRewrite(arith::CmpIOp cmpOp, OpAdaptor adaptor, ConversionPatternRewriter &rewriter) const
+LogicalResult SplatCmpConverter::matchAndRewrite(arith::CmpIOp cmpOp, PatternRewriter &rewriter) const
 {
     auto lhs = cmpOp.getLhs();
     auto rhs = cmpOp.getRhs();
