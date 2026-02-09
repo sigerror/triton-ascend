@@ -193,6 +193,7 @@ def alloc(
     etype: tl.dtype,
     shape: List[tl.constexpr],
     _address_space: address_space = None,
+    is_mem_unique: bool = False,
     _builder=None
 ) -> buffer:
     """
@@ -205,9 +206,7 @@ def alloc(
     :param _address_space: (Optional) backend-specific local memory address space
     :type _address_space: bl.address_space
     """
-    return semantic.alloc(
-        etype, shape, _address_space, _builder
-    )
+    return semantic.alloc(etype, shape, _address_space, is_mem_unique, _builder)
 
 
 @builtin

@@ -280,6 +280,13 @@ void init_ascend_ir(py::module &&m) {
                  mlir::TypeRange{}, src, dst, dma_mode_attr, dual_dst_mode_attr,
                  pre_quant_mode_attr, pre_relu_mode_attr, channel_split);
            })
+      .def("create_annotation_mark",
+           [](TritonOpBuilder &self, Value &ptr, const std::string &attrKey,
+              Attribute &attrVal) {
+             auto annotationOp = self.create<annotation::MarkOp>(ptr);
+             annotationOp->setAttr(self.getBuilder().getStringAttr(attrKey),
+                                   attrVal);
+           })
       .def("create_bind_buffer",
            [](TritonOpBuilder &self, Value &src, Value &alloc) -> void {
              auto ctx = self.getBuilder().getContext();

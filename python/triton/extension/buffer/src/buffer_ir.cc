@@ -53,6 +53,11 @@ void init_buffer_ir(py::module &&m)
       m, "buffer_builder", py::module_local(), py::dynamic_attr())
       .def(py::init<MLIRContext *>())
       .def("get_null_attr", [](BufferOpBuilder &self) { return Attribute(); })
+      .def("get_str_array_attr",
+           [](BufferOpBuilder &self, const std::vector<std::string> &array) -> ArrayAttr {
+               auto strRefVec = to_vector(llvm::map_range(array, [](const auto &s) { return llvm::StringRef(s); }));
+               return self.getBuilder().getStrArrayAttr(llvm::ArrayRef<StringRef> {strRefVec});
+           })
       .def("alloc",
            [](BufferOpBuilder &self, Type memrefType) -> Value {
              return self.create<memref::AllocOp>(
