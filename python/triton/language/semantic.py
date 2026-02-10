@@ -317,27 +317,6 @@ def floordiv(input: tl.tensor | numbers.Number, other: tl.tensor | numbers.Numbe
     raise TypeError(f"unexpected type {input_scalar_ty}")
 
 
-def ceildiv(input: Union[tl.tensor, numbers.Number], other: Union[tl.tensor, numbers.Number], builder: ir.builder) -> tl.tensor:
-    input = tl._unwrap_if_constexpr(input)
-    other = tl._unwrap_if_constexpr(other)
-    input, other = binary_op_type_checking_impl(input, other, builder, False, False, True, True)
-    input_scalar_ty = input.type.scalar
-    other_scalar_ty = other.type.scalar
-    if input_scalar_ty.is_int() and other_scalar_ty.is_int():
-        ret_ty = integer_promote_impl(input_scalar_ty, other_scalar_ty)
-        input = cast(input, ret_ty, builder)
-        other = cast(other, ret_ty, builder)
-        if input_scalar_ty.is_int_signed():
-            return tl.tensor(builder.create_cdivsi(input.handle, other.handle), input.type)
-        else:
-            return tl.tensor(builder.create_cdivui(input.handle, other.handle), input.type)
-    elif input_scalar_ty.is_floating() and other_scalar_ty.is_floating():
-        div_res = truediv(input, other, builder)
-        cdiv_res = tl.tensor(builder.create_ceil(div_res.handle), div_res.type)
-        return cast(cdiv_res, input_scalar_ty, builder)
-    raise TypeError(f"unexpected type {input_scalar_ty}")
-
-
 def fdiv(input: tl.tensor | numbers.Number, other: tl.tensor | numbers.Number, ieee_rounding: bool,
          builder: ir.builder) -> tl.tensor:
     input_scalar_ty = input.type.scalar

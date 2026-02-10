@@ -1648,15 +1648,6 @@ void init_triton_ir(py::module &&m) {
            [](TritonOpBuilder &self, Value &ptr,
               std::vector<Value> &offsets) -> Value {
              return self.create<AdvanceOp>(ptr.getType(), ptr, offsets);
-           })
-      // Add ceildiv
-      .def("create_cdivsi",
-           [](TritonOpBuilder &self, Value &lhs, Value &rhs) -> Value {
-              return Value(self.create<triton::CDivSIOp>(lhs, rhs));
-           })
-      .def("create_cdivui",
-           [](TritonOpBuilder &self, Value &lhs, Value &rhs) -> Value {
-              return Value(self.create<triton::CDivUIOp>(lhs, rhs));
            });
 
   py::class_<PassManager>(m, "pass_manager", py::module_local())

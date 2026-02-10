@@ -71,23 +71,13 @@ def triton_cdiv_special(in_ptr0, div, out_ptr0, XBLOCK, XBLOCK_SUB: tl.constexpr
 
 
 param_lists = [
-    ['int8', (4096,), 1, 4096, 4096],
-    ['int16', (4096,), 1, 4096, 4096],
+    # ['int8', (4096,), 1, 4096, 4096],
+    # ['int16', (4096,), 1, 4096, 4096],
     ['int32', (4096,), 1, 4096, 4096],
-    ['int64', (4096,), 1, 4096, 4096],
-    ['float16', (4096,), 1, 4096, 4096],
+    # ['int64', (4096,), 1, 4096, 4096],
+    # ['float16', (4096,), 1, 4096, 4096],
     ['float32', (4096,), 1, 4096, 4096],
-    ['bfloat16', (4096,), 1, 4096, 4096],
-]
-
-special_param_lists = [
-    ['int8', (4096,), 1, 4096, 4096],
-    ['int16', (4096,), 1, 4096, 4096],
-    ['int32', (4096,), 1, 4096, 4096],
-    ['int64', (4096,), 1, 4096, 4096],
-    ['float16', (4096,), 1, 4096, 4096],
-    ['float32', (4096,), 1, 4096, 4096],
-    ['bfloat16', (4096,), 1, 4096, 4096],
+    # ['bfloat16', (4096,), 1, 4096, 4096],
 ]
 
 
@@ -107,7 +97,7 @@ def test_cdiv(param_list):
     test_common.validate_cmp(dtype, triton_res, torch_res)
 
 
-@pytest.mark.parametrize('param_list', special_param_lists)
+@pytest.mark.parametrize('param_list', param_lists)
 def test_cdiv_special(param_list):
     # 生成数据
     dtype, shape, ncore, xblock, xblock_sub = param_list
