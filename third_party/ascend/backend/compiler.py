@@ -1404,6 +1404,13 @@ def ttir_to_npubin(mod, metadata, opt):
                 _compile_option_list += [f"--shared-mem-dynamic-size={opt.shared_mem_dynamic_size}"]
             if opt.disable_fma:
                 _compile_option_list += [f"--disable-fma"]
+            if opt.compile_on_910_95:
+                npu_utils = NPUUtils()
+                if npu_utils.has_device_limit():
+                    _compile_option_list += [
+                        f"--custom-aic-number={npu_utils.get_aicore_num()}",
+                        f"--custom-aiv-number={npu_utils.get_aivector_core_num()}",
+                    ]
 
             bisheng_options = metadata["bisheng_options"]
             if bisheng_options is not None:
