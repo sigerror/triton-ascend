@@ -1,0 +1,163 @@
+# Save as .github/workflows/fork-sync-build.yml on your fork's main branch.
+# SYNC_TOKEN: fine-grained PAT scoped to this repository, with
+# Contents and Workflows read/write permissions. Disable inherited workflows
+# that require upstream runners or credentials in the Actions UI.
+# Output: four wheels, CPython 3.11 and 3.12 on x86_64 and aarch64,
+# all targeting glibc >= 2.28. Each architecture uses a native runner.
+# CANN, the NPU driver and the runtime BishengIR compiler remain prerequisites.
+name: Sync fork and build manylinux wheel
+
+on:
+  schedule:
+    - cron: "23 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-sync-build
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'sigerror/triton-ascend'
+    runs-on: ubuntu-22.04
+    outputs:
+      sha: ${{ steps.sync.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.SYNC_TOKEN }}
+
+      - name: Merge upstream main
+        id: sync
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream https://github.com/triton-lang/triton-ascend.git
+          git fetch upstream main
+          git merge --no-edit upstream/main
+          git push origin HEAD:main
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Wheel ${{ matrix.python }} / ${{ matrix.platform.arch }}
+    needs: sync
+    runs-on: ${{ matrix.platform.runner }}
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix:
+        python: [cp311, cp312]
+        platform:
+          - arch: x86_64
+            runner: ubuntu-22.04
+            llvm: almalinux-x64
+          - arch: aarch64
+            runner: ubuntu-22.04-arm
+            llvm: almalinux-arm64
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Cache manylinux LLVM and compiler objects
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/manylinux-cache
+          key: ml228-${{ matrix.platform.arch }}-${{ matrix.python }}-v1-${{ hashFiles('cmake/llvm-hash.txt', 'third_party/ascend/patch/llvm_patch_*.patch') }}-${{ needs.sync.outputs.sha }}
+          restore-keys: |
+            ml228-${{ matrix.platform.arch }}-${{ matrix.python }}-v1-${{ hashFiles('cmake/llvm-hash.txt', 'third_party/ascend/patch/llvm_patch_*.patch') }}-
+
+      - name: Build and repair inside manylinux 2.28
+        shell: bash
+        env:
+          PYTHON_TAG: ${{ matrix.python }}
+          WHEEL_ARCH: ${{ matrix.platform.arch }}
+          TRITON_LLVM_SYSTEM_SUFFIX: ${{ matrix.platform.llvm }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/manylinux-cache/llvm" "$RUNNER_TEMP/manylinux-cache/ccache"
+
+          docker run --rm -i \
+            --env PYTHON_TAG \
+            --env WHEEL_ARCH \
+            --env TRITON_LLVM_SYSTEM_SUFFIX \
+            --volume "$GITHUB_WORKSPACE:/io" \
+            --volume "$RUNNER_TEMP/manylinux-cache/llvm:/root/.triton/llvm" \
+            --volume "$RUNNER_TEMP/manylinux-cache/ccache:/ccache" \
+            --workdir /io \
+            "quay.io/pypa/manylinux_2_28_${WHEEL_ARCH}:latest" \
+            bash -seuo pipefail <<'BUILD'
+          test "$(uname -m)" = "$WHEEL_ARCH"
+          export PATH="/opt/python/${PYTHON_TAG}-${PYTHON_TAG}/bin:$PATH"
+          export PIP_INDEX_URL="https://pypi.org/simple"
+          unset PIP_EXTRA_INDEX_URL PIP_TRUSTED_HOST LLVM_SYSPATH
+          git config --global --add safe.directory /io
+
+          dnf install -y clang lld ccache zlib-devel
+          python -m pip install --upgrade \
+            pip setuptools wheel 'cmake>=3.20,<4' \
+            'ninja>=1.11.1' 'pybind11>=2.13.1' lit auditwheel
+
+          export MAX_JOBS=2
+          export TRITON_PARALLEL_LINK_JOBS=1
+          export TRITON_BUILD_WITH_CCACHE=true
+          export TRITON_BUILD_WITH_CLANG_LLD=true
+          export TRITON_BUILD_PROTON=OFF
+          export TRITON_BUILD_TD=OFF
+          export TRITON_BUILD_NPUIR=OFF
+          export TRITON_WHEEL_NAME=triton-ascend
+          export TRITON_APPEND_CMAKE_ARGS="-DTRITON_BUILD_UT=OFF"
+          export CCACHE_DIR=/ccache
+          export CCACHE_MAXSIZE=2G
+
+          # Disable setup_ascend.py's automatic repair because the explicit
+          # repair below selects and enforces the glibc 2.28 policy.
+          # This also preserves the development build's +git<sha> version.
+          export IS_MANYLINUX=FALSE
+          python setup_ascend.py bdist_wheel --dist-dir /tmp/raw-wheels
+
+          mkdir -p wheelhouse
+          for wheel in /tmp/raw-wheels/*.whl; do
+            auditwheel repair \
+              --plat "manylinux_2_28_${WHEEL_ARCH}" \
+              --wheel-dir wheelhouse \
+              "$wheel"
+          done
+
+          # Keep the ABI/dependency report alongside the repaired wheel.
+          for wheel in wheelhouse/*.whl; do
+            auditwheel show "$wheel" | tee "${wheel}.auditwheel.txt"
+          done
+          git rev-parse HEAD > wheelhouse/source-commit.txt
+          git submodule status --recursive > wheelhouse/submodules.txt
+          python --version > wheelhouse/python-version.txt
+          python -m pip freeze > wheelhouse/build-tools.txt
+          (cd wheelhouse && sha256sum ./*.whl > SHA256SUMS)
+          BUILD
+
+      - name: Restore host ownership after container build
+        if: always()
+        shell: bash
+        run: |
+          for path in "$RUNNER_TEMP/manylinux-cache" "$GITHUB_WORKSPACE/wheelhouse"; do
+            if [ -d "$path" ]; then
+              sudo chown -R "$(id -u):$(id -g)" "$path"
+            fi
+          done
+
+      - name: Upload repaired wheel and build metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: triton-ascend-${{ matrix.python }}-manylinux_2_28_${{ matrix.platform.arch }}-${{ needs.sync.outputs.sha }}
+          path: wheelhouse/
+          if-no-files-found: error
+          retention-days: 14
