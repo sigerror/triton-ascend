@@ -58,7 +58,7 @@ def add(x: torch.Tensor, y: torch.Tensor):
     # NOTE:
     #  - Each torch.tensor object is implicitly converted into a pointer to its first element.
     #  - The `triton.jit` function can be indexed with a launch grid to obtain a callable GPU kernel.
-    #  - Pass meta-parameters as keywords.
+    #  - Meta-parameters must be passed as keyword arguments.
     add_kernel[grid](x, y, z, n_elements, BLOCK_SIZE=1024)
     # Returns the handle to z.
     return z

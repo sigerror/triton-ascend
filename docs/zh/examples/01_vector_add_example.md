@@ -53,12 +53,12 @@ def add(x: torch.Tensor, y: torch.Tensor):
     n_elements = z.numel()
     # 启动网格表示并行运行的内核实例的数量。
     # 可以是 Tuple[int]，也可以是 Callable(metaparameters) -> Tuple[int]。
-    # 在本case中，使用 1D 网格，其中大小是块的数量：
+    # 在本例中，使用 1D 网格，其中大小是块的数量：
     grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']), )
     # NOTE:
     #  - 每个 torch.tensor 对象都会隐式转换为其第一个元素的指针。
     #  - `triton.jit` 函数可以通过启动网格索引来获得可调用的 NPU 内核。
-    #  - 不要忘记以keywords的方式传递meta-parameters。
+    #  - 必须以关键字参数的形式传递元参数。
     add_kernel[grid](x, y, z, n_elements, BLOCK_SIZE=1024)
     # 返回 z 的句柄。
     return z
