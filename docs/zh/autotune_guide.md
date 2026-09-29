@@ -124,7 +124,7 @@ def kernel(...):
 如果希望某个 `tl.constexpr` 参与自动 Tiling 生成，需要同时满足下面三点：
 
 - 它本身必须是 Tiling 参数，也就是会影响每个 block（逻辑核）处理的数据规模或 tile 大小的参数；
-- 不要在 launch 时把它显式传值写死；
+- 不要在 launch 时把它显式传值硬编码；
 - 不要在 kernel 定义里给它设置默认值。
 
 例如下面这种写法，`BLOCK_M` 会参与自动调优：
@@ -350,6 +350,7 @@ def matmul_kernel(a, b, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_SIZE_M):
     ...
 
 
+grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]) * meta["GROUP_SIZE_M"], triton.cdiv(N, meta["BLOCK_N"]))
 matmul_kernel[grid](a, b, M, N, K)
 ```
 
