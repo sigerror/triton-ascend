@@ -353,6 +353,7 @@ def matmul_kernel(a, b, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_SIZE_M):
     ...
 
 
+grid = lambda meta: (triton.cdiv(M, meta["BLOCK_M"]) * meta["GROUP_SIZE_M"], triton.cdiv(N, meta["BLOCK_N"]))
 matmul_kernel[grid](a, b, M, N, K)
 ```
 
